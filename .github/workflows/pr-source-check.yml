@@ -1,0 +1,16 @@
+name: pr-source-check
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Only release/* or hotfix/* may target main
+        env:
+          HEAD: ${{ github.head_ref }}
+        run: |
+          case "$HEAD" in
+            release/*|hotfix/*) echo "ok: $HEAD" ;;
+            *) echo "::error::PRs into main must come from release/* or hotfix/* (got $HEAD)"; exit 1 ;;
+          esac
