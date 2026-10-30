@@ -81,7 +81,7 @@ describe("System → Tasks", () => {
       request: { ...request, mode: "overlays", libraries: ["Movies"] },
       days: [0, 1, 2, 3, 4],
       time: "04:30",
-      timezone: "Asia/Kolkata",
+      timezone: null,
       catch_up: "run_once",
       enabled: true,
     });

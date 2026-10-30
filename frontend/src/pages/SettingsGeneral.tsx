@@ -5,14 +5,7 @@ import { useState, type FormEvent } from "react";
 
 import { api, type AuthRequired, type GeneralSettings } from "../api";
 import { Button, Card, Field, inputClass } from "../components/ui";
-
-const timezones: string[] = (() => {
-  try {
-    return Intl.supportedValuesOf("timeZone");
-  } catch {
-    return [];
-  }
-})();
+import { timezoneOptions } from "../timezones";
 
 function SignIn({ settings }: { settings: GeneralSettings }) {
   const queryClient = useQueryClient();
@@ -183,11 +176,13 @@ function ApiKey({ settings }: { settings: GeneralSettings }) {
 function Timezone({ settings }: { settings: GeneralSettings }) {
   const queryClient = useQueryClient();
   const [timezone, setTimezone] = useState(settings.timezone);
+  const options = timezoneOptions(undefined, [settings.timezone, timezone]);
   const save = useMutation({
     mutationFn: () => api.general.setTimezone(timezone),
     onSuccess: (data) => {
       queryClient.setQueryData(["general"], data);
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
   return (
@@ -200,15 +195,16 @@ function Timezone({ settings }: { settings: GeneralSettings }) {
         }}
       >
         <div className="min-w-60 flex-1">
-          <Field label="New schedules use" hint="Schedules you already have keep their own timezone.">
-            <input className={inputClass} list="general-timezones" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
+          <Field label="Schedules and tasks use" hint="Kometa schedules and Studio's built-in tasks share this timezone. Daylight saving changes are handled.">
+            <select className={inputClass} value={timezone} onChange={(e) => setTimezone(e.target.value)} aria-label="Schedules and tasks use">
+              {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
-        <datalist id="general-timezones">
-          {timezones.map((zone) => (
-            <option key={zone} value={zone} />
-          ))}
-        </datalist>
         <Button type="submit" disabled={save.isPending || timezone === settings.timezone}>
           Save
         </Button>
