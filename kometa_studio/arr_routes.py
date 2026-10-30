@@ -29,7 +29,9 @@ def _connection_json(db: sqlite3.Connection, service: Arr, kind: Kind) -> dict:
     return {
         "source": saved.get("source", "config"),
         "url": saved.get("url"),
-        "has_key": bool(saved.get("api_key")),  # the key itself never leaves the server
+        "has_key": bool(saved.get("api_key")),  # the key and password never leave the server
+        "username": saved.get("username"),
+        "has_password": bool(saved.get("password")),
         "config_url": config_url if config_token else None,
         "status": get_setting(db, f"arr.status.{kind}"),
     }
@@ -58,6 +60,8 @@ class ConnectionIn(BaseModel):
     source: Literal["config", "studio", "off"]
     url: str | None = Field(default=None, max_length=500)
     api_key: str | None = Field(default=None, max_length=200)  # None: keep the saved one
+    username: str | None = Field(default=None, max_length=200)  # for a proxy in front of the app; empty: none
+    password: str | None = Field(default=None, max_length=500)  # None: keep the saved one
 
 
 def _kind(kind: str) -> Kind:
@@ -71,7 +75,12 @@ def _studio_connection(db: sqlite3.Connection, service: Arr, kind: Kind, body: C
     key = body.api_key or (service.box.decrypt(saved["api_key"]) if saved.get("api_key") else None)
     if not body.url or not key:
         raise HTTPException(422, f"Enter {arr.NAMES[kind]}'s URL and API key")
-    return Connection(body.url.strip(), key.strip(), "studio")
+    username = (body.username or "").strip() or None
+    login = None
+    if username:
+        password = body.password if body.password is not None else (service.box.decrypt(saved["password"]) or "" if saved.get("password") else "")
+        login = (username, password)
+    return Connection(body.url.strip(), key.strip(), "studio", login)
 
 
 @router.put("/{kind}")
@@ -83,8 +92,10 @@ async def put_connection(kind: str, body: ConnectionIn, db: Db, service: ArrDep)
     if body.source == "studio":
         conn = _studio_connection(db, service, which, body)
         entry |= {"url": conn.url, "api_key": service.box.encrypt(conn.api_key)}
+        if conn.login:
+            entry |= {"username": conn.login[0], "password": service.box.encrypt(conn.login[1]) if conn.login[1] else None}
     elif saved.get("url"):  # keep what was entered, for switching back
-        entry |= {"url": saved["url"], "api_key": saved.get("api_key")}
+        entry |= {key: saved.get(key) for key in ("url", "api_key", "username", "password")}
     connections[which] = entry
     set_setting(db, arr.CONNECTIONS, connections)
     service.reset_cursor(which)

@@ -29,7 +29,8 @@ def state(db: sqlite3.Connection, service: Maintainerr) -> dict:
     snapshot = service.snapshot
     return {
         "url": settings.url,
-        "has_key": bool(settings.api_key),  # the key itself never leaves the server
+        "username": settings.username,
+        "has_password": bool(settings.password),  # the password itself never leaves the server
         "leave_overlays_alone": settings.leave_overlays_alone,
         "collections": [
             {"title": c.title, "library": snapshot.library_titles.get(c.library_key), "overlays": c.overlays and c.active}
@@ -49,34 +50,50 @@ async def get_maintainerr(db: Db, service: Service) -> dict:
 
 class MaintainerrIn(BaseModel):
     url: str | None = Field(default=None, max_length=500)  # empty: disconnect
-    api_key: str | None = Field(default=None, max_length=200)  # None: keep the saved one; "": remove it
+    username: str | None = Field(default=None, max_length=200)  # for a proxy in front of it; empty: none
+    password: str | None = Field(default=None, max_length=500)  # None: keep the saved one
     leave_overlays_alone: bool = True
+
+
+def _password(db: sqlite3.Connection, service: Maintainerr, username: str | None, password: str | None) -> str | None:
+    """The encrypted password to keep: a new one, the saved one, or none without a username."""
+    if not username:
+        return None
+    if password is None:
+        return maintainerr.load(db).password
+    return service.box.encrypt(password) if password else None
 
 
 @router.put("")
 async def put_maintainerr(body: MaintainerrIn, db: Db, service: Service) -> dict:
-    current = maintainerr.load(db)
     url = (body.url or "").strip() or None
-    if body.api_key is None:
-        key = current.api_key if url else None
-    else:
-        key = service.box.encrypt(body.api_key.strip()) if body.api_key.strip() else None
-    set_setting(db, maintainerr.SETTINGS, {"url": url, "api_key": key, "leave_overlays_alone": body.leave_overlays_alone})
+    username = (body.username or "").strip() or None if url else None
+    set_setting(
+        db,
+        maintainerr.SETTINGS,
+        {"url": url, "username": username, "password": _password(db, service, username, body.password), "leave_overlays_alone": body.leave_overlays_alone},
+    )
     await service.refresh()
     return state(db, service)
 
 
 class TestIn(BaseModel):
     url: str = Field(min_length=1, max_length=500)
-    api_key: str | None = None  # None: the saved one
+    username: str | None = None
+    password: str | None = None  # None: the saved one
 
 
 @router.post("/test")
 async def test_maintainerr(body: TestIn, db: Db, service: Service) -> dict:
-    saved = maintainerr.load(db)
-    key = body.api_key if body.api_key is not None else (service.box.decrypt(saved.api_key) if saved.api_key else None)
+    """Test the connection as entered (not saved yet)."""
+    username = (body.username or "").strip() or None
+    auth = None
+    if username:
+        saved = maintainerr.load(db)
+        password = body.password if body.password is not None else (service.box.decrypt(saved.password) or "" if saved.password else "")
+        auth = (username, password)
     try:
-        return {"ok": True} | await service.test(body.url.strip(), key or None)
+        return {"ok": True} | await service.test(body.url.strip(), auth)
     except MaintainerrProblem as problem:
         return {"ok": False, "error": str(problem)}
     except Exception as error:  # an address that isn't a URL, say

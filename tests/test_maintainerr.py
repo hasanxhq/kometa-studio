@@ -131,7 +131,7 @@ def log_of(client, run_id) -> str:
 
 def test_connecting_lists_its_collections_and_libraries_mark_them(tmp_path, setup):
     with make_client(tmp_path, setup) as client:
-        state = connect(client, api_key="")
+        state = connect(client)
         collections = client.get("/api/v1/plex/libraries/1/collections").json()["collections"]
         libraries = client.get("/api/v1/plex/libraries").json()["libraries"]
     assert state["collections"] == [
@@ -143,20 +143,20 @@ def test_connecting_lists_its_collections_and_libraries_mark_them(tmp_path, setu
     assert libraries[0]["maintainerr"] == 1
 
 
-def test_its_api_key_is_kept_secret(tmp_path, setup):
+def test_testing_a_maintainerr(tmp_path, setup):
     _, _, fake = setup
-    fake.api_key = "mtr-key"
     with make_client(tmp_path, setup) as client:
-        assert client.post("/api/v1/settings/maintainerr/test", json={"url": MAINTAINERR_URL, "api_key": "wrong"}).json()["ok"] is False
-        assert client.post("/api/v1/settings/maintainerr/test", json={"url": MAINTAINERR_URL, "api_key": "mtr-key"}).json() == {
-            "ok": True,
-            "collections": 2,
-            "overlays_enabled": True,
-        }
-        state = connect(client, api_key="mtr-key")
-        assert state["has_key"] is True and len(state["collections"]) == 2
-        assert "mtr-key" not in client.get("/api/v1/settings/maintainerr").text
-        assert connect(client)["has_key"] is True  # saved again without a key: kept
+        ok = client.post("/api/v1/settings/maintainerr/test", json={"url": MAINTAINERR_URL}).json()
+        fake.media_server = False
+        no_media_server = client.post("/api/v1/settings/maintainerr/test", json={"url": MAINTAINERR_URL}).json()
+        fake.collections = [c | {"overlayEnabled": False} for c in fake.collections]
+        no_overlays = client.post("/api/v1/settings/maintainerr/test", json={"url": MAINTAINERR_URL}).json()
+        fake.down = True
+        down = client.post("/api/v1/settings/maintainerr/test", json={"url": MAINTAINERR_URL}).json()
+    assert ok == {"ok": True, "collections": 2, "overlays_enabled": True}
+    assert no_media_server == {"ok": False, "error": "Maintainerr can't reach its media server right now, so its overlays can't be managed"}
+    assert no_overlays == {"ok": True, "collections": 2, "overlays_enabled": False}  # overlays not asked about
+    assert down["ok"] is False and "Can't reach Maintainerr" in down["error"]
 
 
 def test_a_save_that_would_let_kometa_delete_its_collections_is_refused(tmp_path, setup):
@@ -214,16 +214,17 @@ def test_maintainerrs_overlays_take_precedence(tmp_path, setup):
         log = log_of(client, run["id"])
         collections_only = finished(client, client.post("/api/v1/runs", json={"mode": "collections"}).json()["id"])
     assert run["status"] == "succeeded"
-    changes = [call for call in fake.calls if call.startswith("POST")]
-    # Only the collection with overlays is reverted, and processing comes after.
-    assert changes[:2] == ["POST /api/overlays/revert/7", "POST /api/overlays/process"]
+    changes = [call for call in fake.calls if call.startswith(("POST", "PUT"))]
+    # Maintainerr's overlays are paused, only the collection with overlays is reverted, then they're back on and drawn again.
+    assert changes == ["PUT /api/overlays/settings", "POST /api/overlays/revert/7", "PUT /api/overlays/settings", "POST /api/overlays/process"]
+    assert fake.overlays_enabled is True
     lines = log.splitlines()
     put_back = next(i for i, line in enumerate(lines) if "puts back the posters under its overlays" in line)
     kometa = next(i for i, line in enumerate(lines) if "Kometa ran" in line)
-    again = next(i for i, line in enumerate(lines) if "drawing its overlays again" in line)
+    again = next(i for i, line in enumerate(lines) if "drawing them again, on top of Kometa" in line)
     assert put_back < kometa < again
     assert collections_only["status"] == "succeeded"
-    assert len([c for c in fake.calls if c.startswith("POST")]) == 2  # a collections run changes no posters
+    assert len([c for c in fake.calls if c.startswith(("POST", "PUT"))]) == 4  # a collections run changes no posters
 
 
 def test_a_run_for_another_library_leaves_its_overlays_alone(tmp_path, setup):
@@ -247,6 +248,16 @@ def test_waits_for_maintainerrs_own_overlay_run(tmp_path, setup, monkeypatch):
     assert not any("revert" in call for call in fake.calls)
 
 
+def test_a_maintainerr_without_overlays_never_holds_a_run(tmp_path, setup):
+    _, _, fake = setup
+    fake.collections = [c | {"overlayEnabled": False} for c in fake.collections]
+    with make_client(tmp_path, setup) as client:
+        connect(client)
+        fake.down = True
+        run = finished(client, client.post("/api/v1/runs", json={"mode": "overlays"}).json()["id"])
+    assert run["status"] == "succeeded"
+
+
 def test_maintainerr_down_holds_poster_runs_only_while_the_setting_is_on(tmp_path, setup):
     _, _, fake = setup
     with make_client(tmp_path, setup) as client:
@@ -261,3 +272,58 @@ def test_maintainerr_down_holds_poster_runs_only_while_the_setting_is_on(tmp_pat
     assert held["status"] == "failed" and "Leave Maintainerr overlays alone" in held["error"]
     assert collections["status"] == "succeeded"
     assert off["status"] == "succeeded"
+
+
+def test_switching_overlays_back_on_is_retried_until_it_works(tmp_path, setup, monkeypatch):
+    from kometa_studio import maintainerr
+
+    _, _, fake = setup
+    real_handle = fake.handle
+    failing = {"on": False}
+
+    def flaky(request):
+        # Maintainerr goes away just as Kometa finishes.
+        if failing["on"] and request.method == "PUT":
+            raise httpx.ConnectError("Connection refused", request=request)
+        return real_handle(request)
+
+    fake.handle = flaky
+    with make_client(tmp_path, setup) as client:
+        connect(client)
+        service = client.app.state.maintainerr
+
+        async def before_and_break(request, say):
+            after = await maintainerr.Maintainerr.before_run(service, request, say)
+            failing["on"] = True
+            return after
+
+        monkeypatch.setattr(service, "before_run", before_and_break)
+        run = finished(client, client.post("/api/v1/runs", json={"mode": "overlays"}).json()["id"])
+        assert run["status"] == "succeeded"
+        assert "keeps trying" in log_of(client, run["id"])
+        assert fake.overlays_enabled is False
+        assert client.get("/api/v1/settings/maintainerr").json()["overlays_enabled"] is True  # its real setting
+
+        failing["on"] = False
+        client.portal.call(service._resume, lambda line: None)  # what the loop does every few minutes
+    assert fake.overlays_enabled is True
+    assert fake.calls[-1] == "POST /api/overlays/process"
+
+
+def test_a_seedbox_proxy_login(tmp_path, setup):
+    _, _, fake = setup
+    fake.proxy_login = ("hasan", "seedbox-pass")
+    with make_client(tmp_path, setup) as client:
+        missing = client.post("/api/v1/settings/maintainerr/test", json={"url": MAINTAINERR_URL}).json()
+        wrong = client.post("/api/v1/settings/maintainerr/test", json={"url": MAINTAINERR_URL, "username": "hasan", "password": "nope"}).json()
+        right = client.post("/api/v1/settings/maintainerr/test", json={"url": MAINTAINERR_URL, "username": "hasan", "password": "seedbox-pass"}).json()
+        state = connect(client, username="hasan", password="seedbox-pass")
+        assert "seedbox-pass" not in client.get("/api/v1/settings/maintainerr").text
+        again = connect(client, username="hasan")  # saved without a password: kept
+        tested_with_saved = client.post("/api/v1/settings/maintainerr/test", json={"url": MAINTAINERR_URL, "username": "hasan"}).json()
+    assert missing == {"ok": False, "error": "The proxy in front of Maintainerr wants a username and password"}
+    assert wrong == {"ok": False, "error": "The proxy in front of Maintainerr wants a username and password (these were refused)"}
+    assert right["ok"] is True
+    assert (state["username"], state["has_password"], len(state["collections"])) == ("hasan", True, 2)
+    assert again["has_password"] is True and again["error"] is None
+    assert tested_with_saved["ok"] is True

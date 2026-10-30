@@ -1,5 +1,6 @@
 """A fake Radarr and Sonarr behind an httpx.MockTransport (shapes from their v3 API source)."""
 
+import base64
 from datetime import datetime
 
 import httpx
@@ -14,6 +15,7 @@ class FakeArr:
     def __init__(self) -> None:
         self.history: dict[str, list[dict]] = {"radarr": [], "sonarr": []}
         self.down: set[str] = set()
+        self.proxy_login: tuple[str, str] | None = None  # nginx Basic auth in front of Sonarr, as on a seedbox
         self.requests: list[httpx.Request] = []
         self._next_id = 100
 
@@ -33,6 +35,8 @@ class FakeArr:
         kind = "radarr" if url.startswith(RADARR_URL) else "sonarr" if url.startswith(SONARR_URL) else None
         if kind is None or kind in self.down:
             raise httpx.ConnectError("Connection refused", request=request)
+        if kind == "sonarr" and self.proxy_login and request.headers.get("Authorization") != "Basic " + base64.b64encode(":".join(self.proxy_login).encode()).decode():
+            return httpx.Response(401, text="<html>nginx</html>", headers={"WWW-Authenticate": 'Basic realm="Sonarr"'})
         if request.headers.get("X-Api-Key") != {"radarr": RADARR_KEY, "sonarr": SONARR_KEY}[kind]:
             return httpx.Response(401)
         if request.url.path == "/api/v3/system/status":

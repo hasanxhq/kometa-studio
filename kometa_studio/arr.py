@@ -69,6 +69,7 @@ class Connection:
     url: str
     api_key: str
     source: str  # config or studio
+    login: tuple[str, str] | None = None  # for a proxy in front of the app (HTTP Basic), as on a seedbox
 
 
 def kometa_connection(config: Path | None, kind: Kind) -> tuple[str | None, str | None]:
@@ -93,7 +94,8 @@ def connection(db: sqlite3.Connection, box: SecretBox, config: Path | None, kind
         return None
     if source == "studio":
         key = box.decrypt(saved.get("api_key", "")) if saved.get("api_key") else None
-        return Connection(saved["url"], key, "studio") if saved.get("url") and key else None
+        login = (saved["username"], box.decrypt(saved["password"]) or "" if saved.get("password") else "") if saved.get("username") else None
+        return Connection(saved["url"], key, "studio", login) if saved.get("url") and key else None
     url, token = kometa_connection(config, kind)
     return Connection(url, token, "config") if url and token else None
 
@@ -101,13 +103,19 @@ def connection(db: sqlite3.Connection, box: SecretBox, config: Path | None, kind
 async def _get(http: httpx.AsyncClient, conn: Connection, path: str, params: dict | None = None) -> Any:
     try:
         response = await http.get(
-            conn.url.rstrip("/") + path, params=params, headers={"X-Api-Key": conn.api_key, "Accept": "application/json"}, timeout=TIMEOUT
+            conn.url.rstrip("/") + path,
+            params=params,
+            headers={"X-Api-Key": conn.api_key, "Accept": "application/json"},
+            timeout=TIMEOUT,
+            auth=conn.login or httpx.USE_CLIENT_DEFAULT,
         )
     except httpx.TimeoutException:
         raise ArrProblem(f"No answer within {TIMEOUT:g} s") from None
     except httpx.HTTPError as error:
         raise ArrProblem(f"Can't connect: {error}") from None
     if response.status_code == 401:
+        if response.headers.get("www-authenticate", "").lower().startswith("basic"):
+            raise ArrProblem("The proxy in front of it wants a username and password" + (" (these were refused)" if conn.login else ""))
         raise ArrProblem("The API key was rejected")
     if response.status_code != 200:
         raise ArrProblem(f"It answered HTTP {response.status_code}")

@@ -163,7 +163,15 @@ def test_connect_page_uses_config_yml_and_tests_a_connection_entered_by_hand(tmp
     fake = FakeArr()
     with make_client(tmp_path, fake) as client:
         state = client.get("/api/v1/settings/arr").json()
-        assert state["connections"]["radarr"] == {"source": "config", "url": None, "has_key": False, "config_url": RADARR_URL, "status": None}
+        assert state["connections"]["radarr"] == {
+            "source": "config",
+            "url": None,
+            "has_key": False,
+            "username": None,
+            "has_password": False,
+            "config_url": RADARR_URL,
+            "status": None,
+        }
         assert state["connections"]["sonarr"]["config_url"] is None
 
         assert client.post("/api/v1/settings/arr/radarr/test", json={"source": "config"}).json() == {"ok": True, "app": "Radarr", "version": "5.14.0.9383"}
@@ -173,7 +181,15 @@ def test_connect_page_uses_config_yml_and_tests_a_connection_entered_by_hand(tmp
         assert swapped == {"ok": False, "error": "That's Radarr, not Sonarr"}
 
         saved = client.put("/api/v1/settings/arr/sonarr", json={"source": "studio", "url": SONARR_URL, "api_key": SONARR_KEY}).json()
-        assert saved["connections"]["sonarr"] | {"status": None} == {"source": "studio", "url": SONARR_URL, "has_key": True, "config_url": None, "status": None}
+        assert saved["connections"]["sonarr"] | {"status": None} == {
+            "source": "studio",
+            "url": SONARR_URL,
+            "has_key": True,
+            "username": None,
+            "has_password": False,
+            "config_url": None,
+            "status": None,
+        }
         assert SONARR_KEY not in client.get("/api/v1/settings/arr").text
         # Saving again without the key keeps it.
         assert client.put("/api/v1/settings/arr/sonarr", json={"source": "studio", "url": SONARR_URL}).status_code == 200
@@ -184,3 +200,18 @@ def test_connect_page_uses_config_yml_and_tests_a_connection_entered_by_hand(tmp
 def test_the_webhook_is_gone(tmp_path):
     with make_client(tmp_path, FakeArr()) as client:
         assert client.post("/api/v1/hooks/arr?token=x", json={}).status_code in (401, 404, 405)
+
+
+def test_a_sonarr_behind_a_seedbox_proxy(tmp_path):
+    fake = FakeArr()
+    fake.proxy_login = ("hasan", "seedbox-pass")
+    entered = {"source": "studio", "url": SONARR_URL, "api_key": SONARR_KEY}
+    with make_client(tmp_path, fake) as client:
+        missing = client.post("/api/v1/settings/arr/sonarr/test", json=entered).json()
+        right = client.post("/api/v1/settings/arr/sonarr/test", json=entered | {"username": "hasan", "password": "seedbox-pass"}).json()
+        saved = client.put("/api/v1/settings/arr/sonarr", json=entered | {"username": "hasan", "password": "seedbox-pass"}).json()
+        assert "seedbox-pass" not in client.get("/api/v1/settings/arr").text
+        kept = client.post("/api/v1/settings/arr/sonarr/test", json={"source": "studio", "url": SONARR_URL, "username": "hasan"}).json()
+    assert missing == {"ok": False, "error": "The proxy in front of it wants a username and password"}
+    assert right["ok"] is True and kept["ok"] is True
+    assert (saved["connections"]["sonarr"]["username"], saved["connections"]["sonarr"]["has_password"]) == ("hasan", True)

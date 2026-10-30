@@ -1,4 +1,8 @@
-"""A fake Maintainerr behind an httpx handler, shaped like its API (apps/server: collections and overlays controllers)."""
+"""A fake Maintainerr behind an httpx handler, shaped like its API (apps/server: collections and overlays
+controllers), optionally behind a seedbox's nginx asking for a username and password."""
+
+import base64
+import json
 
 import httpx
 
@@ -18,20 +22,29 @@ class FakeMaintainerr:
         self.overlays_enabled = True
         self.status = "idle"
         self.down = False
-        self.api_key: str | None = None
+        self.media_server = True  # Maintainerr 403s its overlay endpoints without a working media server
+        self.proxy_login: tuple[str, str] | None = None  # nginx Basic auth in front, as on a seedbox
         self.calls: list[str] = []  # "METHOD /path", in order
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         if self.down:
             raise httpx.ConnectError("Connection refused", request=request)
-        if self.api_key and request.headers.get("X-Api-Key") != self.api_key:
-            return httpx.Response(401)
+        if self.proxy_login:
+            expected = "Basic " + base64.b64encode(":".join(self.proxy_login).encode()).decode()
+            if request.headers.get("Authorization") != expected:
+                page = "<html><head><title>401 Authorization Required</title></head><body><center>nginx</center></body></html>"
+                return httpx.Response(401, text=page, headers={"Content-Type": "text/html", "WWW-Authenticate": 'Basic realm="Maintainerr Auth"'})
         path = request.url.path
+        if path.startswith("/api/overlays") and not self.media_server:
+            return httpx.Response(403, json={"message": "Forbidden resource", "error": "Forbidden", "statusCode": 403})
         self.calls.append(f"{request.method} {path}")
         if request.method == "GET" and path == "/api/collections":
             return httpx.Response(200, json=self.collections)
         if request.method == "GET" and path == "/api/overlays/settings":
             return httpx.Response(200, json={"enabled": self.overlays_enabled, "cronSchedule": "0 3 * * *"})
+        if request.method == "PUT" and path == "/api/overlays/settings":
+            self.overlays_enabled = json.loads(request.content).get("enabled", self.overlays_enabled)
+            return httpx.Response(200, json={"enabled": self.overlays_enabled, "cronSchedule": "0 * * * *"})
         if request.method == "GET" and path == "/api/overlays/status":
             return httpx.Response(200, json={"status": self.status, "lastRun": None, "lastResult": None})
         if request.method == "POST" and path.startswith("/api/overlays/revert/"):

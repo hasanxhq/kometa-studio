@@ -7,8 +7,8 @@ import { mockApi, renderAt } from "../test-utils";
 const state: ArrState = {
   settings: { enabled: false, mode: "all", wait_minutes: 10, libraries: { radarr: [], sonarr: [] } },
   connections: {
-    radarr: { source: "config", url: null, has_key: false, config_url: "http://radarr:7878", status: null },
-    sonarr: { source: "config", url: null, has_key: false, config_url: null, status: null },
+    radarr: { source: "config", url: null, has_key: false, username: null, has_password: false, config_url: "http://radarr:7878", status: null },
+    sonarr: { source: "config", url: null, has_key: false, username: null, has_password: false, config_url: null, status: null },
   },
   pending: null,
 };
@@ -21,7 +21,8 @@ const overview = {
 
 const notConnected: MaintainerrState = {
   url: null,
-  has_key: false,
+  username: null,
+  has_password: false,
   leave_overlays_alone: true,
   collections: [],
   overlays_enabled: false,
@@ -50,6 +51,9 @@ describe("Maintainerr", () => {
 
     const form = await screen.findByRole("form", { name: "Maintainerr" });
     fireEvent.change(within(form).getByLabelText("URL"), { target: { value: "http://maintainerr:6246" } });
+    expect(within(form).getByLabelText("Password")).toBeDisabled(); // until there's a username
+    fireEvent.change(within(form).getByLabelText(/Username/), { target: { value: "hasan" } });
+    fireEvent.change(within(form).getByLabelText("Password"), { target: { value: "seedbox-pass" } });
     expect(within(form).getByLabelText(/Leave Maintainerr overlays alone/)).toBeChecked();
     fireEvent.click(within(form).getByRole("button", { name: "Test" }));
     expect(await within(form).findByText("Maintainerr answered: 1 collection, overlays on.")).toBeInTheDocument();
@@ -58,9 +62,15 @@ describe("Maintainerr", () => {
     expect(await screen.findByText("Kometa's config would touch Maintainerr's collections")).toBeInTheDocument();
     expect(screen.getByText(/Limit it with managed: true/)).toBeInTheDocument();
     expect(screen.getByText("Protecting 1 collection:")).toBeInTheDocument();
+    expect(calls.find((c) => c.route === "POST /settings/maintainerr/test")?.body).toEqual({
+      url: "http://maintainerr:6246",
+      username: "hasan",
+      password: "seedbox-pass",
+    });
     expect(calls.find((c) => c.route === "PUT /settings/maintainerr")?.body).toEqual({
       url: "http://maintainerr:6246",
-      api_key: null,
+      username: "hasan",
+      password: "seedbox-pass",
       leave_overlays_alone: true,
     });
   });
@@ -103,7 +113,10 @@ describe("Settings → Connect", () => {
       "GET /config": () => overview,
       "PUT /settings/arr/sonarr": () => ({
         ...state,
-        connections: { ...state.connections, sonarr: { source: "studio", url: "http://sonarr:8989", has_key: true, config_url: null, status: null } },
+        connections: {
+          ...state.connections,
+          sonarr: { source: "studio", url: "http://sonarr:8989", has_key: true, username: null, has_password: false, config_url: null, status: null },
+        },
       }),
     });
     renderAt("/settings/connect");
@@ -116,7 +129,13 @@ describe("Settings → Connect", () => {
     fireEvent.click(within(sonarr).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(calls.some((c) => c.route === "PUT /settings/arr/sonarr")).toBe(true));
-    expect(calls.find((c) => c.route === "PUT /settings/arr/sonarr")?.body).toEqual({ source: "studio", url: "http://sonarr:8989", api_key: "abc123" });
+    expect(calls.find((c) => c.route === "PUT /settings/arr/sonarr")?.body).toEqual({
+      source: "studio",
+      url: "http://sonarr:8989",
+      api_key: "abc123",
+      username: null,
+      password: null,
+    });
     const saved = await screen.findByRole("form", { name: "Sonarr" });
     expect(within(saved).getByLabelText("API key")).toHaveValue("");
     expect(within(saved).getByPlaceholderText("Saved (leave empty to keep it)")).toBeInTheDocument();

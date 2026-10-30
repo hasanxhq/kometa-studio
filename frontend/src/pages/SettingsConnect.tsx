@@ -23,18 +23,60 @@ const apps: { kind: ArrKind; label: string }[] = [
   { kind: "sonarr", label: "Sonarr" },
 ];
 
+// A username and password for a proxy in front of a service (HTTP Basic), as seedboxes put in front of each app.
+function ProxyLogin({
+  username,
+  password,
+  hasPassword,
+  onUsername,
+  onPassword,
+}: {
+  username: string;
+  password: string;
+  hasPassword: boolean;
+  onUsername: (value: string) => void;
+  onPassword: (value: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      <div className="min-w-0 flex-1 basis-48">
+        <Field label="Username (if a proxy asks)" hint="On a seedbox, usually its login.">
+          <input className={inputClass} autoComplete="off" value={username} onChange={(e) => onUsername(e.target.value)} />
+        </Field>
+      </div>
+      <div className="min-w-0 flex-1 basis-48">
+        <Field label="Password">
+          <input
+            className={inputClass}
+            type="password"
+            autoComplete="off"
+            value={password}
+            onChange={(e) => onPassword(e.target.value)}
+            placeholder={hasPassword ? "Saved (leave empty to keep it)" : ""}
+            disabled={!username}
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
 function ArrConnectionForm({ kind, label, connection }: { kind: ArrKind; label: string; connection: ArrConnection }) {
   const queryClient = useQueryClient();
   const [source, setSource] = useState<ArrSource>(connection.source);
   const [url, setUrl] = useState(connection.url ?? "");
   const [apiKey, setApiKey] = useState("");
-  const body = (): ArrConnectionInput => (source === "studio" ? { source, url, api_key: apiKey || null } : { source });
+  const [username, setUsername] = useState(connection.username ?? "");
+  const [password, setPassword] = useState("");
+  const body = (): ArrConnectionInput =>
+    source === "studio" ? { source, url, api_key: apiKey || null, username: username || null, password: password || null } : { source };
   const test = useMutation({ mutationFn: () => api.arr.test(kind, body()) });
   const save = useMutation({
     mutationFn: () => api.arr.connect(kind, body()),
     onSuccess: (data) => {
       queryClient.setQueryData(["arr"], data);
       setApiKey("");
+      setPassword("");
     },
   });
   const submit = (event: FormEvent) => {
@@ -86,6 +128,9 @@ function ArrConnectionForm({ kind, label, connection }: { kind: ArrKind; label: 
             </Field>
           </div>
         </div>
+      )}
+      {source === "studio" && (
+        <ProxyLogin username={username} password={password} hasPassword={connection.has_password} onUsername={setUsername} onPassword={setPassword} />
       )}
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" disabled={save.isPending}>
@@ -217,22 +262,25 @@ function Pending({ state }: { state: ArrState }) {
 function MaintainerrForm({ current }: { current: MaintainerrState }) {
   const queryClient = useQueryClient();
   const [draftUrl, setUrl] = useState(current.url ?? "");
-  const [apiKey, setApiKey] = useState("");
+  const [username, setUsername] = useState(current.username ?? "");
+  const [password, setPassword] = useState("");
   const [draftLeave, setLeaveOverlays] = useState(current.leave_overlays_alone);
-  const test = useMutation({ mutationFn: () => api.maintainerr.test(draftUrl, apiKey || null) });
+  const test = useMutation({ mutationFn: () => api.maintainerr.test(draftUrl, username || null, password || null) });
   const save = useMutation({
     mutationFn: (disconnect: boolean) =>
-      api.maintainerr.save(
-        disconnect
-          ? { url: null, api_key: "", leave_overlays_alone: draftLeave }
-          : { url: draftUrl, api_key: apiKey || null, leave_overlays_alone: draftLeave },
-      ),
+      api.maintainerr.save({
+        url: disconnect ? null : draftUrl,
+        username: username || null,
+        password: password || null,
+        leave_overlays_alone: draftLeave,
+      }),
     onSuccess: (data) => {
       queryClient.setQueryData(["maintainerr"], data);
       queryClient.invalidateQueries({ queryKey: ["status"] });
       queryClient.invalidateQueries({ queryKey: ["plex"] });
       setUrl(data.url ?? "");
-      setApiKey("");
+      setUsername(data.username ?? "");
+      setPassword("");
     },
   });
   const submit = (event: FormEvent) => {
@@ -246,25 +294,10 @@ function MaintainerrForm({ current }: { current: MaintainerrState }) {
         With Maintainerr connected, Kometa leaves its collections alone: Studio refuses any change, and holds any run, that would let Kometa delete them, change
         their mode, or take one over with a collection of the same name.
       </p>
-      <div className="flex flex-wrap gap-3">
-        <div className="min-w-0 flex-1 basis-64">
-          <Field label="URL">
-            <input className={inputClass} value={draftUrl} onChange={(e) => setUrl(e.target.value)} placeholder="http://maintainerr:6246" />
-          </Field>
-        </div>
-        <div className="min-w-0 flex-1 basis-48">
-          <Field label="API key (if it has one)">
-            <input
-              className={inputClass}
-              type="password"
-              autoComplete="off"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={current.has_key ? "Saved (leave empty to keep it)" : ""}
-            />
-          </Field>
-        </div>
-      </div>
+      <Field label="URL" hint="Maintainerr's API has no key of its own.">
+        <input className={inputClass} value={draftUrl} onChange={(e) => setUrl(e.target.value)} placeholder="http://maintainerr:6246" />
+      </Field>
+      <ProxyLogin username={username} password={password} hasPassword={current.has_password} onUsername={setUsername} onPassword={setPassword} />
       <label className="flex items-start gap-2 text-sm">
         <input type="checkbox" className="mt-1 size-4 accent-accent" checked={draftLeave} onChange={(e) => setLeaveOverlays(e.target.checked)} />
         <span>
