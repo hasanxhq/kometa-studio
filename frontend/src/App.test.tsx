@@ -22,7 +22,7 @@ describe("App shell", () => {
 
   it("shows versions on System → Status", async () => {
     mockApi({
-      "GET /status": () => ({ version: "0.0.0", kometa: { version: "2.5.3", config: "/config/config.yml" }, database: { schema_version: 1 } }),
+      "GET /status": () => ({ version: "0.0.0", kometa: { version: "2.5.3", config: "/config/config.yml", updates: { installed: "2.5.3", checked_at: null, latest: null, notes: null, available: false } }, database: { schema_version: 1 }, health: [] }),
       "GET /kometa/full-check": () => ({ last: null }),
     });
     renderAt("/system/status");

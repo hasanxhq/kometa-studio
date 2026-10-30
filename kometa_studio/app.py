@@ -20,6 +20,7 @@ from .config_routes import router as config_router
 from .config_write import ConfigWriter
 from .crypto import SecretBox
 from .db import get_setting, open_database, schema_version
+from .health import PlexCheck, health, kometa_updates, kometa_version
 from .plex_routes import router as plex_router
 from .runner import Runner
 from .runs_routes import router as runs_router
@@ -32,29 +33,22 @@ from .settings import Settings
 STATIC_DIR = Path(str(files("kometa_studio") / "static"))
 
 
-def kometa_version(settings: Settings) -> str | None:
-    """Read the installed Kometa's VERSION file, which sits next to kometa.py."""
-    if settings.kometa_entry is None:
-        return None
-    version_file = settings.kometa_entry.parent / "VERSION"
-    try:
-        return version_file.read_text(encoding="utf-8").strip() or None
-    except OSError:
-        return None
-
-
 api = APIRouter(prefix="/api/v1")
 
 
 @api.get("/status")
 async def status(request: Request) -> dict:
     settings: Settings = request.app.state.settings
+    db = request.app.state.db
+    installed = kometa_version(settings)
     return {
         "version": __version__,
         "kometa": {
-            "version": kometa_version(settings),
+            "version": installed,
             "config": str(settings.kometa_config) if settings.kometa_config else None,
+            "updates": kometa_updates(db, installed),
         },
+        "health": await health(db, settings, request.app.state.http, request.app.state.plex_check, request.app.state.runner.flags_error),
         "database": {"schema_version": schema_version(request.app.state.db)},
         "runs": {
             "current": request.app.state.runner.current_run_id,
@@ -120,6 +114,7 @@ def create_app(
     app.state.settings = settings
     app.state.timezone = default_timezone(settings.timezone)  # Settings → General can change it
     app.state.login_throttle = LoginThrottle()
+    app.state.plex_check = PlexCheck()
     # One writer, so its lock keeps saves one at a time.
     app.state.writer = ConfigWriter(settings) if settings.kometa_config else None
     app.add_middleware(AuthMiddleware)

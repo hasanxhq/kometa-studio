@@ -13,6 +13,21 @@ function navLinkClass({ isActive }: { isActive: boolean }) {
   ].join(" ");
 }
 
+// A dot on System → Status while a health check is failing, as the arr apps do.
+function HealthDot() {
+  const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 60_000 });
+  const checks = status.data?.health ?? [];
+  const level = checks.some((c) => c.level === "error") ? "error" : checks.some((c) => c.level === "warning") ? "warning" : null;
+  if (!level) return null;
+  return (
+    <span
+      className={`ml-auto size-2 rounded-full ${level === "error" ? "bg-err" : "bg-warn"}`}
+      role="img"
+      aria-label={level === "error" ? "Health errors" : "Health warnings"}
+    />
+  );
+}
+
 function Sidebar({ onNavigate }: { onNavigate: () => void }) {
   return (
     <nav aria-label="Main" className="flex flex-col gap-5 p-3">
@@ -29,6 +44,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
                 <li key={page.path}>
                   <NavLink to={page.path} className={navLinkClass} onClick={onNavigate}>
                     {page.label}
+                    {page.path === "/system/status" && <HealthDot />}
                   </NavLink>
                 </li>
               ))}

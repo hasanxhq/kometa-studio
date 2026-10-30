@@ -21,6 +21,7 @@ import { SettingsPlex } from "./pages/SettingsPlex";
 import { SystemBackup } from "./pages/SystemBackup";
 import { SystemStatus } from "./pages/SystemStatus";
 import { SystemTasks } from "./pages/SystemTasks";
+import { SystemUpdates } from "./pages/SystemUpdates";
 
 // Pages that exist so far; every other nav entry shows a placeholder.
 const built: Record<string, ComponentType> = {
@@ -30,6 +31,7 @@ const built: Record<string, ComponentType> = {
   "/system/status": SystemStatus,
   "/system/tasks": SystemTasks,
   "/system/backup": SystemBackup,
+  "/system/updates": SystemUpdates,
   "/settings/general": SettingsGeneral,
   "/settings/plex": SettingsPlex,
 };

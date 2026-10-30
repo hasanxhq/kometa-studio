@@ -23,7 +23,7 @@ describe("Signing in", () => {
         allowed = true;
         return { ok: true };
       },
-      "GET /status": () => ({ version: "0.1.0", kometa: { version: "2.5.3", config: null }, database: { schema_version: 4 } }),
+      "GET /status": () => ({ version: "0.1.0", kometa: { version: "2.5.3", config: null, updates: { installed: "2.5.3", checked_at: null, latest: null, notes: null, available: false } }, database: { schema_version: 4 }, health: [] }),
       "GET /kometa/full-check": () => ({ last: null }),
     });
     renderAt("/system/status");

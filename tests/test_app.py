@@ -26,7 +26,8 @@ def test_status_reports_versions(tmp_path):
 
 def test_status_without_kometa_configured(tmp_path):
     with make_client(tmp_path) as client:
-        assert client.get("/api/v1/status").json()["kometa"] == {"version": None, "config": None}
+        kometa = client.get("/api/v1/status").json()["kometa"]
+    assert (kometa["version"], kometa["config"], kometa["updates"]["available"]) == (None, None, False)
 
 
 def test_spa_routes_fall_back_to_index(tmp_path):
