@@ -160,6 +160,18 @@ export type Schedules = {
   catch_ups: { id: number; status: RunStatus; queued_at: string; name: string }[];
 };
 
+// Radarr and Sonarr's webhook (Settings → Connect).
+export type ArrKind = "radarr" | "sonarr";
+
+export type ArrSettings = { enabled: boolean; mode: RunMode; wait_minutes: number; libraries: Record<ArrKind, string[]> };
+
+export type ArrState = {
+  settings: ArrSettings;
+  path: string; // the webhook's path, with its token; the page adds its own address
+  last_event: { at: string; kind: ArrKind | null; event: string; title: string | null } | null;
+  pending: { first_at: string; last_at: string; due_at: string; imports: number; titles: string[]; kinds: ArrKind[] } | null;
+};
+
 // Studio's own tasks on System → Tasks.
 export type TaskName = "full_backup" | "full_check";
 
@@ -407,6 +419,11 @@ export const api = {
       request<{ path: string; backup: string; current: string | null }>("GET", `/backups/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`),
     restore: (id: string) =>
       request<{ backup: string; restored: string[]; removed: string[]; validation: Validation }>("POST", `/backups/${encodeURIComponent(id)}/restore`),
+  },
+  arr: {
+    get: () => request<ArrState>("GET", "/settings/arr"),
+    save: (settings: ArrSettings) => request<ArrState>("PUT", "/settings/arr", settings),
+    newToken: () => request<ArrState>("POST", "/settings/arr/token"),
   },
   tasks: {
     list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),

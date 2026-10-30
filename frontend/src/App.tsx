@@ -16,6 +16,7 @@ import { Libraries } from "./pages/Libraries";
 import { LibraryDetail } from "./pages/LibraryDetail";
 import { Placeholder } from "./pages/Placeholder";
 import { RunDetail } from "./pages/RunDetail";
+import { SettingsConnect } from "./pages/SettingsConnect";
 import { SettingsGeneral } from "./pages/SettingsGeneral";
 import { SettingsPlex } from "./pages/SettingsPlex";
 import { SystemBackup } from "./pages/SystemBackup";
@@ -34,6 +35,7 @@ const built: Record<string, ComponentType> = {
   "/system/updates": SystemUpdates,
   "/settings/general": SettingsGeneral,
   "/settings/plex": SettingsPlex,
+  "/settings/connect": SettingsConnect,
 };
 
 export function App({ queryClient = new QueryClient() }: { queryClient?: QueryClient }) {

@@ -13,6 +13,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .arr_hooks import ArrHooks
+from .arr_routes import router as arr_router
 from .auth import AuthMiddleware, LoginThrottle
 from .auth_routes import TIMEZONE
 from .auth_routes import router as auth_router
@@ -99,7 +101,8 @@ def create_app(
         tasks.setup(app.state.timezone)
         app.state.tasks = tasks
         # Started after the runner has marked cut-off runs interrupted; its first tick catches up on missed runs.
-        scheduler = Scheduler(app.state.db, runner, tasks)
+        app.state.arr = ArrHooks(app.state.db, runner)
+        scheduler = Scheduler(app.state.db, runner, also=(tasks, app.state.arr))
         app.state.scheduler = scheduler
         scheduler.start()
         # Learn which flags this Kometa has, in the background: importing Kometa takes a few seconds.
@@ -131,5 +134,6 @@ def create_app(
     app.include_router(schedules_router)
     app.include_router(config_router)
     app.include_router(tasks_router)
+    app.include_router(arr_router)
     mount_frontend(app, static_dir)
     return app
