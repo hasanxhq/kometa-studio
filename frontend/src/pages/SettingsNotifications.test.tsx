@@ -49,6 +49,15 @@ function form(name: string) {
   return within(screen.getByRole("form", { name }));
 }
 
+function addCard() {
+  return within(screen.getByRole("heading", { name: "Add notification provider" }).closest("section")!);
+}
+
+async function pick(label: string) {
+  const card = within((await screen.findByRole("heading", { name: "Add notification provider" })).closest("section")!);
+  fireEvent.click(card.getByRole("button", { name: new RegExp(`^${label}`) }));
+}
+
 describe("Settings → Notifications", () => {
   it("is under Settings in the sidebar", async () => {
     mockApi({ "GET /settings/notifications": () => state });
@@ -65,9 +74,10 @@ describe("Settings → Notifications", () => {
     expect(token).toHaveValue("");
     expect(token).toHaveAttribute("placeholder", "Saved: …oken (leave empty to keep it)");
     expect(gotify.getByRole("button", { name: "Remove…" })).toBeInTheDocument();
-    expect(form("ntfy").getByLabelText("Topic")).toHaveValue("");
-    expect(form("ntfy").queryByRole("button", { name: "Remove…" })).toBeNull();
     expect(screen.getByText("Set up in config.yml")).toBeInTheDocument();
+    // The others wait on the Add card.
+    expect(screen.queryByRole("form", { name: "ntfy" })).toBeNull();
+    expect(addCard().getAllByRole("button").map((b) => b.querySelector("span")?.textContent)).toEqual(["Notifiarr", "ntfy", "Apprise"]);
   });
 
   it("keeps Save off until Test passes for the values as they are", async () => {
@@ -121,6 +131,7 @@ describe("Settings → Notifications", () => {
         }),
     });
     renderAt("/settings/notifications");
+    await pick("Notifiarr");
     const notifiarr = within(await screen.findByRole("form", { name: "Notifiarr" }));
     expect(notifiarr.getByRole("button", { name: "Test" })).toBeDisabled(); // nothing entered and nothing saved
     fireEvent.change(notifiarr.getByLabelText("API key"), { target: { value: "key" } });
@@ -142,10 +153,61 @@ describe("Settings → Notifications", () => {
     const gotify = within(await screen.findByRole("form", { name: "Gotify" }));
     fireEvent.click(gotify.getByRole("button", { name: "Remove…" }));
     fireEvent.click(gotify.getByRole("button", { name: "Remove Gotify" }));
-    expect(await gotify.findByText("Kometa checked it, and it's saved.")).toBeInTheDocument();
+    // Its card goes, and it's offered on the Add card again.
+    expect(await screen.findByText("Gotify was taken out of config.yml. The old file is in System → Backup.")).toBeInTheDocument();
     expect(calls.some((c) => c.route === "DELETE /settings/notifications/gotify?base_hash=h1")).toBe(true);
-    expect(gotify.getByLabelText("Server URL")).toHaveValue("");
-    expect(gotify.queryByRole("button", { name: "Remove…" })).toBeNull();
+    expect(screen.queryByRole("form", { name: "Gotify" })).toBeNull();
+    expect(addCard().getByRole("button", { name: /^Gotify/ })).toBeInTheDocument();
+  });
+
+  it("sets up a provider from the Add card, which then moves after it with what's left", async () => {
+    const withNtfy: NotificationsState = {
+      ...state,
+      hash: "h2",
+      services: state.services.map((s) => (s.name === "ntfy" ? { ...s, configured: true, keys: s.keys.map((k) => ({ ...k, value: k.secret ? null : "x", masked: k.secret ? "…k3n" : null })) } : s)),
+      saved: { backup: "b4", files: [], validation },
+    };
+    let current = state;
+    const calls = mockApi({
+      "GET /settings/notifications": () => current,
+      "POST /settings/notifications/ntfy/test": () => ({ ok: true, message: "ntfy accepted a test message on the topic." }),
+      "PUT /settings/notifications/ntfy": () => {
+        current = withNtfy;
+        return withNtfy;
+      },
+    });
+    renderAt("/settings/notifications");
+
+    await pick("ntfy");
+    const ntfy = form("ntfy");
+    fireEvent.change(ntfy.getByLabelText("Server URL"), { target: { value: "https://ntfy.sh" } });
+    fireEvent.change(ntfy.getByLabelText("Access token"), { target: { value: "tk_abc" } });
+    fireEvent.change(ntfy.getByLabelText("Topic"), { target: { value: "kometa-hasan" } });
+    expect(ntfy.getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.click(ntfy.getByRole("button", { name: "Test" }));
+    await ntfy.findByText("ntfy accepted a test message on the topic.");
+    fireEvent.click(ntfy.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText(/ntfy is set up\. Kometa uses it from its next run/)).toBeInTheDocument();
+    expect(calls.find((c) => c.route === "PUT /settings/notifications/ntfy")?.body).toEqual({
+      values: { url: "https://ntfy.sh", token: "tk_abc", topic: "kometa-hasan" },
+      base_hash: "h1",
+    });
+    // ntfy's card comes before the Add card, which offers only what's left.
+    const cards = new Set(["Notifiarr", "Gotify", "ntfy", "Apprise", "Add notification provider", "Webhook events"]);
+    const headings = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((h) => h.textContent)
+      .filter((text) => cards.has(text ?? ""));
+    expect(headings).toEqual(["Gotify", "ntfy", "Add notification provider", "Webhook events"]);
+    expect(addCard().getAllByRole("button").map((b) => b.querySelector("span")?.textContent)).toEqual(["Notifiarr", "Apprise"]);
+  });
+
+  it("has no Add card once every provider is set up", async () => {
+    mockApi({ "GET /settings/notifications": () => ({ ...state, services: state.services.map((s) => ({ ...s, configured: true })) }) });
+    renderAt("/settings/notifications");
+    expect(await screen.findByRole("form", { name: "Apprise" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Add notification provider" })).toBeNull();
   });
 
   it("shows webhook events as a grid, with Studio's own entries locked and left out of a save", async () => {

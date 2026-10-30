@@ -1,5 +1,7 @@
 // Settings → Notifications: Kometa's notification services (Notifiarr, Gotify, ntfy, Apprise) and which webhook events go where.
-// A service is saved only after Test passes for the values as they are; any edit clears the pass, and the server tests again before it saves.
+// Each service that's set up has its own card; the "Add notification provider" card after them sets up one of the rest, and moves
+// along as each is added. A service is saved only after Test passes for the values as they are; any edit clears the pass, and the
+// server tests again before it saves.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
@@ -22,12 +24,14 @@ import { Button, Card, Field, Tag, inputClass } from "../components/ui";
 
 type KeyHelp = { placeholder?: string; hint?: string };
 
-const help: Record<NotificationServiceName, { intro: string; keys: Record<string, KeyHelp> }> = {
+const help: Record<NotificationServiceName, { summary: string; intro: string; keys: Record<string, KeyHelp> }> = {
   notifiarr: {
+    summary: "Discord, through notifiarr.com.",
     intro: "Notifiarr passes Kometa's notifications on to Discord. Test checks the API key the way Kometa does when it starts; it sends no message.",
     keys: { apikey: { hint: "Your API key from notifiarr.com." } },
   },
   gotify: {
+    summary: "Your own Gotify server.",
     intro: "Your own Gotify server. Test sends one message, titled “Kometa Studio test notification”.",
     keys: {
       url: { placeholder: "https://gotify.example.com" },
@@ -35,6 +39,7 @@ const help: Record<NotificationServiceName, { intro: string; keys: Record<string
     },
   },
   ntfy: {
+    summary: "The public ntfy.sh, or your own ntfy server.",
     intro: "The public ntfy.sh or your own ntfy server. Test sends one message to the topic, titled “Kometa Studio test notification”.",
     keys: {
       url: { placeholder: "https://ntfy.sh" },
@@ -43,6 +48,7 @@ const help: Record<NotificationServiceName, { intro: string; keys: Record<string
     },
   },
   apprise: {
+    summary: "Discord, Telegram, Pushover, email and many more, through Apprise.",
     intro:
       "Apprise sends to Discord, Telegram, Pushover, email and many more, as listed in its own configuration. Test reads that configuration and checks it lists at least one service; Apprise sends the messages, so no test message is sent.",
     keys: { config: { placeholder: "/config/apprise.yml", hint: "A path as Kometa sees it, or a URL. A relative path starts in Kometa's folder." } },
@@ -120,7 +126,17 @@ function emptyValues(service: NotificationService): Record<string, string> {
   return Object.fromEntries(service.keys.map((key) => [key.name, key.secret ? "" : (key.value ?? "")]));
 }
 
-function ServiceForm({ service, hash }: { service: NotificationService; hash: string | null }) {
+function ServiceForm({
+  service,
+  hash,
+  onSaved: onSavedOutside,
+  onRemoved,
+}: {
+  service: NotificationService;
+  hash: string | null;
+  onSaved?: () => void; // the Add card: the service now has a card of its own
+  onRemoved?: () => void; // its card goes; the service is offered on the Add card again
+}) {
   const queryClient = useQueryClient();
   const [values, setValues] = useState(() => emptyValues(service));
   const [confirming, setConfirming] = useState(false);
@@ -137,7 +153,10 @@ function ServiceForm({ service, hash }: { service: NotificationService; hash: st
     mutationFn: () => api.notifications.save(service.name, body(), hash),
     onMutate: outcome.clear,
     // Secrets go back to empty: the saved one is kept, and shown masked.
-    onSuccess: (data) => onSaved(data, Object.fromEntries(service.keys.map((key) => [key.name, key.secret ? "" : values[key.name]]))),
+    onSuccess: (data) => {
+      onSaved(data, Object.fromEntries(service.keys.map((key) => [key.name, key.secret ? "" : values[key.name]])));
+      onSavedOutside?.();
+    },
     onError: outcome.refused,
   });
   const remove = useMutation({
@@ -146,6 +165,7 @@ function ServiceForm({ service, hash }: { service: NotificationService; hash: st
     onSuccess: (data) => {
       setConfirming(false);
       onSaved(data, Object.fromEntries(service.keys.map((key) => [key.name, ""])));
+      onRemoved?.();
     },
     onError: outcome.refused,
   });
@@ -392,10 +412,57 @@ function WebhookEvents({ state }: { state: NotificationsState }) {
   );
 }
 
+// --- Adding a service -------------------------------------------------------------
+
+function AddProvider({ services, hash, notice, onAdded }: { services: NotificationService[]; hash: string | null; notice: string | null; onAdded: (service: NotificationService) => void }) {
+  const [picked, setPicked] = useState<NotificationServiceName | null>(null);
+  const choice = services.find((service) => service.name === picked) ?? null;
+  return (
+    <Card title="Add notification provider">
+      {notice && (
+        <p role="status" className="mb-3 text-sm text-muted">
+          {notice}
+        </p>
+      )}
+      {choice ? (
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-semibold">{choice.label}</h3>
+            <button type="button" className="min-h-11 text-sm text-muted underline hover:text-text" onClick={() => setPicked(null)}>
+              Choose another
+            </button>
+          </div>
+          <ServiceForm key={choice.name} service={choice} hash={hash} onSaved={() => onAdded(choice)} />
+        </div>
+      ) : (
+        <fieldset>
+          <legend className="mb-2 text-sm text-muted">Pick one to set up. It's saved once its test passes.</legend>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {services.map((service) => (
+              <button
+                key={service.name}
+                type="button"
+                className="flex min-h-11 flex-col items-start gap-0.5 rounded-control border border-border-strong p-3 text-left hover:border-accent"
+                onClick={() => setPicked(service.name)}
+              >
+                <span className="font-semibold">{service.label}</span>
+                <span className="text-xs text-muted">{help[service.name].summary}</span>
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
+    </Card>
+  );
+}
+
 // --- Page ---------------------------------------------------------------------------
 
 export function SettingsNotifications() {
   const state = useQuery({ queryKey: ["notifications"], queryFn: api.notifications.get });
+  // What just happened, said where it shows: on the new service's card, or on the Add card after a removal.
+  const [added, setAdded] = useState<NotificationServiceName | null>(null);
+  const [removed, setRemoved] = useState<string | null>(null);
 
   if (state.isPending) return <p className="text-muted">Loading…</p>;
   if (state.isError)
@@ -405,6 +472,8 @@ export function SettingsNotifications() {
       </p>
     );
   const data = state.data;
+  const configured = data.services.filter((service) => service.configured);
+  const remaining = data.services.filter((service) => !service.configured);
 
   return (
     <div className="flex max-w-3xl flex-col gap-4">
@@ -413,11 +482,35 @@ export function SettingsNotifications() {
           {data.error}
         </p>
       )}
-      {data.services.map((service) => (
-        <Card key={service.name} title={service.label} actions={service.configured ? <Tag tone="ok">Set up in config.yml</Tag> : <Tag>Not set up</Tag>}>
-          <ServiceForm service={service} hash={data.hash} />
+      {configured.map((service) => (
+        <Card key={service.name} title={service.label} actions={<Tag tone="ok">Set up in config.yml</Tag>}>
+          {added === service.name && (
+            <p role="status" className="mb-3 text-sm text-ok">
+              {service.label} is set up. Kometa uses it from its next run; pick the events it gets under Webhook events.
+            </p>
+          )}
+          <ServiceForm
+            service={service}
+            hash={data.hash}
+            onRemoved={() => {
+              setAdded(null);
+              setRemoved(`${service.label} was taken out of config.yml. The old file is in System → Backup.`);
+            }}
+          />
         </Card>
       ))}
+      {remaining.length > 0 && (
+        <AddProvider
+          key={remaining.map((service) => service.name).join()}
+          services={remaining}
+          hash={data.hash}
+          notice={removed}
+          onAdded={(service) => {
+            setRemoved(null);
+            setAdded(service.name);
+          }}
+        />
+      )}
       <Card title="Webhook events">
         <WebhookEvents state={data} />
       </Card>
