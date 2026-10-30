@@ -5,11 +5,13 @@ Migrations are numbered SQL files in ``kometa_studio/migrations/``
 own ``PRAGMA user_version``, so there is no bookkeeping table to get out of step.
 """
 
+import json
 import re
 import sqlite3
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
 MIGRATION_NAME = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
 
@@ -75,6 +77,26 @@ def apply_migrations(conn: sqlite3.Connection, migrations: list[Migration]) -> i
             raise
         current = migration.version
     return current
+
+
+def get_setting(conn: sqlite3.Connection, key: str, default: Any = None) -> Any:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+    return json.loads(row[0]) if row else default
+
+
+def set_setting(conn: sqlite3.Connection, key: str, value: Any) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?) "
+            "ON CONFLICT (key) DO UPDATE SET value = excluded.value, "
+            "updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')",
+            (key, json.dumps(value)),
+        )
+
+
+def delete_setting(conn: sqlite3.Connection, key: str) -> None:
+    with conn:
+        conn.execute("DELETE FROM settings WHERE key = ?", (key,))
 
 
 def connect(db_path: Path) -> sqlite3.Connection:

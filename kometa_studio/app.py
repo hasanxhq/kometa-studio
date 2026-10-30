@@ -4,12 +4,15 @@ from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .crypto import SecretBox
 from .db import open_database, schema_version
+from .plex_routes import router as plex_router
 from .settings import Settings
 
 STATIC_DIR = Path(str(files("kometa_studio") / "static"))
@@ -61,19 +64,27 @@ def mount_frontend(app: FastAPI, static_dir: Path) -> None:
         return FileResponse(index)
 
 
-def create_app(settings: Settings | None = None, static_dir: Path = STATIC_DIR) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    static_dir: Path = STATIC_DIR,
+    http_transport: httpx.AsyncBaseTransport | None = None,  # tests pass a mock
+) -> FastAPI:
     settings = settings or Settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.db = open_database(settings.db_path)
+        app.state.secrets = SecretBox.load_or_create(settings.data_dir)
+        app.state.http = httpx.AsyncClient(transport=http_transport)
         try:
             yield
         finally:
+            await app.state.http.aclose()
             app.state.db.close()
 
     app = FastAPI(title="Kometa Studio", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.include_router(api)
+    app.include_router(plex_router)
     mount_frontend(app, static_dir)
     return app

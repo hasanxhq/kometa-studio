@@ -14,12 +14,14 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic-settings>=2.6",
+    "httpx>=0.28",
+    "ruamel.yaml>=0.18",
+    "cryptography>=43",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
-    "httpx>=0.28",
 ]
 
 [project.scripts]
