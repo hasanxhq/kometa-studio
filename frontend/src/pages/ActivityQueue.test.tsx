@@ -24,6 +24,7 @@ function run(overrides: Partial<Run>): Run {
     id: 1,
     status: "succeeded",
     trigger: "manual",
+    schedule_id: null,
     request,
     command: "/.venv/bin/python3 /kometa.py --config /config/config.yml --run --collections-only",
     queued_at: "2026-10-30T03:00:00Z",

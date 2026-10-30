@@ -10,11 +10,13 @@ import { Placeholder } from "./pages/Placeholder";
 import { RunDetail } from "./pages/RunDetail";
 import { SettingsPlex } from "./pages/SettingsPlex";
 import { SystemStatus } from "./pages/SystemStatus";
+import { SystemTasks } from "./pages/SystemTasks";
 
 // Pages that exist so far; every other nav entry shows a placeholder.
 const built: Record<string, ComponentType> = {
   "/activity/queue": ActivityQueue,
   "/system/status": SystemStatus,
+  "/system/tasks": SystemTasks,
   "/settings/plex": SettingsPlex,
 };
 
