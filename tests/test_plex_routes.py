@@ -25,7 +25,7 @@ def config(tmp_path):
 def make_client(tmp_path, fake, **settings):
     settings.setdefault("kometa_config", tmp_path / "config" / "config.yml")
     app = create_app(Settings(data_dir=tmp_path / "data", **settings), static_dir=tmp_path / "no-static", http_transport=fake.transport())
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 def sign_in(client, fake):

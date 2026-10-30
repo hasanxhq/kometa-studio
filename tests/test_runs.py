@@ -37,7 +37,7 @@ def make_client(tmp_path, **settings):
         "kill_after": 0.5,
     }
     app = create_app(Settings(**(defaults | settings)), static_dir=tmp_path / "no-static")
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 def wait_for(client, run_id, statuses=FINISHED, timeout=15):
@@ -88,6 +88,8 @@ def test_kometa_flags_come_from_its_help(tmp_path, config):
         info = client.get("/api/v1/kometa").json()
     assert "--overlays-only" in info["flags"]
     assert info["problem"] is None
+    assert info["paths"]["entry"] == str(FAKE_KOMETA)
+    assert info["run_timeout"] == 3 * 60 * 60
 
 
 def test_a_failing_run(tmp_path, config):

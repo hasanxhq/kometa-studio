@@ -2,11 +2,43 @@
 
 import type { SchemaKind } from "./yaml/schema";
 
+export type HealthCheck = { source: string; level: "error" | "warning" | "info"; message: string; link: string | null };
+
+// What the newest Kometa run learned: Kometa checks for a new version as each run starts.
+export type KometaUpdates = { installed: string | null; checked_at: string | null; latest: string | null; notes: string | null; available: boolean };
+
 export type Status = {
   version: string;
-  kometa: { version: string | null; config: string | null };
+  kometa: { version: string | null; config: string | null; updates: KometaUpdates };
   database: { schema_version: number };
+  health: HealthCheck[];
 };
+
+// --- Sign-in and Settings → General ---
+
+export type AuthStatus = {
+  allowed: boolean;
+  reason: "login" | "setup" | "cross_site" | null; // why not, when not allowed
+  message: string | null;
+  configured: boolean; // a username and password are set
+  signed_in: boolean; // through a session cookie (so Sign out means something)
+  local: boolean;
+};
+
+export type AuthRequired = "enabled" | "disabled_for_local";
+
+export type GeneralSettings = {
+  auth: { configured: boolean; username: string | null; required: AuthRequired };
+  api_key: string;
+  timezone: string;
+  host: string;
+  port: number;
+};
+
+export type AuthInput = { username: string; password: string | null; required: AuthRequired; current_password: string | null };
+
+// Any 401 means the session ended (or sign-in was switched on): the app shows the login page.
+export const SIGNED_OUT_EVENT = "studio:signed-out";
 
 export class ApiError extends Error {
   constructor(
@@ -127,6 +159,43 @@ export type Schedules = {
   timezone: string; // what new schedules use
   catch_ups: { id: number; status: RunStatus; queued_at: string; name: string }[];
 };
+
+// Radarr and Sonarr's webhook (Settings → Connect).
+export type ArrKind = "radarr" | "sonarr";
+
+export type ArrSettings = { enabled: boolean; mode: RunMode; wait_minutes: number; libraries: Record<ArrKind, string[]> };
+
+export type ArrState = {
+  settings: ArrSettings;
+  path: string; // the webhook's path, with its token; the page adds its own address
+  last_event: { at: string; kind: ArrKind | null; event: string; title: string | null } | null;
+  pending: { first_at: string; last_at: string; due_at: string; imports: number; titles: string[]; kinds: ArrKind[] } | null;
+};
+
+// Kometa's own log files (System → Logs).
+export type LogLevel = "TRACE" | "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+export type LogFile = { path: string; size: number; modified: number };
+export type LogView = { path: string; lines: { level: LogLevel; text: string }[]; truncated: boolean; size: number };
+
+// Studio's own tasks on System → Tasks.
+export type TaskName = "full_backup" | "full_check";
+
+export type BuiltinTask = {
+  name: TaskName;
+  label: string;
+  enabled: boolean;
+  days: number[]; // 0 = Monday ... 6 = Sunday
+  time: string;
+  timezone: string;
+  options: { keep?: number };
+  next_run: string | null;
+  running: boolean;
+  last: { started_at: string; finished_at: string | null; status: "running" | "succeeded" | "failed" | "interrupted"; message: string | null } | null;
+};
+
+export type BuiltinTaskInput = Pick<BuiltinTask, "enabled" | "days" | "time" | "timezone" | "options">;
+
+export type FullBackup = { name: string; size: number; created: string };
 
 // --- Kometa's config (read-only) ---
 
@@ -270,7 +339,14 @@ export type ItemSave = {
   rename?: string | null;
 };
 
-export type KometaInfo = { flags: string[] | null; flags_error: string | null; problem: string | null };
+export type KometaInfo = {
+  flags: string[] | null;
+  flags_error: string | null;
+  problem: string | null;
+  paths?: { python: string | null; entry: string | null; config: string | null; schemas: string | null };
+  run_timeout?: number; // seconds
+  kill_after?: number;
+};
 
 // FastAPI puts the reason in `detail`: a string from most errors, a list from request validation,
 // and {message, path, validation} from a refused save.
@@ -295,6 +371,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith("/auth")) window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
     throw await errorFrom(response);
   }
   return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
@@ -302,6 +379,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   status: () => request<Status>("GET", "/status"),
+  auth: {
+    status: () => request<AuthStatus>("GET", "/auth"),
+    login: (username: string, password: string) => request<{ ok: true }>("POST", "/auth/login", { username, password }),
+    logout: () => request<{ ok: true }>("POST", "/auth/logout"),
+  },
+  general: {
+    get: () => request<GeneralSettings>("GET", "/settings/general"),
+    setAuth: (body: AuthInput) => request<GeneralSettings>("PUT", "/settings/auth", body),
+    newApiKey: () => request<GeneralSettings>("POST", "/settings/api-key"),
+    setTimezone: (timezone: string) => request<GeneralSettings>("PUT", "/settings/timezone", { timezone }),
+  },
   plex: {
     state: () => request<PlexState>("GET", "/plex"),
     startSignIn: () => request<PlexPin>("POST", "/plex/pin"),
@@ -343,6 +431,27 @@ export const api = {
       request<{ path: string; backup: string; current: string | null }>("GET", `/backups/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`),
     restore: (id: string) =>
       request<{ backup: string; restored: string[]; removed: string[]; validation: Validation }>("POST", `/backups/${encodeURIComponent(id)}/restore`),
+  },
+  arr: {
+    get: () => request<ArrState>("GET", "/settings/arr"),
+    save: (settings: ArrSettings) => request<ArrState>("PUT", "/settings/arr", settings),
+    newToken: () => request<ArrState>("POST", "/settings/arr/token"),
+  },
+  logs: {
+    list: () => request<{ files: LogFile[] }>("GET", "/logs"),
+    read: (path: string, level: LogLevel, q: string) =>
+      request<LogView>("GET", `/logs/file?${new URLSearchParams({ path, level, q }).toString()}`),
+    downloadUrl: (path: string) => `/api/v1/logs/download?path=${encodeURIComponent(path)}`,
+  },
+  tasks: {
+    list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),
+    update: (name: TaskName, body: BuiltinTaskInput) => request<BuiltinTask>("PUT", `/tasks/${name}`, body),
+    run: (name: TaskName) => request<BuiltinTask>("POST", `/tasks/${name}/run`),
+  },
+  fullBackups: {
+    list: () => request<{ backups: FullBackup[] }>("GET", "/backups/full"),
+    remove: (name: string) => request<void>("DELETE", `/backups/full/${encodeURIComponent(name)}`),
+    url: (name: string) => `/api/v1/backups/full/${encodeURIComponent(name)}`,
   },
   fullCheck: {
     last: () => request<{ last: FullCheck | null }>("GET", "/kometa/full-check"),

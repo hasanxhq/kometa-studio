@@ -47,7 +47,7 @@ def make_client(tmp_path, kometa, **settings):
         "kometa_entry": FAKE_KOMETA,
         "kometa_python": Path(sys.executable),
     }
-    return TestClient(create_app(Settings(**(defaults | settings)), static_dir=tmp_path / "no-static"))
+    return TestClient(create_app(Settings(**(defaults | settings)), static_dir=tmp_path / "no-static"), client=("127.0.0.1", 50000))
 
 
 def opened(client, path):

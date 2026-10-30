@@ -33,7 +33,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The YAML editor checks Kometa's schema as you type (the schema of the Kometa version installed), marking each problem where it is, and completes keys with their descriptions.
 - Forms for collections and overlays: sources, common settings (summary, sort title, sync mode, order, visibility, schedule) and, for overlays, position and colours with a poster preview. Show Advanced has every other setting Kometa knows, and settings it doesn't know (usually template variables) are kept as written. Saving a form changes only that collection or overlay, and Kometa checks it like any save.
 - Run just one collection from its form, in its library, without changing any files.
+- Sign-in, arr-style (Settings → General): a username and password, required for everyone or "disabled for local addresses". Until it's set up, Studio only answers this computer and your local network, and says so on every page. Requests through a reverse proxy never count as local. Repeated wrong passwords have to wait.
+- `/api/v1/ping`, open without sign-in, for Docker's health check (which used `/status`, and would have failed once sign-in was required).
+- An API key for dashboards and scripts (`X-Api-Key` header or `apikey` parameter), shown in Settings → General with Copy and New key.
+- Settings → General sets the timezone new schedules use.
+- Studio refuses changes sent by other websites (cross-site requests), whatever the sign-in setting.
+- System → Status has health checks: Kometa's install, config.yml, Plex answering with its token, the last run, the last full check, free disk space, sign-in and Kometa updates, each with a link to where it's fixed. A dot on Status in the sidebar shows while something is wrong. `/api/v1/status` includes them for dashboards.
+- Full backups (System → Backup): a zip of Kometa's config folder, including the Original Posters Kometa needs to remove its overlays, plus Studio's database and key. Kometa's logs and cache are left out. Weekly on Sundays at 04:30 by default, keeping 4; Back up now, Download and Delete. A backup waits while Kometa runs, checks there's room first, and never leaves a half-written zip. Health warns when the Original Posters aren't in a backup from the last 14 days, or the last backup failed.
+- System → Tasks lists Studio's own tasks (full backup, full check), each with its own schedule, last outcome and Run now. A time missed while Studio was off runs once on start, as schedules do.
+- Settings → Connect: Radarr and Sonarr's webhook. Paste Studio's URL into their Connect → Webhook (On Import, On Upgrade), and Kometa runs after imports, for the libraries you choose per app. A burst of imports (a season pack) becomes one run, once they stop for 10 minutes (adjustable) or an hour after the first. The waiting run survives a restart, and isn't added if an equal one is already queued. The page shows the last event received and any imports waiting.
+- System → Logs: Kometa's meta.log and its library and collection logs, filtered by level (lines that continue an entry keep its level) and searchable, with Download. Big logs show their end.
+- Settings → Kometa shows where Kometa is, the run time limits and the flags the installed Kometa has (all set by the environment). Settings → UI has the Show Advanced switch. Every page in the menu is now built.
+- Phone-width pass: every page checked at 375 px with no sideways scrolling. Logs show the time and message, without Kometa's fixed-width columns, and wrap. Sign out sits in the menu on phones.
+- System → Updates: the installed Kometa and whether a newer one is out, with its release notes, from the check Kometa makes at the start of each run.
 
 ### Changed
+
+- A library's Collections tab says when Plex can't be reached, instead of saying Plex has no library by that name.
 
 - When Studio edits config.yml itself (Plex connection, webhook entries), it keeps the file's own formatting instead of restyling it.

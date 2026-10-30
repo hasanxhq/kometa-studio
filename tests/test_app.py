@@ -8,7 +8,7 @@ from kometa_studio.settings import Settings
 
 def make_client(tmp_path, static_dir=None, **settings):
     app = create_app(Settings(data_dir=tmp_path / "data", **settings), static_dir=static_dir or tmp_path / "no-static")
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))  # a local address, so no sign-in is needed
 
 
 def test_status_reports_versions(tmp_path):
@@ -26,7 +26,8 @@ def test_status_reports_versions(tmp_path):
 
 def test_status_without_kometa_configured(tmp_path):
     with make_client(tmp_path) as client:
-        assert client.get("/api/v1/status").json()["kometa"] == {"version": None, "config": None}
+        kometa = client.get("/api/v1/status").json()["kometa"]
+    assert (kometa["version"], kometa["config"], kometa["updates"]["available"]) == (None, None, False)
 
 
 def test_spa_routes_fall_back_to_index(tmp_path):

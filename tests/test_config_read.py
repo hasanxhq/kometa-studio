@@ -212,7 +212,7 @@ def test_damaged_placeholders_are_refused(bad):
 
 def make_client(tmp_path, kometa):
     settings = Settings(data_dir=kometa / "config" / ".studio", kometa_config=kometa / "config" / "config.yml", kometa_entry=kometa / "kometa.py")
-    return TestClient(create_app(settings, static_dir=tmp_path / "no-static"))
+    return TestClient(create_app(settings, static_dir=tmp_path / "no-static"), client=("127.0.0.1", 50000))
 
 
 def test_library_cards(tmp_path, kometa):

@@ -182,7 +182,7 @@ def test_a_request_already_waiting_is_not_queued_again(world):
 
 def make_client(tmp_path, **settings):
     app = create_app(Settings(data_dir=tmp_path / "data", timezone=KOLKATA, **settings), static_dir=tmp_path / "no-static")
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 def test_creating_and_editing_schedules(tmp_path):

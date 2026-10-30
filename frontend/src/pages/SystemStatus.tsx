@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "react-router";
 
-import { api } from "../api";
+import { api, type HealthCheck } from "../api";
 import { Button, Card } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
 import { formatTime } from "../runs";
@@ -11,6 +12,41 @@ function Row({ label, value }: { label: string; value: string }) {
       <dt className="w-40 shrink-0 text-muted">{label}</dt>
       <dd className="min-w-0 break-words font-mono text-sm">{value}</dd>
     </div>
+  );
+}
+
+const levelStyles: Record<HealthCheck["level"], { label: string; className: string }> = {
+  error: { label: "Error", className: "text-err" },
+  warning: { label: "Warning", className: "text-warn" },
+  info: { label: "Info", className: "text-info" },
+};
+
+function Health({ checks }: { checks: HealthCheck[] }) {
+  return (
+    <Card title="Health">
+      {checks.length === 0 ? (
+        <p className="text-sm text-ok">No problems found.</p>
+      ) : (
+        <ul className="flex flex-col">
+          {checks.map((check) => (
+            <li key={check.source} className="flex flex-col gap-1 border-b border-border py-3 last:border-0 sm:flex-row sm:gap-4">
+              <span className={`w-20 shrink-0 text-sm font-semibold ${levelStyles[check.level].className}`}>{levelStyles[check.level].label}</span>
+              <span className="min-w-0 flex-1 text-sm">
+                {check.message}
+                {check.link && check.link !== "/system/status" && (
+                  <>
+                    {" "}
+                    <Link to={check.link} className="whitespace-nowrap text-muted underline hover:text-text">
+                      Open
+                    </Link>
+                  </>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 
@@ -28,9 +64,10 @@ export function SystemStatus() {
     );
   }
 
-  const { version, kometa, database } = status.data;
+  const { version, kometa, database, health } = status.data;
   return (
     <div className="flex max-w-3xl flex-col gap-4">
+      <Health checks={health} />
       <section className="rounded-card border border-border bg-surface px-6 py-3">
         <h2 className="py-2 text-base font-semibold">About</h2>
         <dl>
