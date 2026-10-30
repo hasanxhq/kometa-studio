@@ -49,6 +49,7 @@ export const sections: Section[] = [
       { label: "General", path: "/settings/general", summary: "Port, sign-in, API key and timezone." },
       { label: "Plex", path: "/settings/plex", summary: "Sign in with Plex and pick your server." },
       { label: "Connect", path: "/settings/connect", summary: "TMDb, Trakt, Radarr, Sonarr and other services, each with a Test button." },
+      { label: "Notifications", path: "/settings/notifications", summary: "Notifiarr, Gotify, ntfy and Apprise, and which Kometa events go where." },
       { label: "Kometa", path: "/settings/kometa", summary: "Kometa's paths and the flags every run uses." },
       { label: "UI", path: "/settings/ui", summary: "Show Advanced by default, and other display options." },
     ],
