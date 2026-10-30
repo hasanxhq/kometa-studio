@@ -56,6 +56,9 @@ PENDING_PROCESS = "maintainerr.pending_process"  # an after step that didn't rea
 REFRESH = 300.0
 TIMEOUT = 15.0
 BUSY_WAIT = 600.0  # how long to wait for Maintainerr's own overlay run to finish
+REVERT_WAIT = 3600.0  # how long a revert may take: it walks every show, season and episode (~1 s each)
+RETRY = 60.0  # how soon the loop tries again while a switch-back or redraw is pending
+POLL = 5.0
 POSTER_MODES = frozenset({"all", "overlays", "operations", "metadata"})  # runs that can change posters
 
 
@@ -68,6 +71,15 @@ class MaintainerrSettings(BaseModel):
 
 class MaintainerrProblem(Exception):
     pass
+
+
+class Busy(MaintainerrProblem):
+    """409: an overlay run (or a revert) is already going."""
+
+
+class StillGoing(MaintainerrProblem):
+    """No answer in time, but the request may well be running: Maintainerr answers a revert only when it's done,
+    and a proxy in front of it may give up first (502/504)."""
 
 
 @dataclass
@@ -154,7 +166,7 @@ class Maintainerr:
                 method, base + path, headers={"Accept": "application/json"}, json=json, timeout=TIMEOUT, auth=login or httpx.USE_CLIENT_DEFAULT
             )
         except httpx.TimeoutException:
-            raise MaintainerrProblem(f"Maintainerr didn't answer within {TIMEOUT:g} s") from None
+            raise StillGoing(f"Maintainerr didn't answer within {TIMEOUT:g} s") from None
         except httpx.HTTPError as error:
             raise MaintainerrProblem(f"Can't reach Maintainerr: {error}") from None
         if response.status_code == 403 and path.startswith("/api/overlays"):
@@ -166,6 +178,10 @@ class Maintainerr:
             raise MaintainerrProblem("Maintainerr refused the request (HTTP 401)")
         if response.status_code == 403:
             raise MaintainerrProblem("Maintainerr refused the request (HTTP 403)")
+        if response.status_code in (502, 504):
+            raise StillGoing(f"The proxy in front of Maintainerr gave up waiting (HTTP {response.status_code})")
+        if response.status_code == 409:
+            raise Busy("Maintainerr is in the middle of an overlay run")
         if response.status_code >= 400:
             raise MaintainerrProblem(f"Maintainerr answered HTTP {response.status_code} for {path}")
         if not response.content:
@@ -238,7 +254,8 @@ class Maintainerr:
                 pass  # kept on the snapshot / retried next time
             except Exception:
                 log.exception("Maintainerr refresh failed")
-            await asyncio.sleep(REFRESH)
+            pending = get_setting(self.db, PAUSED) or get_setting(self.db, PENDING_PROCESS)
+            await asyncio.sleep(RETRY if pending else REFRESH)
 
     # --- Kometa's config ------------------------------------------------------------
 
@@ -277,12 +294,16 @@ class Maintainerr:
             say("Maintainerr's overlays are paused while Kometa runs, so its own schedule can't draw a countdown meanwhile.")
             say(f"Maintainerr puts back the posters under its overlays ({len(overlaid)} collection(s)), so its countdowns stay out of Kometa's originals.")
             for collection in overlaid:
-                await self._call("POST", f"/api/overlays/revert/{collection.id}")
-        except MaintainerrProblem as problem:
+                try:
+                    await self._call("POST", f"/api/overlays/revert/{collection.id}")
+                except StillGoing:
+                    say("Maintainerr is still putting posters back (it goes through every show, season and episode); waiting for it…")
+                await self._wait_until_idle(say, REVERT_WAIT, quiet=True)
+        except (MaintainerrProblem, RunHeld) as problem:
             set_setting(self.db, PENDING_PROCESS, True)
             await self._resume(say)
             self._wrapping = False
-            raise RunHeld(f"Held: {problem}") from None
+            raise RunHeld(str(problem) if isinstance(problem, RunHeld) else f"Held: {problem}") from None
 
         async def after() -> None:
             try:
@@ -312,9 +333,11 @@ class Maintainerr:
         except Exception:
             return kometa_name
 
-    async def _wait_until_idle(self, say: Say) -> None:
-        deadline = time.monotonic() + BUSY_WAIT
-        said = False
+    async def _wait_until_idle(self, say: Say, limit: float | None = None, quiet: bool = False) -> None:
+        """Until Maintainerr's overlay processor is idle: its status says "running" during runs and reverts."""
+        limit = BUSY_WAIT if limit is None else limit
+        deadline = time.monotonic() + limit
+        said = quiet
         while time.monotonic() < deadline:
             status = await self._call("GET", "/api/overlays/status")
             if not (isinstance(status, dict) and status.get("status") == "running"):
@@ -322,8 +345,8 @@ class Maintainerr:
             if not said:
                 say("Waiting for Maintainerr's own overlay run to finish…")
                 said = True
-            await asyncio.sleep(5)
-        raise RunHeld("Held: Maintainerr's overlay run is still going after 10 minutes")
+            await asyncio.sleep(POLL)
+        raise RunHeld(f"Held: Maintainerr's overlay processor is still busy after {limit / 60:.0f} minutes")
 
     async def _resume(self, say: Say) -> None:
         """Switch Maintainerr's overlays back on and have it draw them, if a run left either undone.
@@ -335,7 +358,15 @@ class Maintainerr:
                 await self._call("PUT", "/api/overlays/settings", json={"enabled": True})
                 set_setting(self.db, PAUSED, False)
             if get_setting(self.db, PENDING_PROCESS):
-                await self._call("POST", "/api/overlays/process", json={})
+                try:
+                    await self._call("POST", "/api/overlays/process", json={})
+                except Busy:
+                    say("Maintainerr is busy; asking again once it's done…")
+                    try:
+                        await self._wait_until_idle(say, quiet=True)
+                    except RunHeld:
+                        raise Busy("Maintainerr stayed busy") from None
+                    await self._call("POST", "/api/overlays/process", json={})
                 set_setting(self.db, PENDING_PROCESS, False)
                 say("Maintainerr's overlays are back on, and it's drawing them again, on top of Kometa's.")
         except MaintainerrProblem as problem:

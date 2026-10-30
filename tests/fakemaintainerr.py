@@ -24,6 +24,9 @@ class FakeMaintainerr:
         self.down = False
         self.media_server = True  # Maintainerr 403s its overlay endpoints without a working media server
         self.proxy_login: tuple[str, str] | None = None  # nginx Basic auth in front, as on a seedbox
+        self.slow_revert_polls = 0  # a revert that outlasts the request: status stays "running" for this many polls
+        self.busy_process_polls = 0  # process answers 409 while status is "running" for this many polls
+        self._running_polls = 0
         self.calls: list[str] = []  # "METHOD /path", in order
 
     def handle(self, request: httpx.Request) -> httpx.Response:
@@ -46,9 +49,19 @@ class FakeMaintainerr:
             self.overlays_enabled = json.loads(request.content).get("enabled", self.overlays_enabled)
             return httpx.Response(200, json={"enabled": self.overlays_enabled, "cronSchedule": "0 * * * *"})
         if request.method == "GET" and path == "/api/overlays/status":
-            return httpx.Response(200, json={"status": self.status, "lastRun": None, "lastResult": None})
+            status = self.status
+            if self._running_polls > 0:
+                self._running_polls -= 1
+                status = "running"
+            return httpx.Response(200, json={"status": status, "lastRun": None, "lastResult": None})
         if request.method == "POST" and path.startswith("/api/overlays/revert/"):
+            if self.slow_revert_polls:
+                self._running_polls, self.slow_revert_polls = self.slow_revert_polls, 0
+                raise httpx.ReadTimeout("timed out", request=request)
             return httpx.Response(201, json={"success": True})
         if request.method == "POST" and path == "/api/overlays/process":
+            if self.busy_process_polls:
+                self._running_polls, self.busy_process_polls = self.busy_process_polls, 0
+                return httpx.Response(409, json={"message": "An overlay run is already in progress", "statusCode": 409})
             return httpx.Response(202)
         return httpx.Response(404)
