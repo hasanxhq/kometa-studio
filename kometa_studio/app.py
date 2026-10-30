@@ -24,6 +24,7 @@ from .config_write import ConfigWriter
 from .crypto import SecretBox
 from .db import get_setting, open_database, schema_version
 from .health import PlexCheck, health, kometa_updates, kometa_version
+from .jobs import router as jobs_router
 from .logs_routes import router as logs_router
 from .maintainerr_routes import router as maintainerr_router
 from .plex_routes import router as plex_router
@@ -156,6 +157,7 @@ def create_app(
     app.include_router(tasks_router)
     app.include_router(arr_router)
     app.include_router(logs_router)
+    app.include_router(jobs_router)
     app.include_router(maintainerr_router)
     mount_frontend(app, static_dir)
     return app
