@@ -4,6 +4,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "react-router";
 
 import {
   api,
@@ -656,14 +657,18 @@ function ServiceForm({
                 reset();
               }}
             />
-            DNS bypass
+            DNS bypass <span className="text-xs text-muted">(quick fix)</span>
           </label>
         </div>
       )}
       {bypass && (
         <p className="text-xs text-muted">
           TMDb is looked up through Cloudflare's DNS over HTTPS (1.1.1.1) instead of this network's DNS, for Studio's and Kometa's calls with this key. It helps
-          when the network's DNS blocks TMDb, not when TMDb's addresses are blocked.
+          when the network's DNS blocks TMDb, not when TMDb's addresses are blocked. A quick fix: it goes once a proxy on{" "}
+          <Link className="underline" to="/settings/network">
+            Settings → Network
+          </Link>{" "}
+          is proven to work.
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">

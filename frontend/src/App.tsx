@@ -20,6 +20,7 @@ import { RunDetail } from "./pages/RunDetail";
 import { SettingsConnect } from "./pages/SettingsConnect";
 import { SettingsGeneral } from "./pages/SettingsGeneral";
 import { SettingsKometa } from "./pages/SettingsKometa";
+import { SettingsNetwork } from "./pages/SettingsNetwork";
 import { SettingsNotifications } from "./pages/SettingsNotifications";
 import { SettingsPlex } from "./pages/SettingsPlex";
 import { SettingsUI } from "./pages/SettingsUI";
@@ -44,6 +45,7 @@ const built: Record<string, ComponentType> = {
   "/settings/plex": SettingsPlex,
   "/settings/connect": SettingsConnect,
   "/settings/notifications": SettingsNotifications,
+  "/settings/network": SettingsNetwork,
   "/settings/kometa": SettingsKometa,
   "/settings/ui": SettingsUI,
 };

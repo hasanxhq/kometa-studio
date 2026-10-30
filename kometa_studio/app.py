@@ -15,8 +15,10 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .arr import Arr
 from .maintainerr import Maintainerr
-from . import doh
+from . import network
 from .arr_routes import router as arr_router
+from .network import NetworkTransport
+from .network_routes import router as network_router
 from .overlays_routes import router as overlays_router
 from .usage import ApiCalls
 from .usage import router as usage_router
@@ -112,7 +114,7 @@ def create_app(
         app.state.db = open_database(settings.db_path)
         app.state.timezone = get_setting(app.state.db, TIMEZONE) or app.state.timezone
         app.state.secrets = SecretBox.load_or_create(settings.data_dir)
-        app.state.http = httpx.AsyncClient(transport=http_transport)
+        app.state.http = httpx.AsyncClient(transport=NetworkTransport(app.state.db, app.state.secrets, settings.kometa_config, http_transport))
         runner = Runner(app.state.db, settings, webhook_url(settings, webhook_token(app.state.db)))
         app.state.runner = runner
         runner.start()
@@ -126,7 +128,7 @@ def create_app(
         maintainerr = Maintainerr(app.state.db, app.state.http, app.state.secrets, settings.kometa_config, settings.kometa_entry.parent if settings.kometa_entry else None)
         app.state.maintainerr = maintainerr
         maintainerr.runner = runner
-        runner.extra_env = lambda: doh.kometa_env(app.state.db, settings.kometa_config)
+        runner.extra_env = lambda: network.kometa_env(app.state.db, app.state.secrets, settings.kometa_config, settings.data_dir)
         if app.state.writer is not None:
             app.state.writer.extra_env = runner.extra_env
         runner.hooks.append(maintainerr)
@@ -173,6 +175,7 @@ def create_app(
     app.include_router(services_router)
     app.include_router(usage_router)
     app.include_router(overlays_router)
+    app.include_router(network_router)
     app.include_router(logs_router)
     app.include_router(jobs_router)
     app.include_router(maintainerr_router)

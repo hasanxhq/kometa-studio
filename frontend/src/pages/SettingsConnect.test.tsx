@@ -264,7 +264,7 @@ describe("TMDb's DNS bypass", () => {
     renderAt("/settings/connect");
 
     const tmdb = await screen.findByRole("form", { name: "TMDb" });
-    const box = within(tmdb).getByLabelText("DNS bypass");
+    const box = within(tmdb).getByLabelText(/DNS bypass/);
     expect(box).not.toBeChecked();
     fireEvent.click(within(tmdb).getByRole("button", { name: "Test" }));
     expect(await within(tmdb).findByText(/Name or service not known/)).toBeInTheDocument();
@@ -277,6 +277,6 @@ describe("TMDb's DNS bypass", () => {
     fireEvent.click(within(tmdb).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/services/tmdb")?.body).toEqual({ apikey: null, bypass_dns: true }));
-    await waitFor(() => expect(screen.getByLabelText("DNS bypass")).toBeChecked());
+    await waitFor(() => expect(screen.getByLabelText(/DNS bypass/)).toBeChecked());
   });
 });

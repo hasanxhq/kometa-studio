@@ -241,6 +241,39 @@ export type Usage = {
   held: string | null;
 };
 
+// Settings → Network: a proxy, DNS over HTTPS for chosen services, IPv4 first, and a connection check.
+export type NetworkState = {
+  proxy_url: string | null; // http://host:port, https://host:port or socks5://host:port
+  proxy_username: string | null;
+  has_password: boolean;
+  no_proxy: string[];
+  doh_provider: "cloudflare" | "google";
+  doh_services: string[];
+  prefer_ipv4: boolean;
+  local: string[]; // always reached directly
+  services: { id: string; name: string; domains: string[] }[];
+  providers: { id: "cloudflare" | "google"; name: string }[];
+  tmdb_quick_fix: boolean; // the TMDb key's DNS bypass (Settings → Connect) is on
+};
+
+export type ProxyInput = { url: string | null; username: string | null; password: string | null; no_proxy: string[] };
+
+export type NetworkCheck = {
+  name: string;
+  url: string;
+  host: string;
+  via: "direct" | "proxy";
+  system_dns: string[];
+  system_dns_error?: string;
+  doh_dns: string[] | null;
+  doh_dns_error?: string;
+  ok: boolean;
+  status: number | null;
+  ms: number | null;
+  error: string | null;
+  verdict: string;
+};
+
 // TMDb and MDBList (Settings → Connect): Kometa's keys, in config.yml.
 export type ServiceName = "tmdb" | "mdblist";
 export type ServicesState = Record<ServiceName, { apikey: string | null; bypass_dns?: boolean }>; // apikey masked; bypass_dns: TMDb only
@@ -617,6 +650,16 @@ export const api = {
   },
   jobs: () => request<{ jobs: Job[]; at: string }>("GET", "/jobs"),
   usage: () => request<Usage>("GET", "/usage"),
+  network: {
+    get: () => request<NetworkState>("GET", "/settings/network"),
+    testProxy: (body: ProxyInput) => request<{ ok: true; ip: string } | { ok: false; error: string }>("POST", "/settings/network/proxy/test", body),
+    saveProxy: (body: ProxyInput) => request<NetworkState>("PUT", "/settings/network/proxy", body),
+    testDoh: (provider: string, services: string[]) =>
+      request<{ ok: true; found: Record<string, string> } | { ok: false; error: string }>("POST", "/settings/network/doh/test", { provider, services }),
+    saveDoh: (provider: string, services: string[]) => request<NetworkState>("PUT", "/settings/network/doh", { provider, services }),
+    saveIpv4: (prefer_ipv4: boolean) => request<NetworkState>("PUT", "/settings/network/ipv4", { prefer_ipv4 }),
+    check: () => request<{ results: NetworkCheck[] }>("POST", "/network/check"),
+  },
   overlays: {
     list: () => request<{ libraries: OverlayLibrary[] }>("GET", "/overlays"),
     apply: (library: string) => request<{ run_id: number }>("POST", `/overlays/${encodeURIComponent(library)}/apply`),

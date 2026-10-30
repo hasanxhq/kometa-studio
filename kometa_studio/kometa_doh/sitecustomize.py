@@ -1,8 +1,9 @@
-"""Kometa Studio's DNS bypass, loaded by Python itself when Studio puts this folder on PYTHONPATH (see doh.py).
+"""Kometa Studio's network settings for Kometa's Python (network.py), loaded by Python itself when Studio
+puts this folder on PYTHONPATH.
 
 ``socket.getaddrinfo`` answers the hosts in STUDIO_DOH_HOSTS (and their subdomains) through DNS over HTTPS
-at STUDIO_DOH_URL; every other name resolves as usual. If the DoH lookup fails, the system's resolver is
-tried after all. Standard library only: this runs inside Kometa's own Python.
+at STUDIO_DOH_URL; if that lookup fails, the system's resolver is tried after all. With STUDIO_PREFER_IPV4
+set, IPv4 addresses come first for every name. Standard library only: this runs inside Kometa's own Python.
 """
 
 import json
@@ -43,6 +44,9 @@ def _lookup(host: str) -> list[str]:
     return addresses
 
 
+_IPV4_FIRST = bool(os.environ.get("STUDIO_PREFER_IPV4"))
+
+
 def getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     if isinstance(host, bytes):
         name = host.decode("ascii", "ignore")
@@ -58,8 +62,11 @@ def getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
             for address in addresses:
                 results += _original(address, port, socket.AF_INET, type, proto, flags | socket.AI_NUMERICHOST)
             return results
-    return _original(host, port, family, type, proto, flags)
+    results = _original(host, port, family, type, proto, flags)
+    if _IPV4_FIRST:
+        results = sorted(results, key=lambda info: info[0] != socket.AF_INET)
+    return results
 
 
-if _HOSTS:
+if _HOSTS or _IPV4_FIRST:
     socket.getaddrinfo = getaddrinfo

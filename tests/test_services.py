@@ -93,7 +93,7 @@ def test_mdblist_can_be_removed_but_tmdb_cant(tmp_path):
 
 
 def test_tmdb_behind_a_dns_block_is_reached_over_dns_over_https_and_kept_for_that_key(tmp_path):
-    from kometa_studio import doh
+    from kometa_studio import network
 
     config = tmp_path / "config.yml"
     config.write_text(f"tmdb:\n  apikey: {TMDB_KEY}\n")
@@ -105,13 +105,13 @@ def test_tmdb_behind_a_dns_block_is_reached_over_dns_over_https_and_kept_for_tha
         bypassed = client.post("/api/v1/settings/services/tmdb/test", json={"bypass_dns": True}).json()
         saved = client.put("/api/v1/settings/services/tmdb", json={"bypass_dns": True}).json()
         db = client.app.state.db
-        env = doh.kometa_env(db, config)
+        env = network.kometa_env(db, None, config, tmp_path / "data")
         assert config.read_text() == f"tmdb:\n  apikey: {TMDB_KEY}\n"  # same key: config.yml isn't rewritten
 
         # Another key in config.yml (edited by hand, say): the bypass was for the old one.
         config.write_text("tmdb:\n  apikey: another-key\n")
         assert client.get("/api/v1/settings/services").json()["tmdb"]["bypass_dns"] is False
-        assert doh.kometa_env(db, config) == {}
+        assert network.kometa_env(db, None, config, tmp_path / "data") == {}
         config.write_text(f"tmdb:\n  apikey: {TMDB_KEY}\n")
         still_blocked = client.put("/api/v1/settings/services/tmdb", json={"bypass_dns": False})  # tested without the bypass: refused
         fake.tmdb_blocked = False
@@ -119,7 +119,7 @@ def test_tmdb_behind_a_dns_block_is_reached_over_dns_over_https_and_kept_for_tha
     assert blocked["ok"] is False and "Name or service not known" in blocked["error"]
     assert bypassed == {"ok": True}
     assert saved["tmdb"] == {"apikey": "…-key", "bypass_dns": True}
-    assert env["STUDIO_DOH_HOSTS"] == "themoviedb.org,tmdb.org" and env["PYTHONPATH"].split(":")[0] == str(doh.WRAPPER)
+    assert env["STUDIO_DOH_HOSTS"] == "themoviedb.org,tmdb.org" and env["PYTHONPATH"].split(":")[0] == str(network.WRAPPER)
     assert still_blocked.status_code == 422
     assert off["tmdb"]["bypass_dns"] is False
 
@@ -132,7 +132,7 @@ def test_kometas_python_resolves_tmdb_over_dns_over_https(tmp_path):
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-    from kometa_studio import doh
+    from kometa_studio import network
 
     asked = []
 
@@ -156,7 +156,7 @@ def test_kometas_python_resolves_tmdb_over_dns_over_https(tmp_path):
         "print(sorted({a[4][0] for a in socket.getaddrinfo('image.tmdb.org', 443, socket.AF_INET)}))\n"
         "print(sorted({a[4][0] for a in socket.getaddrinfo('localhost', 80, socket.AF_INET)}))\n"
     )
-    env = {"PATH": "/usr/bin:/bin", "PYTHONPATH": str(doh.WRAPPER), "STUDIO_DOH_HOSTS": "themoviedb.org,tmdb.org", "STUDIO_DOH_URL": f"http://127.0.0.1:{server.server_port}/dns-query"}
+    env = {"PATH": "/usr/bin:/bin", "PYTHONPATH": str(network.WRAPPER), "STUDIO_DOH_HOSTS": "themoviedb.org,tmdb.org", "STUDIO_DOH_URL": f"http://127.0.0.1:{server.server_port}/dns-query"}
     try:
         out = subprocess.run([sys.executable, "-c", script], env=env, capture_output=True, text=True, timeout=30)
     finally:
