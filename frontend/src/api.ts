@@ -243,7 +243,7 @@ export type Usage = {
 
 // TMDb and MDBList (Settings → Connect): Kometa's keys, in config.yml.
 export type ServiceName = "tmdb" | "mdblist";
-export type ServicesState = Record<ServiceName, { apikey: string | null }>; // masked
+export type ServicesState = Record<ServiceName, { apikey: string | null; bypass_dns?: boolean }>; // apikey masked; bypass_dns: TMDb only
 export type ServiceTest = { ok: true; limit?: number | null; used?: number | null } | { ok: false; error: string };
 
 // Kometa's own log files (System → Logs).
@@ -581,8 +581,10 @@ export const api = {
   },
   services: {
     get: () => request<ServicesState>("GET", "/settings/services"),
-    test: (name: ServiceName, apikey: string | null) => request<ServiceTest>("POST", `/settings/services/${name}/test`, { apikey }),
-    save: (name: ServiceName, apikey: string | null) => request<ServicesState>("PUT", `/settings/services/${name}`, { apikey }),
+    test: (name: ServiceName, apikey: string | null, bypass_dns = false) =>
+      request<ServiceTest>("POST", `/settings/services/${name}/test`, { apikey, bypass_dns }),
+    save: (name: ServiceName, apikey: string | null, bypass_dns = false) =>
+      request<ServicesState>("PUT", `/settings/services/${name}`, { apikey, bypass_dns }),
     remove: (name: ServiceName) => request<ServicesState>("DELETE", `/settings/services/${name}`),
   },
 

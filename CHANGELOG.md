@@ -94,3 +94,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Apply now** runs overlays for that library.
   - **Add** sets up a daily overlay pass.
   - **Turn overlays off** has Kometa put the original posters back (with "Leave Maintainerr overlays alone" on, Maintainerr puts its posters back first and draws again over the originals), and Kometa draws none until they're turned on again. It's refused without an Original Posters backup.
+- Settings → Connect: a **DNS bypass** checkbox next to the TMDb key. When ticked, TMDb is looked up through Cloudflare's DNS over HTTPS (1.1.1.1) instead of the network's DNS, for networks whose DNS blocks TMDb. It's tested and saved with the key and applies to every call with that key, Studio's and Kometa's (runs and checks). Saving another key without it ticked turns it off. It doesn't help if TMDb's addresses themselves are blocked.

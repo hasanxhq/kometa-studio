@@ -36,7 +36,7 @@ const notConnected: MaintainerrState = {
   schedule: { taken_over: false, own_cron: null, last_redraw: null, next_redraw: null },
 };
 
-const keys: ServicesState = { tmdb: { apikey: "…9f3c" }, mdblist: { apikey: null } };
+const keys: ServicesState = { tmdb: { apikey: "…9f3c", bypass_dns: false }, mdblist: { apikey: null } };
 
 function routes(extra: Record<string, (body: unknown) => unknown> = {}) {
   return mockApi({
@@ -208,7 +208,7 @@ describe("TMDb and MDBList", () => {
     expect(await within(mdb).findByText("MDBList accepted the key: 312 of 1000 requests used today.")).toBeInTheDocument();
     fireEvent.click(within(mdb).getByRole("button", { name: "Save" }));
 
-    await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/services/mdblist")?.body).toEqual({ apikey: "new-k3y9" }));
+    await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/services/mdblist")?.body).toEqual({ apikey: "new-k3y9", bypass_dns: false }));
     await waitFor(() => expect(screen.getByLabelText("MDBList API key")).toHaveAttribute("placeholder", "Saved (…k3y9), leave empty to keep it"));
   });
 });
@@ -247,5 +247,36 @@ describe("Only imports that matter", () => {
     await waitFor(() => expect(calls.some((c) => c.route === "POST /settings/arr/reports")).toBe(true));
     fireEvent.click(within(form).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/arr/radarr/runs")?.body).toMatchObject({ trigger: "relevant" }));
+  });
+});
+
+describe("TMDb's DNS bypass", () => {
+  it("is tested and saved with the key, and can be switched for the saved key alone", async () => {
+    let saved = keys;
+    const calls = routes({
+      "GET /settings/services": () => saved,
+      "POST /settings/services/tmdb/test": (body) => ((body as { bypass_dns: boolean }).bypass_dns ? { ok: true } : { ok: false, error: "Can't reach TMDb: Name or service not known" }),
+      "PUT /settings/services/tmdb": () => {
+        saved = { ...keys, tmdb: { apikey: "…9f3c", bypass_dns: true } };
+        return saved;
+      },
+    });
+    renderAt("/settings/connect");
+
+    const tmdb = await screen.findByRole("form", { name: "TMDb" });
+    const box = within(tmdb).getByLabelText("DNS bypass");
+    expect(box).not.toBeChecked();
+    fireEvent.click(within(tmdb).getByRole("button", { name: "Test" }));
+    expect(await within(tmdb).findByText(/Name or service not known/)).toBeInTheDocument();
+
+    fireEvent.click(box);
+    expect(within(tmdb).getByText(/Cloudflare's DNS over HTTPS \(1\.1\.1\.1\)/)).toBeInTheDocument();
+    expect(within(tmdb).getByRole("button", { name: "Save" })).toBeDisabled(); // not tested this way yet
+    fireEvent.click(within(tmdb).getByRole("button", { name: "Test" }));
+    expect(await within(tmdb).findByText("TMDb accepted the key (looked up over DNS over HTTPS).")).toBeInTheDocument();
+    fireEvent.click(within(tmdb).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/services/tmdb")?.body).toEqual({ apikey: null, bypass_dns: true }));
+    await waitFor(() => expect(screen.getByLabelText("DNS bypass")).toBeChecked());
   });
 });
