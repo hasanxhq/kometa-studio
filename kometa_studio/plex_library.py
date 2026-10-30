@@ -23,6 +23,10 @@ class PlexUnavailable(Exception):
     """The server couldn't be asked; the message is shown to the user."""
 
 
+class PlexNotFound(PlexUnavailable):
+    """Plex has nothing at that path (HTTP 404)."""
+
+
 @dataclass
 class PlexCollection:
     rating_key: str
@@ -34,6 +38,22 @@ class PlexCollection:
     thumb: str | None
     added_at: int | None
     updated_at: int | None
+
+
+@dataclass
+class PlexItem:
+    """A movie or show in a collection."""
+
+    rating_key: str
+    title: str
+    type: str  # movie, show, …
+    year: int | None
+    thumb: str | None
+    ids: dict[str, str]  # tmdb, imdb, tvdb: what Kometa's builders match on
+    content_rating: str | None
+    audience_rating: float | None
+    episodes: int | None  # shows only
+    added_at: int | None
 
 
 @dataclass
@@ -64,6 +84,8 @@ class PlexServer:
             raise PlexUnavailable(f"Can't reach Plex: {error}") from None
         if response.status_code == 401:
             raise PlexUnavailable("Plex rejected the token in config.yml. Connect again in Settings → Plex.")
+        if response.status_code == 404:
+            raise PlexNotFound(f"Plex has nothing at {path}")
         if response.status_code != 200:
             raise PlexUnavailable(f"Plex answered HTTP {response.status_code} for {path}")
         try:
@@ -107,6 +129,34 @@ class PlexServer:
             for m in listing.get("Metadata", [])
         ]
 
+    async def collection(self, rating_key: str) -> tuple[str, PlexCollection]:
+        """One collection and the key of the library it's in. Managed by Kometa if it carries Kometa's label."""
+        found = (await self._get(f"/library/metadata/{rating_key}")).get("Metadata") or []
+        if not found or found[0].get("type") != "collection":
+            raise PlexNotFound(f"Plex has no collection {rating_key}")
+        m = found[0]
+        labels = {str(label.get("tag")) for label in m.get("Label") or []}
+        return str(m.get("librarySectionID", "")), PlexCollection(
+            rating_key=str(m["ratingKey"]),
+            title=str(m.get("title", "")),
+            items=int(m.get("childCount") or 0),
+            managed=bool(labels & set(KOMETA_LABELS)),
+            smart=str(m.get("smart", "0")) in ("1", "True", "true"),
+            summary=str(m.get("summary") or ""),
+            thumb=_image_path(m.get("thumb")),
+            added_at=m.get("addedAt"),
+            updated_at=m.get("updatedAt"),
+        )
+
+    async def collection_items(self, rating_key: str, start: int, size: int) -> tuple[list[PlexItem], int]:
+        """A page of a collection's movies or shows, in the collection's order, and how many it has in all."""
+        container = await self._get(
+            f"/library/collections/{rating_key}/children",
+            {"includeGuids": "1", "X-Plex-Container-Start": str(start), "X-Plex-Container-Size": str(size)},
+        )
+        items = [_item(m) for m in container.get("Metadata") or []]
+        return items, int(container.get("totalSize", container.get("size", len(items))) or 0)
+
     async def image(self, path: str, width: int, height: int) -> tuple[bytes, str]:
         """A poster, resized by Plex. ``path`` must be one Plex gave Studio (IMAGE_PATH)."""
         if not IMAGE_PATH.match(path):
@@ -131,3 +181,25 @@ def _image_path(thumb: object) -> str | None:
         return None
     path = thumb.split("?", 1)[0]
     return path if IMAGE_PATH.match(path) else None
+
+
+def _item(m: dict) -> PlexItem:
+    ids = {}
+    for guid in m.get("Guid") or []:
+        source, _, value = str(guid.get("id", "")).partition("://")
+        if source in ("tmdb", "imdb", "tvdb") and value:
+            ids[source] = value
+    year = m.get("year")
+    rating = m.get("audienceRating")
+    return PlexItem(
+        rating_key=str(m["ratingKey"]),
+        title=str(m.get("title", "")),
+        type=str(m.get("type", "")),
+        year=int(year) if isinstance(year, int | str) and str(year).isdigit() else None,
+        thumb=_image_path(m.get("thumb")),
+        ids=ids,
+        content_rating=str(m["contentRating"]) if m.get("contentRating") else None,
+        audience_rating=float(rating) if isinstance(rating, int | float) else None,
+        episodes=int(m["leafCount"]) if m.get("type") == "show" and m.get("leafCount") is not None else None,
+        added_at=m.get("addedAt"),
+    )

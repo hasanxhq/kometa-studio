@@ -62,6 +62,30 @@ class FakePlex:
     }
     LABELS = {"1": [{"key": "33517", "title": "Kometa"}, {"key": "40", "title": "PMM"}, {"key": "41", "title": "Favourites"}], "2": []}
     LABELLED = {"33517": ["101"], "40": ["103"], "41": ["102"]}
+    # What /library/metadata/<collection> and /library/collections/<key>/children give (Plex 1.41, trimmed).
+    COLLECTION_META = {
+        "101": {"librarySectionID": 1, "Label": [{"id": 33517, "tag": "Kometa"}]},
+        "102": {"librarySectionID": 1, "Label": [{"id": 41, "tag": "Favourites"}]},
+        "103": {"librarySectionID": 1, "Label": [{"id": 40, "tag": "PMM"}]},
+    }
+    ITEMS = {
+        "101": [
+            {
+                "ratingKey": str(201 + n),
+                "type": "movie",
+                "title": f"Marvel film {n + 1}",
+                "year": 2008 + n,
+                "contentRating": "PG-13",
+                "audienceRating": 7.5,
+                "thumb": f"/library/metadata/{201 + n}/thumb/1700000100",
+                "addedAt": 1700000000 + n,
+                "Guid": [{"id": f"imdb://tt0{371746 + n}"}, {"id": f"tmdb://{1726 + n}"}, {"id": "tvdb://128"}],
+            }
+            for n in range(11)
+        ],
+        "102": [{"ratingKey": "301", "type": "movie", "title": "Spy Kids", "year": 2001}],
+        "103": [{"ratingKey": "401", "type": "show", "title": "An Old Show", "year": 1999, "leafCount": 61, "Guid": [{"id": "tvdb://74852"}]}],
+    }
 
     def library(self, request: httpx.Request) -> httpx.Response:
         parts = request.url.path.strip("/").split("/")  # library, sections, <key>, <what>
@@ -80,6 +104,16 @@ class FakePlex:
             if what == "all" and request.url.params.get("type") == "18":
                 keys = self.LABELLED.get(request.url.params.get("label", ""), [])
                 return httpx.Response(200, json={"MediaContainer": {"Metadata": [{"ratingKey": k} for k in keys]}})
+        if len(parts) == 3 and parts[1] == "metadata" and parts[2] in self.COLLECTION_META:
+            meta = next(c for c in self.COLLECTIONS["1"] if c["ratingKey"] == parts[2]) | self.COLLECTION_META[parts[2]] | {"type": "collection"}
+            return httpx.Response(200, json={"MediaContainer": {"size": 1, "Metadata": [meta]}})
+        if len(parts) == 3 and parts[1] == "metadata" and parts[2] == "201":  # a movie, not a collection
+            return httpx.Response(200, json={"MediaContainer": {"size": 1, "Metadata": [self.ITEMS["101"][0] | {"librarySectionID": 1}]}})
+        if len(parts) == 4 and parts[1] == "collections" and parts[3] == "children" and parts[2] in self.ITEMS:
+            items = self.ITEMS[parts[2]]
+            start, size = int(request.url.params.get("X-Plex-Container-Start", "0")), int(request.url.params.get("X-Plex-Container-Size", "50"))
+            page = items[start : start + size]
+            return httpx.Response(200, json={"MediaContainer": {"size": len(page), "totalSize": len(items), "offset": start, "Metadata": page}})
         if len(parts) == 5 and parts[1] == "collections" and parts[3] == "composite":
             return httpx.Response(200, content=b"\xff\xd8poster", headers={"Content-Type": "image/jpeg"})
         return httpx.Response(404)

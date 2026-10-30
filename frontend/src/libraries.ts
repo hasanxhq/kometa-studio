@@ -28,3 +28,7 @@ export const libraryTypeLabels: Record<string, string> = { movie: "Movies", show
 export function libraryPath(name: string): string {
   return `/libraries/${encodeURIComponent(name)}`;
 }
+
+export function collectionPath(library: string, ratingKey: string): string {
+  return `${libraryPath(library)}/collections/${encodeURIComponent(ratingKey)}`;
+}
