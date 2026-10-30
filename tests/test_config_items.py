@@ -5,7 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from kometa_studio.app import create_app
-from kometa_studio.config_items import ItemProblem, apply_item, read_item, schema_kind
+from kometa_studio.config_items import ItemProblem, apply_item, new_file, read_item, schema_kind
+from kometa_studio.config_sections import with_library, with_library_file
 from kometa_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
@@ -173,3 +174,72 @@ def test_schemas_are_served_from_the_installed_kometa(tmp_path, kometa):
     assert (found.status_code, found.json()) == (200, {"type": "object"})
     assert missing.status_code == 404
     assert unknown.status_code == 404
+
+
+# --- New libraries and new files -------------------------------------------------------
+
+
+def test_adding_a_library_keeps_the_rest_of_config_yml():
+    text = "plex:\n  url: http://plex:32400   # the seedbox\nlibraries:\n  Movies:\n    collection_files:\n      - default: basic\n"
+    assert with_library(text, "TV Shows") == text + "  TV Shows:\n"
+    assert with_library("plex:\n  url: x\n", "Movies") == "plex:\n  url: x\nlibraries:\n  Movies:\n"
+    with pytest.raises(ValueError, match="already has a library called Movies"):
+        with_library(text, "Movies")
+    with pytest.raises(ValueError, match="already has"):  # another key pointing at that Plex library
+        with_library("libraries:\n  Films:\n    library_name: Movies\n", "Movies")
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("  Movies:\n", "  Movies:\n    collection_files:\n      - file: config/New.yml\n"),
+        ("  Movies:\n    collection_files:\n      - default: basic\n", "  Movies:\n    collection_files:\n      - default: basic\n      - file: config/New.yml\n"),
+        ("  Movies:\n    collection_files:\n      default: basic\n", "  Movies:\n    collection_files:\n      - default: basic\n      - file: config/New.yml\n"),
+    ],
+)
+def test_a_new_file_is_added_to_the_library(body, expected):
+    assert with_library_file("libraries:\n" + body, "Movies", "collection_files", "config/New.yml") == "libraries:\n" + expected
+
+
+def test_a_new_file_never_hides_the_old_metadata_path():
+    with pytest.raises(ValueError, match="old metadata_path"):
+        with_library_file("libraries:\n  Movies:\n    metadata_path:\n      - file: config/Old.yml\n", "Movies", "collection_files", "config/New.yml")
+    with pytest.raises(ValueError, match="no library called Shows"):
+        with_library_file("libraries:\n  Movies:\n", "Shows", "collection_files", "config/New.yml")
+
+
+def test_new_file_text():
+    assert new_file("collections", "Pixar", {"tmdb_company": 3, "sync_mode": "sync"}) == "collections:\n  Pixar:\n    tmdb_company: 3\n    sync_mode: sync\n"
+    with pytest.raises(ItemProblem):
+        new_file("templates", "x", {})
+
+
+def test_adding_a_library_through_the_api(tmp_path, kometa):
+    with make_client(tmp_path, kometa) as client:
+        added = client.post("/api/v1/config/libraries", json={"name": "TV Shows"})
+        again = client.post("/api/v1/config/libraries", json={"name": "TV Shows"})
+        libraries = client.get("/api/v1/config").json()["libraries"]
+    assert added.status_code == 200 and added.json()["validation"]["ok"]
+    assert (kometa / "config" / "config.yml").read_text().endswith("  TV Shows:\n")
+    assert again.status_code == 409
+    assert [library["name"] for library in libraries] == ["Movies", "TV Shows"]
+
+
+def test_a_collection_in_a_new_file_is_one_checked_save(tmp_path, kometa):
+    item = {"path": "Pixar.yml", "base_hash": None, "section": "collections", "name": "Pixar", "value": {"tmdb_company": 3}, "create": True, "library": "Movies"}
+    with make_client(tmp_path, kometa) as client:
+        saved = client.post("/api/v1/config/item", json=item)
+        library = client.get("/api/v1/config/libraries/Movies").json()
+        exists = client.post("/api/v1/config/item", json=item)
+        broken = client.post("/api/v1/config/item", json=item | {"path": "Broken.yml", "value": {"BROKEN": 1}})
+        no_library = client.post("/api/v1/config/item", json=item | {"path": "Other.yml", "library": None})
+    assert saved.status_code == 200, saved.text
+    assert sorted(f["path"] for f in saved.json()["files"]) == ["Pixar.yml", "config.yml"]
+    assert (kometa / "config" / "Pixar.yml").read_text() == "collections:\n  Pixar:\n    tmdb_company: 3\n"
+    reference = (kometa / "config" / "Pixar.yml").resolve().as_posix()  # outside the fake Kometa's folder, so in full
+    assert (kometa / "config" / "config.yml").read_text().endswith(f"      - file: config/Heroes.yml\n      - file: {reference}\n")
+    assert library["collection_files"][-1]["files"][0]["path"] == "Pixar.yml"  # Studio reads it back as the library's
+    assert exists.status_code == 409
+    assert broken.status_code == 422 and not (kometa / "config" / "Broken.yml").exists()
+    assert "Broken.yml" not in (kometa / "config" / "config.yml").read_text()
+    assert no_library.status_code == 422

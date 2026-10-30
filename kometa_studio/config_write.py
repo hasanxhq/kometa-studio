@@ -135,6 +135,13 @@ class ConfigWriter:
     def relative(self, path: Path) -> str:
         return path.resolve().relative_to(self.config_dir.resolve()).as_posix()
 
+    def reference(self, path: Path) -> str:
+        """How config.yml names a file: from Kometa's folder, its working directory (``config/Movies.yml``), or in full if it's elsewhere."""
+        try:
+            return path.resolve().relative_to(self.root.resolve()).as_posix()
+        except ValueError:
+            return path.resolve().as_posix()
+
     def read(self, relative: str) -> dict:
         path = self.resolve(relative)
         if not path.is_file():

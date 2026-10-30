@@ -5,6 +5,7 @@ import { useState, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError, api, type ConfigLibrary, type FileReference, type PlexCollection } from "../api";
+import { AddLibrary } from "../components/AddLibrary";
 import { Button, Card, Tag } from "../components/ui";
 import { libraryTypeLabels, mergeLibraries } from "../libraries";
 
@@ -140,6 +141,27 @@ function newItemLink(path: string, section: string, library: string): string {
   return `/items?${new URLSearchParams({ path, section, new: "1", library })}`;
 }
 
+// The builder, starting a new file for the library (it can also pick one of the library's files instead).
+function newFileLink(section: string, library: string): string {
+  return `/items?${new URLSearchParams({ section, new: "1", library })}`;
+}
+
+function NewFileLink({ section, library }: { section: "collections" | "overlays"; library: string }) {
+  return (
+    <Link className="min-h-11 content-center self-start text-sm text-accent underline" to={newFileLink(section, library)}>
+      + New {section === "overlays" ? "overlay" : "collection"} in a new file
+    </Link>
+  );
+}
+
+function Nothing({ name }: { name: string }) {
+  return (
+    <p className="text-sm text-muted">
+      Until {name} has a collection file, an overlay file or an operation, Kometa has nothing to do for it and says so when it runs.
+    </p>
+  );
+}
+
 function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null; plexError: string | null; config: ConfigLibrary | undefined }) {
   const [filter, setFilter] = useState<Filter>("all");
   const plex = useQuery({
@@ -249,9 +271,13 @@ function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null
       )}
 
       {config && (
-        <Card title="Collection files in config.yml">
+        <Card title="Collection files in config.yml" actions={<NewFileLink section="collections" library={config.name} />}>
           {config.collection_files.length === 0 ? (
-            <p className="text-sm text-muted">None.</p>
+            config.overlay_files.length === 0 && Object.keys(config.operations).length === 0 ? (
+              <Nothing name={config.name} />
+            ) : (
+              <p className="text-sm text-muted">None.</p>
+            )
           ) : (
             <ul className="flex flex-col gap-4">
               {config.collection_files.map((reference, index) => (
@@ -297,9 +323,9 @@ function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null
 // --- Other tabs -------------------------------------------------------------------
 
 function OverlaysTab({ config }: { config: ConfigLibrary }) {
-  if (config.overlay_files.length === 0) return <p className="text-muted">This library has no overlay files.</p>;
   return (
-    <Card title="Overlay files">
+    <Card title="Overlay files" actions={<NewFileLink section="overlays" library={config.name} />}>
+      {config.overlay_files.length === 0 && <p className="text-sm text-muted">This library has no overlay files.</p>}
       <ul className="flex flex-col gap-4">
         {config.overlay_files.map((reference, index) => (
           <li key={index} className="flex flex-col gap-2 border-b border-border pb-4 last:border-0">
@@ -430,15 +456,7 @@ export function LibraryDetail() {
   if (tab === "collections") {
     body = <CollectionsTab plexKey={entry.plex?.key ?? null} plexError={plexList.isError ? plexList.error.message : null} config={config.data} />;
   } else if (!entry.config) {
-    body = (
-      <p className="text-muted">
-        {entry.name} isn't in Kometa's config.yml, so Kometa doesn't touch it yet. Add it under libraries in{" "}
-        <Link className="underline" to="/files?path=config.yml">
-          config.yml
-        </Link>
-        .
-      </p>
-    );
+    body = <p className="text-muted">{entry.name} isn't in Kometa's config.yml, so Kometa doesn't touch it yet.</p>;
   } else if (config.isPending) {
     body = <p className="text-muted">Loading…</p>;
   } else if (config.isError) {
@@ -462,6 +480,16 @@ export function LibraryDetail() {
         {!entry.config && <Tag tone="warn">Not in config.yml</Tag>}
         {entry.config && entry.config.name !== entry.name && <span className="text-sm text-muted">config.yml calls it {entry.config.name}</span>}
       </div>
+      {!entry.config && entry.plex && (
+        <Card title="Not in Kometa yet">
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-muted">
+              Adding {entry.name} puts it under libraries in config.yml. Then give it collections, overlays or Kometa's defaults here.
+            </p>
+            <AddLibrary name={entry.name} />
+          </div>
+        </Card>
+      )}
       <TabBar current={tab} onChange={(next) => setParams(next === "collections" ? {} : { tab: next }, { replace: true })} />
       {body}
     </div>
