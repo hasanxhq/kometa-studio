@@ -7,11 +7,12 @@ only ever sees server IDs, URIs and masked tokens.
 import asyncio
 import sqlite3
 import uuid
+from dataclasses import asdict
 from pathlib import Path
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, model_validator
 from ruamel.yaml.error import YAMLError
 
@@ -19,6 +20,7 @@ from . import plex
 from .crypto import SecretBox
 from .db import delete_setting, get_setting, set_setting
 from .kometa_config import read_plex, write_plex
+from .plex_library import PlexServer, PlexUnavailable
 from .settings import Settings
 
 CLIENT_ID = "plex.client_id"
@@ -265,3 +267,76 @@ async def _plex_call(awaitable):
         raise HTTPException(401, str(error)) from None
     except plex.PlexError as error:
         raise HTTPException(502, str(error)) from None
+
+
+# --- Libraries and collections on the server Kometa uses ---------------------------
+
+
+def kometa_plex(settings: Settings, http: httpx.AsyncClient) -> PlexServer:
+    """The Plex server in Kometa's config.yml: the one whose collections matter."""
+    path = config_path(settings)
+    try:
+        current = read_plex(path)
+    except (OSError, ValueError, YAMLError):
+        current = None
+    if current is None or not current.url or not current.token:
+        raise HTTPException(409, "Kometa isn't connected to Plex yet. Connect it in Settings → Plex.")
+    return PlexServer(http, current.url, current.token)
+
+
+async def _plex_read(awaitable):
+    try:
+        return await awaitable
+    except PlexUnavailable as error:
+        raise HTTPException(502, str(error)) from None
+
+
+@router.get("/libraries")
+async def plex_libraries(http: Http, settings: AppSettings) -> dict:
+    server = kometa_plex(settings, http)
+    libraries = await _plex_read(server.libraries())
+    collections = await _plex_read(asyncio.gather(*(server.collections(library.key) for library in libraries)))
+    return {
+        "libraries": [
+            {
+                "key": library.key,
+                "title": library.title,
+                "type": library.type,
+                "collections": len(found),
+                "managed": sum(c.managed for c in found),
+            }
+            for library, found in zip(libraries, collections, strict=True)
+        ]
+    }
+
+
+@router.get("/libraries/{key}/collections")
+async def plex_collections(key: str, http: Http, settings: AppSettings) -> dict:
+    server = kometa_plex(settings, http)
+    libraries = await _plex_read(server.libraries())
+    library = next((lib for lib in libraries if lib.key == key), None)
+    if library is None:
+        raise HTTPException(404, "Plex has no library with that key")
+    collections = await _plex_read(server.collections(key))
+    return {
+        "library": {"key": library.key, "title": library.title, "type": library.type},
+        "collections": [asdict(c) for c in sorted(collections, key=lambda c: c.title.casefold())],
+    }
+
+
+@router.get("/image")
+async def plex_image(
+    path: str,
+    http: Http,
+    settings: AppSettings,
+    width: Annotated[int, Query(ge=50, le=1000)] = 240,
+    height: Annotated[int, Query(ge=50, le=1500)] = 360,
+) -> Response:
+    """Posters through Studio, so the Plex token never reaches the browser."""
+    server = kometa_plex(settings, http)
+    try:
+        content, media_type = await _plex_read(server.image(path, width, height))
+    except ValueError:
+        raise HTTPException(404, "Studio only fetches Plex artwork") from None
+    # Plex puts the artwork's update time in its path, so a changed poster gets a new URL.
+    return Response(content, media_type=media_type, headers={"Cache-Control": "private, max-age=86400"})

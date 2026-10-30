@@ -39,13 +39,45 @@ class FakePlex:
         origin = f"{url.scheme}://{url.host}:{url.port}"
         if origin not in self.reachable:
             raise httpx.ConnectError("Connection refused", request=request)
-        if url.path != "/":
-            return httpx.Response(404)
         if token != SERVER_TOKEN:
             return httpx.Response(401)
-        return httpx.Response(
-            200, json={"MediaContainer": {"machineIdentifier": SERVER_ID, "friendlyName": "Seedbox", "version": "1.41.2.9200"}}
-        )
+        if url.path == "/":
+            return httpx.Response(
+                200, json={"MediaContainer": {"machineIdentifier": SERVER_ID, "friendlyName": "Seedbox", "version": "1.41.2.9200"}}
+            )
+        if url.path.startswith("/library/"):
+            return self.library(request)
+        return httpx.Response(404)
+
+    # Libraries shaped like a real server's answers (checked against Plex Media Server 1.41).
+    SECTIONS = [{"key": "1", "title": "Movies", "type": "movie"}, {"key": "2", "title": "TV Shows", "type": "show"}]
+    COLLECTIONS = {
+        "1": [
+            {"ratingKey": "101", "title": "Marvel", "childCount": 11, "thumb": "/library/collections/101/composite/1700000001?width=400&height=600"},
+            {"ratingKey": "102", "title": "Spy Kids", "childCount": 3, "summary": "Made by hand", "thumb": "/library/collections/102/composite/1700000002"},
+            {"ratingKey": "103", "title": "Old PMM collection", "childCount": 2, "smart": "1"},
+        ],
+        "2": [],
+    }
+    LABELS = {"1": [{"key": "33517", "title": "Kometa"}, {"key": "40", "title": "PMM"}, {"key": "41", "title": "Favourites"}], "2": []}
+    LABELLED = {"33517": ["101"], "40": ["103"], "41": ["102"]}
+
+    def library(self, request: httpx.Request) -> httpx.Response:
+        parts = request.url.path.strip("/").split("/")  # library, sections, <key>, <what>
+        if parts == ["library", "sections"]:
+            return httpx.Response(200, json={"MediaContainer": {"Directory": self.SECTIONS}})
+        if len(parts) == 4 and parts[1] == "sections" and parts[2] in self.COLLECTIONS:
+            key, what = parts[2], parts[3]
+            if what == "collections":
+                return httpx.Response(200, json={"MediaContainer": {"Metadata": self.COLLECTIONS[key]}})
+            if what == "label":
+                return httpx.Response(200, json={"MediaContainer": {"Directory": self.LABELS[key]}})
+            if what == "all" and request.url.params.get("type") == "18":
+                keys = self.LABELLED.get(request.url.params.get("label", ""), [])
+                return httpx.Response(200, json={"MediaContainer": {"Metadata": [{"ratingKey": k} for k in keys]}})
+        if len(parts) == 5 and parts[1] == "collections" and parts[3] == "composite":
+            return httpx.Response(200, content=b"\xff\xd8poster", headers={"Content-Type": "image/jpeg"})
+        return httpx.Response(404)
 
     def plex_tv(self, request: httpx.Request, token: str | None) -> httpx.Response:
         path = request.url.path

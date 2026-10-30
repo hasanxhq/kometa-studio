@@ -21,3 +21,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Runs missed while Studio was off are made up once when it starts again (within 24 hours), or skipped if you choose. Tasks shows a notice when this happens, and the run is marked "Catch-up".
 - Schedules due at the same moment run in Kometa's order (operations, metadata, collections, overlays, playlists), and an "everything" run replaces the narrower runs it covers.
 - `STUDIO_TIMEZONE` sets the timezone for new schedules (default: the container's `TZ`).
+- Libraries: a card per Plex library, with its collections split into those Kometa manages (they carry Plex's `Kometa` label, Kometa's own test) and unmanaged ones, and what Kometa's config.yml does with the library. Libraries not in config.yml show too, so this works before any setup.
+- Each library has Collections (a poster grid from Plex, filterable by managed and unmanaged, plus collections your config defines that aren't in Plex yet), Overlays, Defaults and Operations tabs, with read-only YAML views. Tokens and API keys are masked.
+- Activity → History: what each run changed, collection by collection (items added and removed, new and deleted collections, Radarr/Sonarr adds), filterable by library and name.

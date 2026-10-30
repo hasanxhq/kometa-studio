@@ -125,6 +125,110 @@ export type Schedules = {
   catch_ups: { id: number; status: RunStatus; queued_at: string; name: string }[];
 };
 
+// --- Kometa's config (read-only) ---
+
+export type ConfigCollection = {
+  name: string;
+  dynamic: boolean;
+  type: string | null;
+  builders: string[];
+  templates: string[];
+  sync_mode: string | null;
+  schedule: unknown;
+};
+
+export type ConfigOverlay = {
+  name: string;
+  overlay: string | null;
+  position: Record<string, string | number>;
+  builders: string[];
+  templates: string[];
+};
+
+export type FileSummary = {
+  path: string;
+  title: string | null;
+  docs_url: string | null;
+  collections: ConfigCollection[];
+  overlays: ConfigOverlay[];
+  playlists: { name: string; libraries: unknown }[];
+  metadata: number;
+  templates: string[];
+  error: string | null;
+};
+
+export type FileReference = {
+  kind: "default" | "file" | "folder" | "url" | "git" | "repo" | "unknown";
+  value: string;
+  template_variables: Record<string, unknown>;
+  options: Record<string, unknown>;
+  files: FileSummary[];
+  error: string | null;
+};
+
+export type LibraryCounts = {
+  name: string;
+  plex_name: string;
+  collection_files: number;
+  overlay_files: number;
+  metadata_files: number;
+  defaults: number;
+  collections: number;
+  overlays: number;
+  operations: number;
+  problems: string[];
+};
+
+export type ConfigLibrary = {
+  name: string;
+  collection_files: FileReference[];
+  overlay_files: FileReference[];
+  metadata_files: FileReference[];
+  operations: Record<string, unknown>;
+  template_variables: Record<string, unknown>;
+  settings: Record<string, unknown>;
+  counts: LibraryCounts;
+};
+
+// --- Plex ---
+
+export type PlexLibrarySummary = { key: string; title: string; type: string; collections: number; managed: number };
+
+export type PlexCollection = {
+  rating_key: string;
+  title: string;
+  items: number;
+  managed: boolean;
+  smart: boolean;
+  summary: string;
+  thumb: string | null;
+  added_at: number | null;
+  updated_at: number | null;
+};
+
+// --- History ---
+
+export type HistoryItem = { title: string | null; tmdb_id: number | null; tvdb_id: number | null };
+
+export type HistoryEvent = {
+  id: number;
+  run_id: number | null;
+  event: "changes" | "delete";
+  received_at: string;
+  library: string | null;
+  collection: string | null;
+  playlist: string | null;
+  message: string | null;
+  created: boolean;
+  poster_url: string | null;
+  additions: HistoryItem[];
+  removals: HistoryItem[];
+  radarr_adds: HistoryItem[];
+  sonarr_adds: HistoryItem[];
+};
+
+export type HistoryPage = { events: HistoryEvent[]; libraries: string[]; next: number | null };
+
 export type KometaInfo = { flags: string[] | null; flags_error: string | null; problem: string | null };
 
 // FastAPI puts the reason in `detail`: a string from our own errors, a list from request validation.
@@ -163,6 +267,29 @@ export const api = {
     connect: (body: PlexConnectRequest) => request<PlexState>("POST", "/plex/connect", body),
   },
   kometa: () => request<KometaInfo>("GET", "/kometa"),
+  config: {
+    overview: () => request<{ path: string; libraries: LibraryCounts[]; playlist_files: FileReference[] }>("GET", "/config"),
+    library: (name: string) => request<ConfigLibrary>("GET", `/config/libraries/${encodeURIComponent(name)}`),
+    file: (path: string) => request<{ path: string; text: string }>("GET", `/config/file?path=${encodeURIComponent(path)}`),
+  },
+  plexLibraries: {
+    list: () => request<{ libraries: PlexLibrarySummary[] }>("GET", "/plex/libraries"),
+    collections: (key: string) =>
+      request<{ library: Omit<PlexLibrarySummary, "collections" | "managed">; collections: PlexCollection[] }>(
+        "GET",
+        `/plex/libraries/${encodeURIComponent(key)}/collections`,
+      ),
+    imageUrl: (path: string, width = 240, height = 360) =>
+      `/api/v1/plex/image?path=${encodeURIComponent(path)}&width=${width}&height=${height}`,
+  },
+  history: (filters: { library?: string; q?: string; before?: number }) => {
+    const params = new URLSearchParams();
+    if (filters.library) params.set("library", filters.library);
+    if (filters.q) params.set("q", filters.q);
+    if (filters.before !== undefined) params.set("before", String(filters.before));
+    const query = params.toString();
+    return request<HistoryPage>("GET", `/history${query ? `?${query}` : ""}`);
+  },
   schedules: {
     list: () => request<Schedules>("GET", "/schedules"),
     create: (body: ScheduleInput) => request<Schedule>("POST", "/schedules", body),
