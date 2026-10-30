@@ -130,7 +130,7 @@ function Poster({ collection }: { collection: PlexCollection }) {
   );
 }
 
-type Filter = "all" | "managed" | "unmanaged";
+type Filter = "all" | "managed" | "maintainerr" | "unmanaged";
 
 function itemLink(path: string, section: string, name: string, library: string): string {
   return `/items?${new URLSearchParams({ path, section, name, library })}`;
@@ -150,6 +150,7 @@ function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null
   });
   const collections = plex.data?.collections ?? [];
   const managed = collections.filter((c) => c.managed).length;
+  const maintainerr = collections.filter((c) => c.maintainerr && !c.managed).length;
 
   // Collections the user's own files define by name. Defaults and dynamic collections get their names at run time.
   const ownFiles = (config?.collection_files ?? []).filter((r) => r.kind !== "default");
@@ -157,7 +158,8 @@ function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null
   const fileFor = new Map(configured.map((c) => [c.name.toLowerCase(), c.file]));
   const inPlex = new Set(collections.map((c) => c.title.toLowerCase()));
   const notYet = configured.filter((c) => !inPlex.has(c.name.toLowerCase()));
-  const shown = collections.filter((c) => filter === "all" || (filter === "managed" ? c.managed : !c.managed));
+  const owner = (c: PlexCollection): Filter => (c.managed ? "managed" : c.maintainerr ? "maintainerr" : "unmanaged");
+  const shown = collections.filter((c) => filter === "all" || owner(c) === filter);
 
   return (
     <div className="flex flex-col gap-4">
@@ -183,7 +185,8 @@ function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null
                 [
                   ["all", `All (${collections.length})`],
                   ["managed", `By Kometa (${managed})`],
-                  ["unmanaged", `Unmanaged (${collections.length - managed})`],
+                  ...(maintainerr ? [["maintainerr", `By Maintainerr (${maintainerr})`]] : []),
+                  ["unmanaged", `Unmanaged (${collections.length - managed - maintainerr})`],
                 ] as [Filter, string][]
               ).map(([value, label]) => (
                 <Button key={value} onClick={() => setFilter(value)} aria-pressed={filter === value} variant={filter === value ? "primary" : "secondary"}>
@@ -194,6 +197,7 @@ function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null
             <p className="mb-4 text-sm text-muted">
               "By Kometa" means the collection has Plex's <span className="font-mono">Kometa</span> label, which Kometa adds to collections it builds.
               Unmanaged collections were made some other way (by hand in Plex, or by another tool), and Kometa leaves them alone.
+              {maintainerr > 0 && " Maintainerr's collections are protected: Studio refuses any change, and holds any run, that would let Kometa touch them."}
             </p>
             <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
               {shown.map((collection) => {
@@ -204,10 +208,16 @@ function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null
                     <span className="break-words text-sm font-semibold">{collection.title}</span>
                     <span className="flex flex-wrap items-center gap-1 text-xs text-muted">
                       {collection.items} item{collection.items === 1 ? "" : "s"}
-                      {collection.managed ? <Tag tone="ok">By Kometa</Tag> : <Tag>Unmanaged</Tag>}
+                      {collection.managed ? (
+                        <Tag tone="ok">By Kometa</Tag>
+                      ) : collection.maintainerr ? (
+                        <Tag tone="info">By Maintainerr</Tag>
+                      ) : (
+                        <Tag>Unmanaged</Tag>
+                      )}
                       {collection.smart && <Tag>Smart</Tag>}
                     </span>
-                    {file && config && (
+                    {file && config && !collection.maintainerr && (
                       <Link
                         className="text-xs text-muted underline-offset-2 hover:underline"
                         to={itemLink(file, "collections", configured.find((c) => c.name.toLowerCase() === collection.title.toLowerCase())!.name, config.name)}

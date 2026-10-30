@@ -1,10 +1,20 @@
-// Settings → Connect: services that talk to Studio. For now, Radarr and Sonarr's import webhook (handoff v2 §4.5, §8).
+// Settings → Connect: services Studio talks to. Radarr and Sonarr, for runs after imports (handoff v2 §4.5, §8).
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 
-import { api, type ArrKind, type ArrSettings, type ArrState, type RunMode } from "../api";
+import {
+  api,
+  type ArrConnection,
+  type ArrConnectionInput,
+  type ArrKind,
+  type ArrSettings,
+  type ArrSource,
+  type ArrState,
+  type MaintainerrState,
+  type RunMode,
+} from "../api";
 import { Button, Card, Field, inputClass } from "../components/ui";
 import { formatRelative, formatTime, modes } from "../runs";
 
@@ -13,49 +23,146 @@ const apps: { kind: ArrKind; label: string }[] = [
   { kind: "sonarr", label: "Sonarr" },
 ];
 
-function WebhookAddress({ state }: { state: ArrState }) {
+// A username and password for a proxy in front of a service (HTTP Basic), as seedboxes put in front of each app.
+function ProxyLogin({
+  username,
+  password,
+  hasPassword,
+  onUsername,
+  onPassword,
+}: {
+  username: string;
+  password: string;
+  hasPassword: boolean;
+  onUsername: (value: string) => void;
+  onPassword: (value: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      <div className="min-w-0 flex-1 basis-48">
+        <Field label="Username (if a proxy asks)" hint="On a seedbox, usually its login.">
+          <input className={inputClass} autoComplete="off" value={username} onChange={(e) => onUsername(e.target.value)} />
+        </Field>
+      </div>
+      <div className="min-w-0 flex-1 basis-48">
+        <Field label="Password">
+          <input
+            className={inputClass}
+            type="password"
+            autoComplete="off"
+            value={password}
+            onChange={(e) => onPassword(e.target.value)}
+            placeholder={hasPassword ? "Saved (leave empty to keep it)" : ""}
+            disabled={!username}
+          />
+        </Field>
+      </div>
+    </div>
+  );
+}
+
+function ArrConnectionForm({ kind, label, connection }: { kind: ArrKind; label: string; connection: ArrConnection }) {
   const queryClient = useQueryClient();
-  const [copied, setCopied] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const renew = useMutation({
-    mutationFn: api.arr.newToken,
+  const [source, setSource] = useState<ArrSource>(connection.source);
+  const [url, setUrl] = useState(connection.url ?? "");
+  const [apiKey, setApiKey] = useState("");
+  const [username, setUsername] = useState(connection.username ?? "");
+  const [password, setPassword] = useState("");
+  const body = (): ArrConnectionInput =>
+    source === "studio" ? { source, url, api_key: apiKey || null, username: username || null, password: password || null } : { source };
+  const test = useMutation({ mutationFn: () => api.arr.test(kind, body()) });
+  const save = useMutation({
+    mutationFn: () => api.arr.connect(kind, body()),
     onSuccess: (data) => {
       queryClient.setQueryData(["arr"], data);
-      setConfirming(false);
+      setApiKey("");
+      setPassword("");
     },
   });
-  const url = `${window.location.origin}${state.path}`;
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-    } catch {
-      // no clipboard over plain http: the field is selectable
-    }
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    save.mutate();
   };
+  const status = connection.status;
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <input className={`${inputClass} min-w-0 flex-1`} value={url} readOnly aria-label="Webhook URL" onFocus={(e) => e.target.select()} />
-        <Button onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
-        {confirming ? (
-          <>
-            <Button className="border-err/60 text-err" onClick={() => renew.mutate()}>
-              Replace it
-            </Button>
-            <Button onClick={() => setConfirming(false)}>Keep</Button>
-          </>
-        ) : (
-          <Button onClick={() => setConfirming(true)}>New URL</Button>
+    <form className="flex flex-col gap-3" onSubmit={submit} aria-label={label}>
+      <fieldset className="flex flex-col gap-1">
+        <legend className="mb-1 text-sm font-semibold">{label}</legend>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input type="radio" className="accent-accent" checked={source === "config"} onChange={() => setSource("config")} />
+          <span>
+            Kometa's, from config.yml <span className="font-mono text-xs text-muted">{connection.config_url ?? "(config.yml has no url and token)"}</span>
+          </span>
+        </label>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input type="radio" className="accent-accent" checked={source === "studio"} onChange={() => setSource("studio")} />
+          Enter it here
+        </label>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input type="radio" className="accent-accent" checked={source === "off"} onChange={() => setSource("off")} />
+          Don't use {label}
+        </label>
+      </fieldset>
+      {source === "studio" && (
+        <div className="flex flex-wrap gap-3">
+          <div className="min-w-0 flex-1 basis-64">
+            <Field label="URL">
+              <input
+                className={inputClass}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder={kind === "radarr" ? "http://radarr:7878" : "http://sonarr:8989"}
+              />
+            </Field>
+          </div>
+          <div className="min-w-0 flex-1 basis-64">
+            <Field label="API key" hint={`${label} → Settings → General → API Key`}>
+              <input
+                className={inputClass}
+                type="password"
+                autoComplete="off"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder={connection.has_key ? "Saved (leave empty to keep it)" : ""}
+              />
+            </Field>
+          </div>
+        </div>
+      )}
+      {source === "studio" && (
+        <ProxyLogin username={username} password={password} hasPassword={connection.has_password} onUsername={setUsername} onPassword={setPassword} />
+      )}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" disabled={save.isPending}>
+          Save
+        </Button>
+        {source !== "off" && (
+          <Button onClick={() => test.mutate()} disabled={test.isPending}>
+            {test.isPending ? "Testing…" : "Test"}
+          </Button>
+        )}
+        {test.data &&
+          (test.data.ok ? (
+            <span role="status" className="text-sm text-ok">
+              {test.data.app} {test.data.version} answered.
+            </span>
+          ) : (
+            <span role="alert" className="text-sm text-err">
+              {test.data.error}
+            </span>
+          ))}
+        {save.isError && (
+          <span role="alert" className="text-sm text-err">
+            {save.error.message}
+          </span>
         )}
       </div>
-      {confirming && <p className="text-sm text-warn">Radarr and Sonarr stop reaching Studio until you paste the new URL into them.</p>}
-      <p className="text-xs text-muted">
-        In Radarr and Sonarr: Settings → Connect → + → Webhook. Paste this URL, keep the method POST, and tick On Import and On Upgrade. If
-        they reach Studio at a different address than this browser does, change the start of the URL to match. Test sends an event that
-        shows below.
-      </p>
-    </div>
+      {status && (
+        <p className={`text-xs ${status.ok ? "text-muted" : "text-warn"}`}>
+          {status.ok ? `Imports checked ${formatRelative(status.checked_at)}.` : `Last check failed (${formatRelative(status.checked_at)}): ${status.error}`}
+        </p>
+      )}
+    </form>
   );
 }
 
@@ -108,7 +215,12 @@ function ArrForm({ state, libraries }: { state: ArrState; libraries: string[] })
             <div className="flex flex-wrap gap-x-4">
               {libraries.map((name) => (
                 <label key={name} className="flex min-h-11 items-center gap-2 text-sm">
-                  <input type="checkbox" className="size-4 accent-accent" checked={draft.libraries[kind].includes(name)} onChange={() => toggleLibrary(kind, name)} />
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-accent"
+                    checked={draft.libraries[kind].includes(name)}
+                    onChange={() => toggleLibrary(kind, name)}
+                  />
                   {name}
                 </label>
               ))}
@@ -136,22 +248,140 @@ function ArrForm({ state, libraries }: { state: ArrState; libraries: string[] })
   );
 }
 
-function Activity({ state }: { state: ArrState }) {
-  const { last_event: last, pending } = state;
+function Pending({ state }: { state: ArrState }) {
+  const { pending } = state;
+  if (!pending) return null;
   return (
-    <div className="flex flex-col gap-1 text-sm">
-      {pending && (
-        <p role="status" className="text-info">
-          {pending.imports} import{pending.imports === 1 ? "" : "s"} waiting ({pending.titles.join(", ")}). Kometa runs{" "}
-          <span title={formatTime(pending.due_at)}>{formatRelative(pending.due_at)}</span> unless more arrive.
-        </p>
-      )}
-      <p className="text-muted">
-        {last
-          ? `Last heard from ${last.kind === "sonarr" ? "Sonarr" : last.kind === "radarr" ? "Radarr" : "an app"} ${formatRelative(last.at)}: ${last.event === "Test" ? "a test" : last.event}${last.title && last.event !== "Test" ? `, ${last.title}` : ""}.`
-          : "Nothing received yet."}
+    <p role="status" className="text-sm text-info">
+      {pending.imports} import{pending.imports === 1 ? "" : "s"} waiting ({pending.titles.join(", ")}). Kometa runs{" "}
+      <span title={formatTime(pending.due_at)}>{formatRelative(pending.due_at)}</span> unless more arrive.
+    </p>
+  );
+}
+
+function MaintainerrForm({ current }: { current: MaintainerrState }) {
+  const queryClient = useQueryClient();
+  const [draftUrl, setUrl] = useState(current.url ?? "");
+  const [username, setUsername] = useState(current.username ?? "");
+  const [password, setPassword] = useState("");
+  const [draftLeave, setLeaveOverlays] = useState(current.leave_overlays_alone);
+  const test = useMutation({ mutationFn: () => api.maintainerr.test(draftUrl, username || null, password || null) });
+  const save = useMutation({
+    mutationFn: (disconnect: boolean) =>
+      api.maintainerr.save({
+        url: disconnect ? null : draftUrl,
+        username: username || null,
+        password: password || null,
+        leave_overlays_alone: draftLeave,
+      }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["maintainerr"], data);
+      queryClient.invalidateQueries({ queryKey: ["status"] });
+      queryClient.invalidateQueries({ queryKey: ["plex"] });
+      setUrl(data.url ?? "");
+      setUsername(data.username ?? "");
+      setPassword("");
+    },
+  });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    save.mutate(false);
+  };
+
+  return (
+    <form className="flex flex-col gap-4" onSubmit={submit} aria-label="Maintainerr">
+      <p className="text-sm text-muted">
+        With Maintainerr connected, Kometa leaves its collections alone: Studio refuses any change, and holds any run, that would let Kometa delete them, change
+        their mode, or take one over with a collection of the same name.
       </p>
-    </div>
+      <Field label="URL" hint="Maintainerr's API has no key of its own.">
+        <input className={inputClass} value={draftUrl} onChange={(e) => setUrl(e.target.value)} placeholder="http://maintainerr:6246" />
+      </Field>
+      <ProxyLogin username={username} password={password} hasPassword={current.has_password} onUsername={setUsername} onPassword={setPassword} />
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" className="mt-1 size-4 accent-accent" checked={draftLeave} onChange={(e) => setLeaveOverlays(e.target.checked)} />
+        <span>
+          Leave Maintainerr overlays alone
+          <span className="block text-xs text-muted">
+            Maintainerr's overlays take precedence over Kometa's. Before a Kometa run that can change posters, Maintainerr puts back the posters under its
+            overlays; afterwards it draws them again, on top of Kometa's. Kometa never sees a countdown, so it can't keep one as an item's original poster. If
+            Maintainerr doesn't answer, those runs wait.
+          </span>
+        </span>
+      </label>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="primary" type="submit" disabled={save.isPending || !draftUrl}>
+          Save
+        </Button>
+        <Button onClick={() => test.mutate()} disabled={test.isPending || !draftUrl}>
+          {test.isPending ? "Testing…" : "Test"}
+        </Button>
+        {current.url && <Button onClick={() => save.mutate(true)}>Disconnect</Button>}
+        {test.data &&
+          (test.data.ok ? (
+            <span role="status" className="text-sm text-ok">
+              Maintainerr answered: {test.data.collections} collection{test.data.collections === 1 ? "" : "s"}, overlays{" "}
+              {test.data.overlays_enabled ? "on" : "off"}.
+            </span>
+          ) : (
+            <span role="alert" className="text-sm text-err">
+              {test.data.error}
+            </span>
+          ))}
+        {save.isError && (
+          <span role="alert" className="text-sm text-err">
+            {save.error.message}
+          </span>
+        )}
+      </div>
+      {current.url && (
+        <div className="flex flex-col gap-2 text-sm">
+          {current.error && <p className="text-warn">Can't read Maintainerr: {current.error}</p>}
+          {current.risks.length > 0 && (
+            <div role="alert" className="rounded-control border border-err/40 p-3">
+              <p className="font-semibold text-err">Kometa's config would touch Maintainerr's collections</p>
+              <p className="text-xs text-muted">Runs that would do this are held until it's fixed.</p>
+              <ul className="mt-2 list-disc pl-5">
+                {current.risks.map((risk) => (
+                  <li key={risk}>{risk}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="text-muted">
+            Protecting {current.collections.length} collection{current.collections.length === 1 ? "" : "s"}
+            {current.collections.length > 0 ? ":" : "."}
+          </p>
+          {current.collections.length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {current.collections.map((c) => (
+                <li key={`${c.library}/${c.title}`} className="rounded border border-border px-2 py-1 text-xs">
+                  {c.title} <span className="text-muted">· {c.library ?? "unknown library"}</span>
+                  {c.overlays && current.overlays_enabled && <span className="text-info"> · overlays</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function MaintainerrCard() {
+  const state = useQuery({ queryKey: ["maintainerr"], queryFn: api.maintainerr.get });
+  return (
+    <Card title="Maintainerr">
+      {state.isPending ? (
+        <p className="text-muted">Loading…</p>
+      ) : state.isError ? (
+        <p role="alert" className="text-err">
+          {state.error.message}
+        </p>
+      ) : (
+        <MaintainerrForm current={state.data} />
+      )}
+    </Card>
   );
 }
 
@@ -172,15 +402,23 @@ export function SettingsConnect() {
         ) : (
           <div className="flex flex-col gap-5">
             <p className="text-sm text-muted">
-              When Radarr or Sonarr imports a movie or episode, Kometa can run for its library, so new items get their overlays and join their
-              collections without waiting for the next schedule.
+              When Radarr or Sonarr imports a movie or episode, Kometa can run for its library, so new items get their overlays and join their collections
+              without waiting for the next schedule. Studio checks their import history every 2 minutes, so they don't need to reach Studio.
             </p>
-            <WebhookAddress state={arr.data} />
+            {apps.map(({ kind, label }) => (
+              <ArrConnectionForm
+                key={`${kind}-${arr.data.connections[kind].source}-${arr.data.connections[kind].url}`}
+                kind={kind}
+                label={label}
+                connection={arr.data.connections[kind]}
+              />
+            ))}
             <ArrForm key={JSON.stringify(arr.data.settings)} state={arr.data} libraries={libraries} />
-            <Activity state={arr.data} />
+            <Pending state={arr.data} />
           </div>
         )}
       </Card>
+      <MaintainerrCard />
       <Card title="TMDb, Trakt and other services">
         <p className="text-sm text-muted">
           Kometa's own connections (TMDb, Trakt, MDBList, Radarr and Sonarr for adding items, notifications) are set in{" "}

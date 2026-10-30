@@ -31,7 +31,7 @@ COOKIE = "studio_session"
 SESSION_DAYS = 30
 
 # Paths that check their own token, are how one signs in, or say only "up" (the container's health check).
-OPEN_PATHS = {"/api/v1/ping", "/api/v1/auth", "/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/kometa/events", "/api/v1/hooks/arr"}
+OPEN_PATHS = {"/api/v1/ping", "/api/v1/auth", "/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/kometa/events"}
 PROXY_HEADERS = (b"x-forwarded-for", b"forwarded", b"x-real-ip")
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 

@@ -10,6 +10,7 @@ import json
 import os
 import signal
 import sqlite3
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -45,10 +46,21 @@ class Subscriber:
         self.queue.put_nowait(line)
 
 
+class RunHeld(Exception):
+    """A run hook says this run mustn't start; the message says why."""
+
+
+# A run hook: ``await hook.before_run(request, say)`` runs before Kometa starts. It may raise RunHeld, and
+# may return an ``after`` coroutine function, awaited once Kometa has finished (however it finished).
+# ``say`` writes a line to the run's log, live.
+Say = Callable[[str], None]
+After = Callable[[], Awaitable[None]]
+
+
 @dataclass
 class Active:
     run_id: int
-    process: asyncio.subprocess.Process
+    process: asyncio.subprocess.Process | None  # None while run hooks go, before Kometa starts
     subscribers: set[Subscriber] = field(default_factory=set)
     cancel_requested: bool = False
     timed_out: bool = False
@@ -62,6 +74,7 @@ class Runner:
         self.runs_dir = settings.data_dir / "runs"
         self.flags: set[str] | None = None  # from kometa.py --help; None means "not known", so nothing is checked
         self.flags_error: str | None = None
+        self.hooks: list = []  # run hooks (see RunHeld): the Maintainerr integration
         self._wake = asyncio.Event()
         self._active: Active | None = None
         self._task: asyncio.Task | None = None
@@ -210,34 +223,46 @@ class Runner:
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         with self.db:
             self.db.execute("UPDATE runs SET status = 'running', started_at = ? WHERE id = ?", (now(), run_id))
+        active = Active(run_id, None)
+        self._active = active
+        afters: list[After] = []
         with open(self.log_path(run_id), "w", encoding="utf-8", buffering=1) as log:
             try:
-                argv, cwd = self._prepare(request)
-                with self.db:
-                    self.db.execute("UPDATE runs SET command = ? WHERE id = ?", (kometa_command.display(argv), run_id))
-                process = await asyncio.create_subprocess_exec(
-                    *argv,
-                    cwd=cwd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.STDOUT,
-                    env=os.environ | {"PYTHONUNBUFFERED": "1"},
-                    start_new_session=True,  # its own process group, so cancelling reaches Kometa's worker too
-                    limit=LINE_LIMIT,
-                )
-            except (ValueError, OSError) as error:  # UnsupportedFlag is a ValueError
-                log.write(f"Kometa Studio: {error}\n")
-                self._finish(run_id, "failed", error=str(error))
-                return
+                try:
+                    argv, cwd = self._prepare(request)
+                    with self.db:
+                        self.db.execute("UPDATE runs SET command = ? WHERE id = ?", (kometa_command.display(argv), run_id))
+                    for hook in self.hooks:
+                        after = await hook.before_run(request, lambda line: self._emit(active, log, f"Kometa Studio: {line}"))
+                        if after is not None:
+                            afters.append(after)
+                    if active.cancel_requested:
+                        await self._afters(active, log, afters)
+                        self._emit(active, log, "Kometa Studio: run cancelled before Kometa started")
+                        self._finish(run_id, "cancelled")
+                        return
+                    active.process = await asyncio.create_subprocess_exec(
+                        *argv,
+                        cwd=cwd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        env=os.environ | {"PYTHONUNBUFFERED": "1"},
+                        start_new_session=True,  # its own process group, so cancelling reaches Kometa's worker too
+                        limit=LINE_LIMIT,
+                    )
+                except (RunHeld, ValueError, OSError) as error:  # UnsupportedFlag is a ValueError
+                    await self._afters(active, log, afters)
+                    self._emit(active, log, f"Kometa Studio: {error}")
+                    self._finish(run_id, "failed", error=str(error))
+                    return
 
-            active = Active(run_id, process)
-            self._active = active
-            try:
                 try:
                     await asyncio.wait_for(self._pump(active, log), self.settings.run_timeout)
                 except TimeoutError:
                     active.timed_out = True
                     await self._terminate(active)
-                exit_code = await process.wait()
+                exit_code = await active.process.wait()
+                await self._afters(active, log, afters)
                 status, error = self._outcome(run_id, active, exit_code)
                 reason = f": {error}" if error and status == "failed" and exit_code == 0 else ""
                 self._emit(active, log, f"Kometa Studio: run {status.replace('_', ' ')} (exit code {exit_code}){reason}")
@@ -247,6 +272,15 @@ class Runner:
                 self._active = None
                 for subscriber in active.subscribers:
                     subscriber.send(None)
+
+    async def _afters(self, active: Active, log, afters: list[After]) -> None:
+        """Run hooks' after steps; a failing one is logged, and the others still run."""
+        for after in afters:
+            try:
+                await after()
+            except Exception as error:  # the run's outcome is Kometa's; this only gets a log line
+                self._emit(active, log, f"Kometa Studio: {error}")
+        afters.clear()
 
     def _outcome(self, run_id: int, active: Active, exit_code: int) -> tuple[str, str | None]:
         if active.timed_out:
@@ -289,7 +323,7 @@ class Runner:
 
     async def _terminate(self, active: Active) -> None:
         process = active.process
-        if process.returncode is not None:
+        if process is None or process.returncode is not None:  # not started yet: the cancel flag stops it starting
             return
         try:
             os.killpg(process.pid, signal.SIGTERM)

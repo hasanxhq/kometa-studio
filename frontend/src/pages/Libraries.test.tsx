@@ -133,6 +133,24 @@ describe("A library", () => {
     expect(await within(files).findByText(/Marvel:/)).toBeInTheDocument();
   });
 
+  it("marks Maintainerr's collections, apart from unmanaged ones", async () => {
+    mockApi({
+      ...api,
+      "GET /plex/libraries/1/collections": () => ({
+        library: { key: "1", title: "Movies", type: "movie" },
+        collections: collections.map((c) => (c.rating_key === "102" ? { ...c, maintainerr: true } : c)),
+      }),
+    });
+    renderAt("/libraries/Movies");
+    const spyKids = (await screen.findByText("Spy Kids", { selector: "span.font-semibold" })).closest("li")!;
+    expect(spyKids).toHaveTextContent("By Maintainerr");
+    expect(screen.getByText(/Maintainerr's collections are protected/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Unmanaged (1)" }));
+    expect(screen.queryByText("Spy Kids", { selector: "span.font-semibold" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "By Maintainerr (1)" }));
+    expect(screen.getByText("Spy Kids", { selector: "span.font-semibold" })).toBeInTheDocument();
+  });
+
   it("shows defaults with their template variables, and operations", async () => {
     mockApi(api);
     renderAt("/libraries/Movies?tab=defaults");

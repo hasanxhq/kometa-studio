@@ -165,10 +165,31 @@ export type ArrKind = "radarr" | "sonarr";
 
 export type ArrSettings = { enabled: boolean; mode: RunMode; wait_minutes: number; libraries: Record<ArrKind, string[]> };
 
+export type ArrSource = "config" | "studio" | "off";
+
+export type ArrConnection = {
+  source: ArrSource; // Kometa's config.yml, entered in Studio, or off
+  url: string | null; // entered in Studio
+  has_key: boolean; // a key is saved (it's never sent back)
+  username: string | null; // for a proxy in front of the app
+  has_password: boolean;
+  config_url: string | null; // what config.yml has, if it has a url and token
+  status: { checked_at: string; ok: boolean; error: string | null } | null;
+};
+
+export type ArrConnectionInput = {
+  source: ArrSource;
+  url?: string | null;
+  api_key?: string | null;
+  username?: string | null;
+  password?: string | null; // null: keep the saved one
+};
+
+export type ArrTest = { ok: true; app: string; version: string } | { ok: false; error: string };
+
 export type ArrState = {
   settings: ArrSettings;
-  path: string; // the webhook's path, with its token; the page adds its own address
-  last_event: { at: string; kind: ArrKind | null; event: string; title: string | null } | null;
+  connections: Record<ArrKind, ArrConnection>;
   pending: { first_at: string; last_at: string; due_at: string; imports: number; titles: string[]; kinds: ArrKind[] } | null;
 };
 
@@ -176,6 +197,21 @@ export type ArrState = {
 export type LogLevel = "TRACE" | "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
 export type LogFile = { path: string; size: number; modified: number };
 export type LogView = { path: string; lines: { level: LogLevel; text: string }[]; truncated: boolean; size: number };
+
+// Maintainerr (Settings → Connect).
+export type MaintainerrState = {
+  url: string | null;
+  username: string | null; // for a proxy in front of Maintainerr, as on a seedbox
+  has_password: boolean; // a password is saved (it's never sent back)
+  leave_overlays_alone: boolean;
+  collections: { title: string; library: string | null; overlays: boolean }[];
+  overlays_enabled: boolean;
+  error: string | null;
+  checked_seconds_ago: number | null;
+  risks: string[]; // ways Kometa's config would touch Maintainerr's collections
+};
+
+export type MaintainerrInput = { url: string | null; username: string | null; password: string | null; leave_overlays_alone: boolean };
 
 // Studio's own tasks on System → Tasks.
 export type TaskName = "full_backup" | "full_check";
@@ -264,7 +300,7 @@ export type ConfigLibrary = {
 
 // --- Plex ---
 
-export type PlexLibrarySummary = { key: string; title: string; type: string; collections: number; managed: number };
+export type PlexLibrarySummary = { key: string; title: string; type: string; collections: number; managed: number; maintainerr?: number };
 
 export type PlexCollection = {
   rating_key: string;
@@ -276,6 +312,7 @@ export type PlexCollection = {
   thumb: string | null;
   added_at: number | null;
   updated_at: number | null;
+  maintainerr?: boolean; // Maintainerr made it: Kometa leaves it alone
 };
 
 // --- History ---
@@ -435,13 +472,24 @@ export const api = {
   arr: {
     get: () => request<ArrState>("GET", "/settings/arr"),
     save: (settings: ArrSettings) => request<ArrState>("PUT", "/settings/arr", settings),
-    newToken: () => request<ArrState>("POST", "/settings/arr/token"),
+    connect: (kind: ArrKind, body: ArrConnectionInput) => request<ArrState>("PUT", `/settings/arr/${kind}`, body),
+    test: (kind: ArrKind, body: ArrConnectionInput) => request<ArrTest>("POST", `/settings/arr/${kind}/test`, body),
   },
   logs: {
     list: () => request<{ files: LogFile[] }>("GET", "/logs"),
     read: (path: string, level: LogLevel, q: string) =>
       request<LogView>("GET", `/logs/file?${new URLSearchParams({ path, level, q }).toString()}`),
     downloadUrl: (path: string) => `/api/v1/logs/download?path=${encodeURIComponent(path)}`,
+  },
+  maintainerr: {
+    get: () => request<MaintainerrState>("GET", "/settings/maintainerr"),
+    save: (body: MaintainerrInput) => request<MaintainerrState>("PUT", "/settings/maintainerr", body),
+    test: (url: string, username: string | null, password: string | null) =>
+      request<{ ok: true; collections: number; overlays_enabled: boolean } | { ok: false; error: string }>("POST", "/settings/maintainerr/test", {
+        url,
+        username,
+        password,
+      }),
   },
   tasks: {
     list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),

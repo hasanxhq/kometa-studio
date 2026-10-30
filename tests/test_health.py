@@ -152,3 +152,11 @@ def test_original_posters_need_a_recent_full_backup(db, kometa):
             "VALUES ('full_backup', 1, 64, '04:30', 'UTC', '2026-10-30T00:00:00Z', 'failed', 'Not enough disk space')"
         )
     assert "Not enough disk space" in next(c for c in check(db, kometa) if c["source"] == "full_backup")["message"]
+
+
+def test_radarr_problems_show_when_runs_after_imports_are_on(db, kometa):
+    set_setting(db, "arr.status.radarr", {"checked_at": "2026-10-30T20:00:00Z", "ok": False, "error": "The API key was rejected"})
+    assert "radarr" not in sources(check(db, kometa))  # switched off: not a problem
+    set_setting(db, "arr.settings", {"enabled": True})
+    radarr = next(c for c in check(db, kometa) if c["source"] == "radarr")
+    assert radarr["message"] == "Studio can't read Radarr's imports: The API key was rejected"
