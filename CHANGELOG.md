@@ -55,3 +55,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A library's Collections tab says when Plex can't be reached, instead of saying Plex has no library by that name.
 
 - When Studio edits config.yml itself (Plex connection, webhook entries), it keeps the file's own formatting instead of restyling it.
+
+- Settings → General: once sign-in is set up, the card shows the username instead of the username and password fields. A "Change username or password" link opens them, with Cancel to close them again. The current password is asked for only when you change something.
