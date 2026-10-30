@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+/* Design tokens from the handoff (§11). Use them as Tailwind colours: bg-surface, text-muted, border-border, ... */
+@theme {
+  --color-bg: #0f1114;
+  --color-surface: #16191d;
+  --color-surface-2: #1a1d21;
+  --color-sidebar: #14171b;
+  --color-border: #23272d;
+  --color-border-strong: #2c3138;
+  --color-text: #ecedee;
+  --color-muted: #9aa1a9;
+  --color-accent: #f2b544;
+  --color-on-accent: #1a1406;
+  --color-ok: #8fd6a0;
+  --color-warn: #f2c77a;
+  --color-err: #f29b8a;
+  --color-info: #9dc2f7;
+
+  --font-display: "Space Grotesk Variable", system-ui, sans-serif;
+  --font-sans: "Inter Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+
+  --radius-control: 8px;
+  --radius-card: 12px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+}
