@@ -222,6 +222,14 @@ export type ArrState = {
   libraries: LibraryRelevance[];
 };
 
+// Kometa's calls per service today (from --timings), and MDBList's daily allowance (System → Status).
+export type Usage = {
+  today: Record<string, number>;
+  mdblist: { limit: number; used: number; checked_at: string } | null;
+  limit_share: number; // runs after imports wait at this share of MDBList's allowance
+  held: string | null;
+};
+
 // TMDb and MDBList (Settings → Connect): Kometa's keys, in config.yml.
 export type ServiceName = "tmdb" | "mdblist";
 export type ServicesState = Record<ServiceName, { apikey: string | null }>; // masked
@@ -595,6 +603,7 @@ export const api = {
       request<NotificationsState>("PUT", "/settings/notifications/webhooks", { events, base_hash: baseHash }),
   },
   jobs: () => request<{ jobs: Job[]; at: string }>("GET", "/jobs"),
+  usage: () => request<Usage>("GET", "/usage"),
   tasks: {
     list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),
     update: (name: TaskName, body: BuiltinTaskInput) => request<BuiltinTask>("PUT", `/tasks/${name}`, body),

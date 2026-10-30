@@ -15,7 +15,7 @@ from pathlib import Path
 import httpx
 from ruamel.yaml import YAMLError
 
-from . import arr, full_backup, plex
+from . import arr, full_backup, plex, usage
 from .auth import auth_settings
 from .config_routes import FULL_CHECK
 from .db import get_setting
@@ -132,6 +132,11 @@ def _arr_checks(db: sqlite3.Connection) -> list[Check]:
     return checks
 
 
+def _usage_checks(db: sqlite3.Connection) -> list[Check]:
+    reason = usage.held(db, datetime.now(UTC))
+    return [Check("mdblist", "warning", f"Runs after imports are waiting: {reason}.", "/system/status")] if reason else []
+
+
 def _backup_checks(db: sqlite3.Connection, settings: Settings) -> list[Check]:
     row = db.execute("SELECT enabled, last_status, last_message FROM tasks WHERE name = 'full_backup'").fetchone()
     if row is not None and row["last_status"] == "failed":
@@ -184,6 +189,7 @@ async def health(
             checks.append(plex_result)
     checks += _run_checks(db)
     checks += _arr_checks(db)
+    checks += _usage_checks(db)
     checks += _maintainerr_checks(maintainerr)
     checks += _backup_checks(db, settings)
     checks += _disk_check(settings)

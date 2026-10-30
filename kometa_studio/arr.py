@@ -30,7 +30,7 @@ import httpx
 from pydantic import BaseModel, Field
 from ruamel.yaml import YAML, YAMLError
 
-from . import wanted
+from . import usage, wanted
 from .crypto import SecretBox
 from .db import delete_setting, get_setting, set_setting
 from .kometa_command import Mode, RunRequest
@@ -253,6 +253,8 @@ class Arr:
         """Look for new imports in each connected app that runs Kometa; returns how many each had."""
         found = {}
         settings = load_settings(self.db)
+        if any(get_setting(self.db, pending_key(kind)) for kind in KINDS):
+            await usage.refresh_mdblist(self.db, self.http, self.config, now)  # for the MDBList limit when the run is due
         for kind in KINDS:
             conn = connection(self.db, self.box, self.config, kind)
             if conn is None or not settings.app(kind).enabled:
@@ -369,6 +371,11 @@ class Arr:
         for kind in KINDS:
             pending = get_setting(self.db, pending_key(kind))
             if not pending or now < self.due_at(pending, settings.app(kind)):
+                continue
+            reason = usage.held(self.db, now)
+            if reason:
+                if pending.get("held") != reason:
+                    set_setting(self.db, pending_key(kind), pending | {"held": reason})
                 continue
             delete_setting(self.db, pending_key(kind))
             queued.append(self.runner.enqueue(self.request(settings.app(kind), pending), trigger="arr"))

@@ -216,6 +216,8 @@ class Runner:
             ensure_studio_webhooks(s.kometa_config, self.webhook_url, s.data_dir / "backups")
         except OSError as error:
             raise ValueError(f"Couldn't add Studio's webhooks to {s.kometa_config}: {error}") from None
+        if self.flags is None or "--timings" in self.flags:
+            request = request.model_copy(update={"timings": True})  # Kometa's calls per service, for usage.py
         argv = kometa_command.build_command(s.kometa_python, s.kometa_entry, s.kometa_config, request, self.flags)
         return argv, s.kometa_entry.parent
 

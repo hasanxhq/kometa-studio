@@ -16,6 +16,8 @@ from . import __version__
 from .arr import Arr
 from .maintainerr import Maintainerr
 from .arr_routes import router as arr_router
+from .usage import ApiCalls
+from .usage import router as usage_router
 from .wanted import WantedRecorder
 from .services import router as services_router
 from .auth import AuthMiddleware, LoginThrottle
@@ -124,6 +126,7 @@ def create_app(
         maintainerr.runner = runner
         runner.hooks.append(maintainerr)
         runner.hooks.append(WantedRecorder(app.state.db, runner, settings.kometa_config, kometa_root))
+        runner.hooks.append(ApiCalls(app.state.db, runner, settings.kometa_config))
         if app.state.writer is not None:
             app.state.writer.guard = lambda path, root: [risk.message for risk in maintainerr.risks(path, root)]
         maintainerr.start()
@@ -163,6 +166,7 @@ def create_app(
     app.include_router(tasks_router)
     app.include_router(arr_router)
     app.include_router(services_router)
+    app.include_router(usage_router)
     app.include_router(logs_router)
     app.include_router(jobs_router)
     app.include_router(maintainerr_router)

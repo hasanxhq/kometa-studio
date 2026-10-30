@@ -81,3 +81,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Kometa's overlays go on first when something is new since Kometa last drew overlays, so a new item never gets Maintainerr's overlay before Kometa's. Putting Maintainerr's overlays back then gives Kometa's poster, not the bare one.
   - Maintainerr's own overlay schedule is kept off while this is on, and given back when it's turned off or Maintainerr is disconnected. Settings → Connect shows the schedule Studio holds and the next daily redraw.
   - Maintainerr's overlays are no longer switched off around runs.
+- Every run now records how many calls Kometa made to each service (TMDb, MDBList, IMDb, …), using Kometa's `--timings`. System → Status shows today's totals and how much of MDBList's daily allowance is used.
+- Runs after imports wait once MDBList reaches 80% of its daily allowance, until it resets at midnight UTC. Scheduled and manual runs always go. The jobs drawer and Health say when a run is waiting for this.

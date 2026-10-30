@@ -154,9 +154,9 @@ def collect(db: sqlite3.Connection, runner, tasks, arr, maintainerr) -> list[dic
                 "kind": "arr",
                 "title": f"Kometa after {name} imports",
                 "status": "pending",
-                "label": "Waiting",
+                "label": "Held" if pending.get("held") else "Waiting",
                 "message": f"{pending['imports']} import{'s' if pending['imports'] != 1 else ''} ({', '.join(pending['titles'])}); "
-                "runs once no more arrive",
+                + (f"held: {pending['held']}" if pending.get("held") else "runs once no more arrive"),
                 "progress": None,
                 "started_at": pending["first_at"],
                 "finished_at": None,
