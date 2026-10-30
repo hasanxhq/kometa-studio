@@ -231,3 +231,30 @@ def test_the_connection_check_spots_a_dns_block(tmp_path, monkeypatch):
     assert tmdb["verdict"] == "Blocked by this network's DNS: works over DNS over HTTPS, or through a proxy"
     plex = results["Plex"]
     assert (plex["ok"], plex["status"], plex["doh_dns"], plex["verdict"], plex["via"]) == (True, 200, None, "OK", "direct")
+
+
+def test_an_address_that_resets_is_skipped_for_the_next(tmp_path, db):
+    """As on the maintainer's network: some of a CDN's addresses get reset."""
+    tried = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "1.1.1.1":
+            return httpx.Response(200, json={"Answer": [{"type": 1, "TTL": 60, "data": "3.175.86.50"}, {"type": 1, "TTL": 60, "data": "3.175.86.67"}]})
+        tried.append(request.url.host)
+        if request.url.host == "3.175.86.50":
+            raise httpx.ConnectError("Connection reset by peer", request=request)
+        return httpx.Response(401)
+
+    set_setting(db, network.SETTING, {"doh_services": ["tmdb"]})
+
+    async def scenario():
+        async with httpx.AsyncClient(transport=NetworkTransport(db, None, None, httpx.MockTransport(handle))) as http:
+            through_studio = (await http.get("https://api.themoviedb.org/3/")).status_code
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as plain:
+            from kometa_studio import doh
+
+            through_quick_fix = (await doh.get(plain, "https://api.themoviedb.org/3/")).status_code
+        return through_studio, through_quick_fix
+
+    assert asyncio.run(scenario()) == (401, 401)
+    assert tried == ["3.175.86.50", "3.175.86.67", "3.175.86.50", "3.175.86.67"]

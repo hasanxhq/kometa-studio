@@ -180,7 +180,7 @@ class NetworkTransport(httpx.AsyncBaseTransport):
         self._key: str | None = None
         self._direct: httpx.AsyncBaseTransport | None = None
         self._proxy: httpx.AsyncBaseTransport | None = None
-        self._cache: dict[str, tuple[float, str]] = {}
+        self._cache: dict[str, tuple[float, list[str]]] = {}
 
     def _transports(self, settings: NetworkSettings) -> tuple[httpx.AsyncBaseTransport, httpx.AsyncBaseTransport | None]:
         key = settings.model_dump_json()
@@ -204,12 +204,18 @@ class NetworkTransport(httpx.AsyncBaseTransport):
         # The Network page's DoH only: the TMDb quick fix is for Kometa, since Studio's own TMDb calls (key tests) say whether to bypass.
         domains = doh_domains(self.db, settings, None)
         if domains and not _is_address(host) and _covered(host, domains):
-            address = await self._resolve(straight, host, PROVIDERS[settings.doh_provider][1])
-            request.url = request.url.copy_with(host=address)  # the Host header keeps the real name
+            failed: httpx.TransportError | None = None
             request.extensions = request.extensions | {"sni_hostname": host}
+            for address in await self._resolve(straight, host, PROVIDERS[settings.doh_provider][1]):
+                request.url = request.url.copy_with(host=address)  # the Host header keeps the real name
+                try:
+                    return await straight.handle_async_request(request)
+                except (httpx.ConnectError, httpx.ConnectTimeout) as error:  # not connected, nothing sent: try the next address
+                    failed = error
+            raise failed  # type: ignore[misc]
         return await straight.handle_async_request(request)
 
-    async def _resolve(self, transport: httpx.AsyncBaseTransport, host: str, url: str) -> str:
+    async def _resolve(self, transport: httpx.AsyncBaseTransport, host: str, url: str) -> list[str]:
         cached = self._cache.get(host)
         if cached and cached[0] > time.monotonic():
             return cached[1]
@@ -223,8 +229,9 @@ class NetworkTransport(httpx.AsyncBaseTransport):
         if not answers:
             raise httpx.ConnectError(f"DNS over HTTPS has no address for {host}", request=query)
         ttl = min(int(a.get("TTL", 300)) for a in answers)
-        self._cache[host] = (time.monotonic() + max(ttl, 30), str(answers[0]["data"]))
-        return str(answers[0]["data"])
+        addresses = [str(a["data"]) for a in answers]
+        self._cache[host] = (time.monotonic() + max(ttl, 30), addresses)
+        return addresses
 
     async def aclose(self) -> None:
         for transport in (self._direct, self._proxy):

@@ -56,6 +56,11 @@ def enabled(db: sqlite3.Connection, config: Path | None) -> bool:
 
 async def resolve(http: httpx.AsyncClient, host: str, url: str = DOH_URL) -> str:
     """The first IPv4 address DoH (``url``: 1.1.1.1 unless another provider's) gives for ``host``."""
+    return (await resolve_all(http, host, url))[0]
+
+
+async def resolve_all(http: httpx.AsyncClient, host: str, url: str = DOH_URL) -> list[str]:
+    """Every IPv4 address DoH gives for ``host``, in its order."""
     provider = urlsplit(url).hostname
     try:
         response = await http.get(url, params={"name": host, "type": "A"}, headers={"Accept": "application/dns-json"}, timeout=TIMEOUT)
@@ -67,14 +72,22 @@ async def resolve(http: httpx.AsyncClient, host: str, url: str = DOH_URL) -> str
     found = [str(answer["data"]) for answer in answers if isinstance(answer, dict) and answer.get("type") == 1 and answer.get("data")]
     if not found:
         raise DohProblem(f"{provider} has no address for {host}")
-    return found[0]
+    return found
 
 
 async def get(http: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
-    """GET ``url``, its host looked up over DoH: connect to that address, with the real name for TLS and Host."""
+    """GET ``url``, its host looked up over DoH: connect to that address, with the real name for TLS and Host.
+
+    If an address can't be connected to (some networks reset a few of a CDN's addresses), the next one is tried.
+    """
     parts = urlsplit(url)
     host = parts.hostname or ""
-    address = await resolve(http, host)
-    netloc = address + (f":{parts.port}" if parts.port else "")
     headers = dict(kwargs.pop("headers", None) or {}) | {"Host": parts.netloc}
-    return await http.get(urlunsplit(parts._replace(netloc=netloc)), headers=headers, extensions={"sni_hostname": host}, **kwargs)
+    failed: httpx.TransportError | None = None
+    for address in await resolve_all(http, host):
+        netloc = address + (f":{parts.port}" if parts.port else "")
+        try:
+            return await http.get(urlunsplit(parts._replace(netloc=netloc)), headers=headers, extensions={"sni_hostname": host}, **kwargs)
+        except (httpx.ConnectError, httpx.ConnectTimeout) as error:
+            failed = error
+    raise failed  # type: ignore[misc]
