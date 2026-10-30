@@ -15,7 +15,7 @@ function plural(count: number, word: string): string {
 
 function LibraryCard({ entry }: { entry: LibraryEntry }) {
   const { plex, config } = entry;
-  const unmanaged = plex ? plex.collections - plex.managed : 0;
+  const unmanaged = plex ? plex.collections - plex.managed - (plex.maintainerr ?? 0) : 0;
   return (
     <li>
       <Link
@@ -32,7 +32,8 @@ function LibraryCard({ entry }: { entry: LibraryEntry }) {
             {plex.collections > 0 && (
               <span className="text-muted">
                 {" "}
-                · <span className="text-accent">{plex.managed} by Kometa</span> · {unmanaged} unmanaged
+                · <span className="text-accent">{plex.managed} by Kometa</span>
+                {plex.maintainerr ? <> · <span className="text-info">{plex.maintainerr} by Maintainerr</span></> : null} · {unmanaged} unmanaged
               </span>
             )}
           </p>

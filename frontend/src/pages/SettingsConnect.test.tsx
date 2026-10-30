@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { ArrState } from "../api";
+import type { ArrState, MaintainerrState } from "../api";
 import { mockApi, renderAt } from "../test-utils";
 
 const state: ArrState = {
@@ -18,6 +18,53 @@ const overview = {
   libraries: [{ name: "Movies" }, { name: "TV Shows" }],
   playlist_files: [],
 };
+
+const notConnected: MaintainerrState = {
+  url: null,
+  has_key: false,
+  leave_overlays_alone: true,
+  collections: [],
+  overlays_enabled: false,
+  error: null,
+  checked_seconds_ago: null,
+  risks: [],
+};
+
+describe("Maintainerr", () => {
+  it("tests and connects, keeping its overlays on top by default", async () => {
+    const connected: MaintainerrState = {
+      ...notConnected,
+      url: "http://maintainerr:6246",
+      collections: [{ title: "Leaving Soon", library: "Movies", overlays: true }],
+      overlays_enabled: true,
+      risks: ["Movies: delete_collections would delete Maintainerr's collections (“Leaving Soon”): Kometa sees them as unmanaged. Limit it with managed: true."],
+    };
+    const calls = mockApi({
+      "GET /settings/arr": () => state,
+      "GET /config": () => overview,
+      "GET /settings/maintainerr": () => notConnected,
+      "POST /settings/maintainerr/test": () => ({ ok: true, collections: 1, overlays_enabled: true }),
+      "PUT /settings/maintainerr": () => connected,
+    });
+    renderAt("/settings/connect");
+
+    const form = await screen.findByRole("form", { name: "Maintainerr" });
+    fireEvent.change(within(form).getByLabelText("URL"), { target: { value: "http://maintainerr:6246" } });
+    expect(within(form).getByLabelText(/Leave Maintainerr overlays alone/)).toBeChecked();
+    fireEvent.click(within(form).getByRole("button", { name: "Test" }));
+    expect(await within(form).findByText("Maintainerr answered: 1 collection, overlays on.")).toBeInTheDocument();
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Kometa's config would touch Maintainerr's collections")).toBeInTheDocument();
+    expect(screen.getByText(/Limit it with managed: true/)).toBeInTheDocument();
+    expect(screen.getByText("Protecting 1 collection:")).toBeInTheDocument();
+    expect(calls.find((c) => c.route === "PUT /settings/maintainerr")?.body).toEqual({
+      url: "http://maintainerr:6246",
+      api_key: null,
+      leave_overlays_alone: true,
+    });
+  });
+});
 
 describe("Settings → Connect", () => {
   it("uses Kometa's Radarr, tests it, and saves what imports run", async () => {

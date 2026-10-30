@@ -4,7 +4,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 
-import { api, type ArrConnection, type ArrConnectionInput, type ArrKind, type ArrSettings, type ArrSource, type ArrState, type RunMode } from "../api";
+import {
+  api,
+  type ArrConnection,
+  type ArrConnectionInput,
+  type ArrKind,
+  type ArrSettings,
+  type ArrSource,
+  type ArrState,
+  type MaintainerrState,
+  type RunMode,
+} from "../api";
 import { Button, Card, Field, inputClass } from "../components/ui";
 import { formatRelative, formatTime, modes } from "../runs";
 
@@ -39,8 +49,7 @@ function ArrConnectionForm({ kind, label, connection }: { kind: ArrKind; label: 
         <label className="flex min-h-11 items-center gap-2 text-sm">
           <input type="radio" className="accent-accent" checked={source === "config"} onChange={() => setSource("config")} />
           <span>
-            Kometa's, from config.yml{" "}
-            <span className="font-mono text-xs text-muted">{connection.config_url ?? "(config.yml has no url and token)"}</span>
+            Kometa's, from config.yml <span className="font-mono text-xs text-muted">{connection.config_url ?? "(config.yml has no url and token)"}</span>
           </span>
         </label>
         <label className="flex min-h-11 items-center gap-2 text-sm">
@@ -56,7 +65,12 @@ function ArrConnectionForm({ kind, label, connection }: { kind: ArrKind; label: 
         <div className="flex flex-wrap gap-3">
           <div className="min-w-0 flex-1 basis-64">
             <Field label="URL">
-              <input className={inputClass} value={url} onChange={(e) => setUrl(e.target.value)} placeholder={kind === "radarr" ? "http://radarr:7878" : "http://sonarr:8989"} />
+              <input
+                className={inputClass}
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder={kind === "radarr" ? "http://radarr:7878" : "http://sonarr:8989"}
+              />
             </Field>
           </div>
           <div className="min-w-0 flex-1 basis-64">
@@ -156,7 +170,12 @@ function ArrForm({ state, libraries }: { state: ArrState; libraries: string[] })
             <div className="flex flex-wrap gap-x-4">
               {libraries.map((name) => (
                 <label key={name} className="flex min-h-11 items-center gap-2 text-sm">
-                  <input type="checkbox" className="size-4 accent-accent" checked={draft.libraries[kind].includes(name)} onChange={() => toggleLibrary(kind, name)} />
+                  <input
+                    type="checkbox"
+                    className="size-4 accent-accent"
+                    checked={draft.libraries[kind].includes(name)}
+                    onChange={() => toggleLibrary(kind, name)}
+                  />
                   {name}
                 </label>
               ))}
@@ -195,6 +214,144 @@ function Pending({ state }: { state: ArrState }) {
   );
 }
 
+function MaintainerrForm({ current }: { current: MaintainerrState }) {
+  const queryClient = useQueryClient();
+  const [draftUrl, setUrl] = useState(current.url ?? "");
+  const [apiKey, setApiKey] = useState("");
+  const [draftLeave, setLeaveOverlays] = useState(current.leave_overlays_alone);
+  const test = useMutation({ mutationFn: () => api.maintainerr.test(draftUrl, apiKey || null) });
+  const save = useMutation({
+    mutationFn: (disconnect: boolean) =>
+      api.maintainerr.save(
+        disconnect
+          ? { url: null, api_key: "", leave_overlays_alone: draftLeave }
+          : { url: draftUrl, api_key: apiKey || null, leave_overlays_alone: draftLeave },
+      ),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["maintainerr"], data);
+      queryClient.invalidateQueries({ queryKey: ["status"] });
+      queryClient.invalidateQueries({ queryKey: ["plex"] });
+      setUrl(data.url ?? "");
+      setApiKey("");
+    },
+  });
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    save.mutate(false);
+  };
+
+  return (
+    <form className="flex flex-col gap-4" onSubmit={submit} aria-label="Maintainerr">
+      <p className="text-sm text-muted">
+        With Maintainerr connected, Kometa leaves its collections alone: Studio refuses any change, and holds any run, that would let Kometa delete them, change
+        their mode, or take one over with a collection of the same name.
+      </p>
+      <div className="flex flex-wrap gap-3">
+        <div className="min-w-0 flex-1 basis-64">
+          <Field label="URL">
+            <input className={inputClass} value={draftUrl} onChange={(e) => setUrl(e.target.value)} placeholder="http://maintainerr:6246" />
+          </Field>
+        </div>
+        <div className="min-w-0 flex-1 basis-48">
+          <Field label="API key (if it has one)">
+            <input
+              className={inputClass}
+              type="password"
+              autoComplete="off"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={current.has_key ? "Saved (leave empty to keep it)" : ""}
+            />
+          </Field>
+        </div>
+      </div>
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" className="mt-1 size-4 accent-accent" checked={draftLeave} onChange={(e) => setLeaveOverlays(e.target.checked)} />
+        <span>
+          Leave Maintainerr overlays alone
+          <span className="block text-xs text-muted">
+            Maintainerr's overlays take precedence over Kometa's. Before a Kometa run that can change posters, Maintainerr puts back the posters under its
+            overlays; afterwards it draws them again, on top of Kometa's. Kometa never sees a countdown, so it can't keep one as an item's original poster. If
+            Maintainerr doesn't answer, those runs wait.
+          </span>
+        </span>
+      </label>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="primary" type="submit" disabled={save.isPending || !draftUrl}>
+          Save
+        </Button>
+        <Button onClick={() => test.mutate()} disabled={test.isPending || !draftUrl}>
+          {test.isPending ? "Testing…" : "Test"}
+        </Button>
+        {current.url && <Button onClick={() => save.mutate(true)}>Disconnect</Button>}
+        {test.data &&
+          (test.data.ok ? (
+            <span role="status" className="text-sm text-ok">
+              Maintainerr answered: {test.data.collections} collection{test.data.collections === 1 ? "" : "s"}, overlays{" "}
+              {test.data.overlays_enabled ? "on" : "off"}.
+            </span>
+          ) : (
+            <span role="alert" className="text-sm text-err">
+              {test.data.error}
+            </span>
+          ))}
+        {save.isError && (
+          <span role="alert" className="text-sm text-err">
+            {save.error.message}
+          </span>
+        )}
+      </div>
+      {current.url && (
+        <div className="flex flex-col gap-2 text-sm">
+          {current.error && <p className="text-warn">Can't read Maintainerr: {current.error}</p>}
+          {current.risks.length > 0 && (
+            <div role="alert" className="rounded-control border border-err/40 p-3">
+              <p className="font-semibold text-err">Kometa's config would touch Maintainerr's collections</p>
+              <p className="text-xs text-muted">Runs that would do this are held until it's fixed.</p>
+              <ul className="mt-2 list-disc pl-5">
+                {current.risks.map((risk) => (
+                  <li key={risk}>{risk}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="text-muted">
+            Protecting {current.collections.length} collection{current.collections.length === 1 ? "" : "s"}
+            {current.collections.length > 0 ? ":" : "."}
+          </p>
+          {current.collections.length > 0 && (
+            <ul className="flex flex-wrap gap-2">
+              {current.collections.map((c) => (
+                <li key={`${c.library}/${c.title}`} className="rounded border border-border px-2 py-1 text-xs">
+                  {c.title} <span className="text-muted">· {c.library ?? "unknown library"}</span>
+                  {c.overlays && current.overlays_enabled && <span className="text-info"> · overlays</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </form>
+  );
+}
+
+function MaintainerrCard() {
+  const state = useQuery({ queryKey: ["maintainerr"], queryFn: api.maintainerr.get });
+  return (
+    <Card title="Maintainerr">
+      {state.isPending ? (
+        <p className="text-muted">Loading…</p>
+      ) : state.isError ? (
+        <p role="alert" className="text-err">
+          {state.error.message}
+        </p>
+      ) : (
+        <MaintainerrForm current={state.data} />
+      )}
+    </Card>
+  );
+}
+
 export function SettingsConnect() {
   const arr = useQuery({ queryKey: ["arr"], queryFn: api.arr.get, refetchInterval: 30_000 });
   const config = useQuery({ queryKey: ["config"], queryFn: api.config.overview, retry: false });
@@ -212,18 +369,23 @@ export function SettingsConnect() {
         ) : (
           <div className="flex flex-col gap-5">
             <p className="text-sm text-muted">
-              When Radarr or Sonarr imports a movie or episode, Kometa can run for its library, so new items get their overlays and join their
-              collections without waiting for the next schedule. Studio checks their import history every 2 minutes, so they don't need to reach
-              Studio.
+              When Radarr or Sonarr imports a movie or episode, Kometa can run for its library, so new items get their overlays and join their collections
+              without waiting for the next schedule. Studio checks their import history every 2 minutes, so they don't need to reach Studio.
             </p>
             {apps.map(({ kind, label }) => (
-              <ArrConnectionForm key={`${kind}-${arr.data.connections[kind].source}-${arr.data.connections[kind].url}`} kind={kind} label={label} connection={arr.data.connections[kind]} />
+              <ArrConnectionForm
+                key={`${kind}-${arr.data.connections[kind].source}-${arr.data.connections[kind].url}`}
+                kind={kind}
+                label={label}
+                connection={arr.data.connections[kind]}
+              />
             ))}
             <ArrForm key={JSON.stringify(arr.data.settings)} state={arr.data} libraries={libraries} />
             <Pending state={arr.data} />
           </div>
         )}
       </Card>
+      <MaintainerrCard />
       <Card title="TMDb, Trakt and other services">
         <p className="text-sm text-muted">
           Kometa's own connections (TMDb, Trakt, MDBList, Radarr and Sonarr for adding items, notifications) are set in{" "}

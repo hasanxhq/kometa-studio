@@ -190,6 +190,20 @@ export type LogLevel = "TRACE" | "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITI
 export type LogFile = { path: string; size: number; modified: number };
 export type LogView = { path: string; lines: { level: LogLevel; text: string }[]; truncated: boolean; size: number };
 
+// Maintainerr (Settings → Connect).
+export type MaintainerrState = {
+  url: string | null;
+  has_key: boolean; // a key is saved (it's never sent back)
+  leave_overlays_alone: boolean;
+  collections: { title: string; library: string | null; overlays: boolean }[];
+  overlays_enabled: boolean;
+  error: string | null;
+  checked_seconds_ago: number | null;
+  risks: string[]; // ways Kometa's config would touch Maintainerr's collections
+};
+
+export type MaintainerrInput = { url: string | null; api_key: string | null; leave_overlays_alone: boolean };
+
 // Studio's own tasks on System → Tasks.
 export type TaskName = "full_backup" | "full_check";
 
@@ -277,7 +291,7 @@ export type ConfigLibrary = {
 
 // --- Plex ---
 
-export type PlexLibrarySummary = { key: string; title: string; type: string; collections: number; managed: number };
+export type PlexLibrarySummary = { key: string; title: string; type: string; collections: number; managed: number; maintainerr?: number };
 
 export type PlexCollection = {
   rating_key: string;
@@ -289,6 +303,7 @@ export type PlexCollection = {
   thumb: string | null;
   added_at: number | null;
   updated_at: number | null;
+  maintainerr?: boolean; // Maintainerr made it: Kometa leaves it alone
 };
 
 // --- History ---
@@ -456,6 +471,15 @@ export const api = {
     read: (path: string, level: LogLevel, q: string) =>
       request<LogView>("GET", `/logs/file?${new URLSearchParams({ path, level, q }).toString()}`),
     downloadUrl: (path: string) => `/api/v1/logs/download?path=${encodeURIComponent(path)}`,
+  },
+  maintainerr: {
+    get: () => request<MaintainerrState>("GET", "/settings/maintainerr"),
+    save: (body: MaintainerrInput) => request<MaintainerrState>("PUT", "/settings/maintainerr", body),
+    test: (url: string, apiKey: string | null) =>
+      request<{ ok: true; collections: number; overlays_enabled: boolean } | { ok: false; error: string }>("POST", "/settings/maintainerr/test", {
+        url,
+        api_key: apiKey,
+      }),
   },
   tasks: {
     list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),

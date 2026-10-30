@@ -313,7 +313,7 @@ async def plex_libraries(request: Request, http: Http, settings: AppSettings) ->
                 "type": library.type,
                 "collections": len(found),
                 "managed": sum(c.managed for c in found),
-                "maintainerr": sum(c.rating_key in theirs for c in found),
+                "maintainerr": sum(c.rating_key in theirs and not c.managed for c in found),
             }
             for library, found in zip(libraries, collections, strict=True)
         ]
