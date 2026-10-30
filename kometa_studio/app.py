@@ -27,6 +27,7 @@ from .health import PlexCheck, health, kometa_updates, kometa_version
 from .jobs import router as jobs_router
 from .logs_routes import router as logs_router
 from .maintainerr_routes import router as maintainerr_router
+from .notifications_routes import router as notifications_router
 from .plex_routes import router as plex_router
 from .runner import Runner
 from .runs_routes import router as runs_router
@@ -159,5 +160,6 @@ def create_app(
     app.include_router(logs_router)
     app.include_router(jobs_router)
     app.include_router(maintainerr_router)
+    app.include_router(notifications_router)
     mount_frontend(app, static_dir)
     return app
