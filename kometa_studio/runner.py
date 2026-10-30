@@ -1,0 +1,292 @@
+"""Running Kometa: one process at a time, queued in SQLite, output streamed live (handoff v2 §5.3).
+
+Kometa forks a worker process for the run itself, so each run gets its own process
+group and cancelling signals the whole group: SIGTERM, then SIGKILL if it hasn't
+exited after ``kill_after`` seconds.
+"""
+
+import asyncio
+import json
+import os
+import signal
+import sqlite3
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from . import kometa_command
+from .kometa_command import RunRequest
+from .kometa_config import ensure_studio_webhooks
+from .settings import Settings
+
+FINISHED = ("succeeded", "failed", "cancelled", "interrupted", "timed_out")
+SUBSCRIBER_BACKLOG = 10_000  # lines a slow browser may fall behind before it's dropped (it reconnects)
+LINE_LIMIT = 1024 * 1024  # longest single output line Studio reads
+
+
+def now() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+class Subscriber:
+    """One browser following a run's log. Gets lines, then None when the run ends or it fell too far behind."""
+
+    def __init__(self) -> None:
+        self.queue: asyncio.Queue[str | None] = asyncio.Queue()
+        self.dropped = False
+
+    def send(self, line: str | None) -> None:
+        if self.dropped:
+            return
+        if line is not None and self.queue.qsize() >= SUBSCRIBER_BACKLOG:
+            self.dropped = True
+            line = None
+        self.queue.put_nowait(line)
+
+
+@dataclass
+class Active:
+    run_id: int
+    process: asyncio.subprocess.Process
+    subscribers: set[Subscriber] = field(default_factory=set)
+    cancel_requested: bool = False
+    timed_out: bool = False
+
+
+class Runner:
+    def __init__(self, db: sqlite3.Connection, settings: Settings, webhook_url: str):
+        self.db = db
+        self.settings = settings
+        self.webhook_url = webhook_url
+        self.runs_dir = settings.data_dir / "runs"
+        self.flags: set[str] | None = None  # from kometa.py --help; None means "not known", so nothing is checked
+        self.flags_error: str | None = None
+        self._wake = asyncio.Event()
+        self._active: Active | None = None
+        self._task: asyncio.Task | None = None
+
+    # --- Lifecycle --------------------------------------------------------------
+
+    def recover(self) -> int:
+        """Runs still marked running were cut off by a restart or power cut."""
+        with self.db:
+            cursor = self.db.execute(
+                "UPDATE runs SET status = 'interrupted', finished_at = ?, "
+                "error = 'Studio stopped while this run was going' WHERE status = 'running'",
+                (now(),),
+            )
+        return cursor.rowcount
+
+    def start(self) -> None:
+        self.recover()
+        self._task = asyncio.create_task(self._loop(), name="kometa-runner")
+
+    async def stop(self) -> None:
+        if self._active is not None:
+            self._active.cancel_requested = True
+            await self._terminate(self._active)
+        if self._task is not None:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+    async def probe_flags(self) -> None:
+        if self.settings.kometa_python is None or self.settings.kometa_entry is None:
+            self.flags_error = "Studio doesn't know where Kometa is (STUDIO_KOMETA_PYTHON and STUDIO_KOMETA_ENTRY)."
+            return
+        try:
+            self.flags = await kometa_command.probe_flags(self.settings.kometa_python, self.settings.kometa_entry)
+            self.flags_error = None
+        except RuntimeError as error:
+            self.flags_error = str(error)
+
+    # --- Queue ------------------------------------------------------------------
+
+    @property
+    def current_run_id(self) -> int | None:
+        return self._active.run_id if self._active else None
+
+    def enqueue(self, request: RunRequest, trigger: str = "manual") -> int:
+        """Queue a run. An identical request that's already waiting is reused rather than queued twice."""
+        payload = request.model_dump_json()
+        existing = self.db.execute("SELECT id FROM runs WHERE status = 'queued' AND request = ? ORDER BY id LIMIT 1", (payload,)).fetchone()
+        if existing:
+            return existing[0]
+        with self.db:
+            run_id = self.db.execute("INSERT INTO runs (request, trigger) VALUES (?, ?)", (payload, trigger)).lastrowid
+        self._wake.set()
+        return run_id
+
+    def cancel(self, run_id: int) -> bool:
+        """Cancel a queued or running run. Returns False if it had already finished."""
+        if self._active is not None and self._active.run_id == run_id:
+            if not self._active.cancel_requested:
+                self._active.cancel_requested = True
+                asyncio.create_task(self._terminate(self._active))
+            return True
+        with self.db:
+            cursor = self.db.execute(
+                "UPDATE runs SET status = 'cancelled', finished_at = ? WHERE id = ? AND status = 'queued'", (now(), run_id)
+            )
+        return cursor.rowcount == 1
+
+    def subscribe(self, run_id: int) -> Subscriber | None:
+        """Follow the live output of the running run, or None if that run isn't running."""
+        if self._active is None or self._active.run_id != run_id:
+            return None
+        subscriber = Subscriber()
+        self._active.subscribers.add(subscriber)
+        return subscriber
+
+    def unsubscribe(self, run_id: int, subscriber: Subscriber) -> None:
+        if self._active is not None and self._active.run_id == run_id:
+            self._active.subscribers.discard(subscriber)
+
+    def log_path(self, run_id: int) -> Path:
+        return self.runs_dir / f"{run_id}.log"
+
+    # --- Webhook events ---------------------------------------------------------
+
+    def record_event(self, payload: dict[str, Any]) -> int | None:
+        """Store a Kometa webhook event against the running run (None if no run is going) and return that run's ID.
+
+        Webhooks carry no run ID, but only one Kometa runs at a time, so whatever arrives now belongs to it.
+        """
+        event = str(payload.get("event") or "unknown")
+        # Base64 images can be megabytes; the *_url fields are enough.
+        payload = {key: value for key, value in payload.items() if key not in ("poster", "background")}
+        run_id = self.current_run_id
+        with self.db:
+            self.db.execute("INSERT INTO run_events (run_id, event, payload) VALUES (?, ?, ?)", (run_id, event, json.dumps(payload)))
+            if event == "run_end" and run_id is not None:
+                self.db.execute("UPDATE runs SET summary = ? WHERE id = ?", (json.dumps(payload), run_id))
+        return run_id
+
+    # --- Running ----------------------------------------------------------------
+
+    async def _loop(self) -> None:
+        while True:
+            row = self.db.execute("SELECT id, request FROM runs WHERE status = 'queued' ORDER BY id LIMIT 1").fetchone()
+            if row is None:
+                self._wake.clear()
+                await self._wake.wait()
+                continue
+            await self._run(row[0], RunRequest.model_validate_json(row[1]))
+
+    def _finish(self, run_id: int, status: str, *, exit_code: int | None = None, error: str | None = None) -> None:
+        with self.db:
+            self.db.execute(
+                "UPDATE runs SET status = ?, finished_at = ?, exit_code = ?, error = ? WHERE id = ?",
+                (status, now(), exit_code, error, run_id),
+            )
+
+    def _prepare(self, request: RunRequest) -> tuple[list[str], Path]:
+        """Check Kometa can run, make sure its webhooks reach Studio, and build the command. Raises ValueError with the reason."""
+        s = self.settings
+        if s.kometa_python is None or s.kometa_entry is None or s.kometa_config is None:
+            raise ValueError("Studio doesn't know where Kometa is. Set STUDIO_KOMETA_PYTHON, STUDIO_KOMETA_ENTRY and STUDIO_KOMETA_CONFIG.")
+        if not s.kometa_config.exists():
+            raise ValueError(f"{s.kometa_config} doesn't exist yet. Connect Plex in Settings → Plex first.")
+        try:
+            ensure_studio_webhooks(s.kometa_config, self.webhook_url, s.data_dir / "backups")
+        except OSError as error:
+            raise ValueError(f"Couldn't add Studio's webhooks to {s.kometa_config}: {error}") from None
+        argv = kometa_command.build_command(s.kometa_python, s.kometa_entry, s.kometa_config, request, self.flags)
+        return argv, s.kometa_entry.parent
+
+    async def _run(self, run_id: int, request: RunRequest) -> None:
+        self.runs_dir.mkdir(parents=True, exist_ok=True)
+        with self.db:
+            self.db.execute("UPDATE runs SET status = 'running', started_at = ? WHERE id = ?", (now(), run_id))
+        with open(self.log_path(run_id), "w", encoding="utf-8", buffering=1) as log:
+            try:
+                argv, cwd = self._prepare(request)
+                with self.db:
+                    self.db.execute("UPDATE runs SET command = ? WHERE id = ?", (kometa_command.display(argv), run_id))
+                process = await asyncio.create_subprocess_exec(
+                    *argv,
+                    cwd=cwd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    env=os.environ | {"PYTHONUNBUFFERED": "1"},
+                    start_new_session=True,  # its own process group, so cancelling reaches Kometa's worker too
+                    limit=LINE_LIMIT,
+                )
+            except (ValueError, OSError) as error:  # UnsupportedFlag is a ValueError
+                log.write(f"Kometa Studio: {error}\n")
+                self._finish(run_id, "failed", error=str(error))
+                return
+
+            active = Active(run_id, process)
+            self._active = active
+            try:
+                try:
+                    await asyncio.wait_for(self._pump(active, log), self.settings.run_timeout)
+                except TimeoutError:
+                    active.timed_out = True
+                    await self._terminate(active)
+                exit_code = await process.wait()
+            finally:
+                self._active = None
+                for subscriber in active.subscribers:
+                    subscriber.send(None)
+
+            if active.timed_out:
+                status, error = "timed_out", f"Stopped after the {self.settings.run_timeout // 60} minute time limit"
+            elif active.cancel_requested:
+                status, error = "cancelled", None
+            elif exit_code == 0:
+                status, error = "succeeded", None
+            else:
+                status, error = "failed", f"Kometa exited with code {exit_code}"
+            log.write(f"Kometa Studio: run {status.replace('_', ' ')} (exit code {exit_code})\n")
+            self._finish(run_id, status, exit_code=exit_code, error=error)
+
+    async def _pump(self, active: Active, log) -> None:
+        assert active.process.stdout is not None
+        while True:
+            try:
+                raw = await active.process.stdout.readline()
+            except ValueError:  # a single line longer than LINE_LIMIT; skip the rest of it
+                raw = b"[line too long, cut]\n"
+            if not raw:
+                return
+            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+            log.write(line + "\n")
+            for subscriber in list(active.subscribers):
+                subscriber.send(line)
+                if subscriber.dropped:
+                    active.subscribers.discard(subscriber)
+
+    async def _terminate(self, active: Active) -> None:
+        process = active.process
+        if process.returncode is not None:
+            return
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        try:
+            await asyncio.wait_for(process.wait(), self.settings.kill_after)
+        except TimeoutError:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+
+def read_tail(path: Path, max_bytes: int = 256 * 1024) -> tuple[list[str], bool]:
+    """The last lines of a log, and whether earlier ones were left out."""
+    try:
+        size = path.stat().st_size
+        with open(path, "rb") as handle:
+            if size > max_bytes:
+                handle.seek(size - max_bytes)
+                handle.readline()  # drop the partial first line
+            data = handle.read()
+    except FileNotFoundError:
+        return [], False
+    return data.decode("utf-8", errors="replace").splitlines(), size > max_bytes

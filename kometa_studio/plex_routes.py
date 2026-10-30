@@ -102,7 +102,7 @@ def current_state(db: sqlite3.Connection, settings: Settings) -> dict:
 
 
 @router.get("")
-def get_plex(db: Db, settings: AppSettings) -> dict:
+async def get_plex(db: Db, settings: AppSettings) -> dict:
     return current_state(db, settings)
 
 
@@ -134,7 +134,7 @@ async def poll_sign_in(pin_id: int, db: Db, http: Http, box: Box) -> dict:
 
 
 @router.delete("/account", status_code=204)
-def delete_account(db: Db) -> Response:
+async def delete_account(db: Db) -> Response:
     sign_out(db)
     return Response(status_code=204)
 

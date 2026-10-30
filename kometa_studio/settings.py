@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     kometa_entry: Path | None = None
     kometa_config: Path | None = None
 
+    # Runs (handoff v2 §5.3): stop a run after this many seconds, and give Kometa this long to exit after SIGTERM.
+    run_timeout: int = 3 * 60 * 60
+    kill_after: float = 30
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "studio.db"
