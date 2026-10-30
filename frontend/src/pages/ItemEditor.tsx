@@ -7,7 +7,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { useAdvanced } from "../advanced";
-import { api, saveRefusal, type ItemSection, type Validation } from "../api";
+import { api, saveRefusal, type ConfigLibrary, type ItemSection, type SaveResult, type Validation } from "../api";
 import { Problems, SettingField, YamlBox } from "../components/forms/fields";
 import { Button, Card, Field, inputClass } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
@@ -72,6 +72,28 @@ const OVERLAY_FIELDS: { key: string; label: string }[] = [
 ];
 
 const OFFSET_KEYS = new Set(["horizontal_offset", "vertical_offset"]);
+
+const NEW_FILE = "\u0000new"; // the file picker's "A new file" choice
+
+/** The library's own files a new item can go in: collection files for collections, overlay files for overlays. */
+function ownFiles(library: ConfigLibrary | undefined, section: ItemSection): string[] {
+  const references = (section === "overlays" ? library?.overlay_files : library?.collection_files) ?? [];
+  return references
+    .filter((r) => r.kind === "file" || r.kind === "folder")
+    .flatMap((r) => r.files.map((f) => f.path))
+    .filter((path) => !path.startsWith("/"));
+}
+
+/** A name for the new file that none of the library's files has yet. */
+function suggestedName(library: string, section: ItemSection, taken: string[]): string {
+  const base = library.replace(/[\\/:*?"<>|]+/g, " ").trim() || "Collections";
+  const candidates = section === "overlays" ? [`${base} Overlays.yml`] : [`${base}.yml`, `${base} Collections.yml`];
+  for (let n = 2; candidates.length < 12; n++) candidates.push(`${base} ${section === "overlays" ? "Overlays" : "Collections"} ${n}.yml`);
+  const lower = new Set(taken.map((t) => t.toLowerCase()));
+  return candidates.find((c) => !lower.has(c.toLowerCase()))!;
+}
+
+const withSuffix = (name: string) => (/\.ya?ml$/i.test(name.trim()) ? name.trim() : `${name.trim()}.yml`);
 
 function withKey(value: Value, key: string, next: unknown): Value {
   const copy = { ...value };
@@ -259,12 +281,18 @@ export default function ItemEditor() {
   const original = params.get("name") ?? "";
   const library = params.get("library");
   const creating = params.get("new") === "1";
+  const newFile = creating && !path; // a new file, added to the library's list in config.yml when it's saved
   const noun = section === "overlays" ? "overlay" : "collection";
+  const libraryConfig = useQuery({ queryKey: ["config", "library", library], queryFn: () => api.config.library(library!), enabled: creating && !!library });
+  const files = ownFiles(libraryConfig.data, section);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const newName = fileName ?? (library ? suggestedName(library, section, files) : "");
 
   const item = useQuery({
     queryKey: ["item", path, section, original, creating],
     queryFn: async () => {
       if (!creating) return api.items.get(path, section, original);
+      if (!path) return { path: "", hash: "", section, name: "", value: {}, kind: (section === "overlays" ? "overlay" : "collection") as SchemaKind };
       const file = await api.files.open(path);
       return { path, hash: file.hash, section, name: "", value: {}, kind: file.kind };
     },
@@ -297,7 +325,7 @@ export default function ItemEditor() {
       return next;
     });
 
-  const afterSave = (saved: string) => {
+  const afterSave = (saved: string, result: SaveResult) => {
     queryClient.invalidateQueries({ queryKey: ["config"] });
     queryClient.invalidateQueries({ queryKey: ["backups"] });
     setEdited(null);
@@ -306,6 +334,7 @@ export default function ItemEditor() {
       const next = new URLSearchParams(params);
       next.set("name", saved);
       next.delete("new");
+      if (newFile) next.set("path", result.files[0].path); // the new file comes first, then config.yml
       navigate(`/items?${next}`, { replace: true });
     } else {
       item.refetch();
@@ -314,18 +343,19 @@ export default function ItemEditor() {
   const save = useMutation({
     mutationFn: () =>
       api.items.save({
-        path,
-        base_hash: item.data!.hash,
+        path: newFile ? withSuffix(newName) : path,
+        base_hash: newFile ? null : item.data!.hash,
         section,
         name: creating ? currentName : original,
         value,
         create: creating,
         rename: !creating && currentName !== original ? currentName : null,
+        ...(newFile ? { library } : {}),
       }),
     onMutate: () => setVerdict(null),
     onSuccess: (result) => {
       setVerdict({ validation: result.validation, saved: true });
-      afterSave(currentName);
+      afterSave(currentName, result);
     },
     onError: (error) => {
       const refusal = saveRefusal(error);
@@ -466,24 +496,64 @@ export default function ItemEditor() {
       <Link to={back} className="min-h-11 content-center text-sm text-muted underline">
         ← {library ?? "Libraries"}
       </Link>
-      <Card title={creating ? `New ${noun} in ${path}` : `${currentName || original}`}>
+      <Card title={newFile ? `New ${noun} in a new file` : creating ? `New ${noun} in ${path}` : `${currentName || original}`}>
         <div className="flex flex-col gap-3">
           <Field label="Name">
             <input className={inputClass} value={currentName} onChange={(e) => setName(e.target.value)} placeholder={section === "overlays" ? "e.g. 4K" : "e.g. Pixar"} />
           </Field>
-          <p className="text-sm text-muted">
-            In <span className="font-mono">{path}</span>.{" "}
-            <Link className="underline" to={`/files?path=${encodeURIComponent(path)}`}>
-              Edit the whole file as YAML
-            </Link>
-          </p>
+          {creating && library && (
+            <Field label="File">
+              <select
+                className={inputClass}
+                value={path || NEW_FILE}
+                onChange={(e) => {
+                  const next = new URLSearchParams(params);
+                  if (e.target.value === NEW_FILE) next.delete("path");
+                  else next.set("path", e.target.value);
+                  navigate(`/items?${next}`, { replace: true });
+                }}
+              >
+                {[...new Set([...files, ...(path ? [path] : [])])].map((file) => (
+                  <option key={file} value={file}>
+                    {file}
+                  </option>
+                ))}
+                <option value={NEW_FILE}>A new file…</option>
+              </select>
+            </Field>
+          )}
+          {newFile && (
+            <Field
+              label="New file's name"
+              hint={`In Kometa's config folder. Saving creates it and adds it to ${library}'s ${section === "overlays" ? "overlay_files" : "collection_files"} in config.yml.`}
+            >
+              <input className={`${inputClass} font-mono`} value={newName} onChange={(e) => setFileName(e.target.value)} />
+            </Field>
+          )}
+          {newFile && !library && (
+            <p role="alert" className="text-sm text-err">
+              A new file needs a library. Start from the library's page.
+            </p>
+          )}
+          {path && (
+            <p className="text-sm text-muted">
+              In <span className="font-mono">{path}</span>.{" "}
+              <Link className="underline" to={`/files?path=${encodeURIComponent(path)}`}>
+                Edit the whole file as YAML
+              </Link>
+            </p>
+          )}
           <Problems messages={problems.get("")} />
         </div>
       </Card>
       {designedPart}
       {advancedPart}
       <div className="flex flex-wrap items-center gap-3">
-        <Button variant="primary" onClick={() => save.mutate()} disabled={!dirty || !currentName.trim() || badYaml.size > 0 || save.isPending}>
+        <Button
+          variant="primary"
+          onClick={() => save.mutate()}
+          disabled={!dirty || !currentName.trim() || badYaml.size > 0 || save.isPending || (newFile && (!library || !newName.trim()))}
+        >
           {save.isPending ? "Kometa is checking…" : creating ? `Add ${noun}` : "Save"}
         </Button>
         {dirty && (

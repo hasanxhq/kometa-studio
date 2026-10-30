@@ -95,6 +95,15 @@ describe("Libraries", () => {
     expect(within(cards[0]).getByRole("link")).toHaveAttribute("href", "/libraries/Movies");
   });
 
+  it("adds a Plex library to Kometa from its card", async () => {
+    const calls = mockApi({ ...api, "POST /config/libraries": () => ({ backup: "b", files: [{ path: "config.yml", hash: "h" }], validation: {} }) });
+    renderAt("/libraries");
+    const bangtan = (await screen.findByText("Bangtan")).closest("li")!;
+    expect(within(screen.getByText("Movies", { selector: "h2" }).closest("li")!).queryByRole("button", { name: "Add to Kometa" })).not.toBeInTheDocument();
+    fireEvent.click(within(bangtan).getByRole("button", { name: "Add to Kometa" }));
+    await waitFor(() => expect(calls.find((c) => c.route === "POST /config/libraries")?.body).toEqual({ name: "Bangtan" }));
+  });
+
   it("still shows Plex's libraries before config.yml exists", async () => {
     mockApi({ ...api, "GET /config": () => new Response(JSON.stringify({ detail: "Kometa's config.yml doesn't exist yet." }), { status: 404 }) });
     renderAt("/libraries");
@@ -165,5 +174,23 @@ describe("A library", () => {
     mockApi({ ...api, "GET /plex/libraries/5/collections": () => ({ library: { key: "5", title: "Bangtan", type: "artist" }, collections: [] }) });
     renderAt("/libraries/Bangtan?tab=overlays");
     expect(await screen.findByText(/isn't in Kometa's config.yml, so Kometa doesn't touch it yet/)).toBeInTheDocument();
+    const add = screen.getByRole("heading", { name: "Not in Kometa yet" }).closest("section")!;
+    expect(within(add).getByRole("button", { name: "Add to Kometa" })).toBeInTheDocument();
+  });
+
+  it("starts new collection and overlay files from the library's page", async () => {
+    mockApi(api);
+    renderAt("/libraries/Movies");
+    const files = (await screen.findByRole("heading", { name: "Collection files in config.yml" })).closest("section")!;
+    expect(within(files).getByRole("link", { name: "+ New collection in a new file" })).toHaveAttribute("href", "/items?section=collections&new=1&library=Movies");
+    fireEvent.click(screen.getByRole("tab", { name: "Overlays" }));
+    expect(await screen.findByText("This library has no overlay files.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "+ New overlay in a new file" })).toHaveAttribute("href", "/items?section=overlays&new=1&library=Movies");
+  });
+
+  it("says a library with nothing in it gives Kometa nothing to do", async () => {
+    mockApi({ ...api, "GET /config/libraries/Movies": () => ({ ...movies, collection_files: [], operations: {} }) });
+    renderAt("/libraries/Movies");
+    expect(await screen.findByText(/Until Movies has a collection file, an overlay file or an operation/)).toBeInTheDocument();
   });
 });

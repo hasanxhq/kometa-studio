@@ -502,12 +502,13 @@ export type Item = { path: string; hash: string; section: ItemSection; name: str
 
 export type ItemSave = {
   path: string;
-  base_hash: string;
+  base_hash: string | null; // null: a new file, started with this item and added to `library` in config.yml
   section: ItemSection;
   name: string;
   value: Record<string, unknown> | null; // null removes it
   create?: boolean;
   rename?: string | null;
+  library?: string | null;
 };
 
 export type KometaInfo = {
@@ -576,6 +577,7 @@ export const api = {
     overview: () => request<{ path: string; libraries: LibraryCounts[]; playlist_files: FileReference[] }>("GET", "/config"),
     library: (name: string) => request<ConfigLibrary>("GET", `/config/libraries/${encodeURIComponent(name)}`),
     file: (path: string) => request<{ path: string; text: string }>("GET", `/config/file?path=${encodeURIComponent(path)}`),
+    addLibrary: (name: string) => request<SaveResult>("POST", "/config/libraries", { name }),
   },
   plexLibraries: {
     list: () => request<{ libraries: PlexLibrarySummary[] }>("GET", "/plex/libraries"),

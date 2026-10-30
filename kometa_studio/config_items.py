@@ -12,9 +12,11 @@ from typing import Any
 
 from ruamel.yaml.comments import CommentedMap
 
-from .kometa_config import _parse, render
+from .kometa_config import TEMPLATE_INDENT, _parse, render
 
 SECTIONS = ("collections", "dynamic_collections", "overlays", "templates", "metadata", "playlists")
+# Sections a new file can start with, and the list in a library's config that then names the file.
+FILE_LISTS = {"collections": "collection_files", "dynamic_collections": "collection_files", "overlays": "overlay_files"}
 
 
 class ItemProblem(Exception):
@@ -103,6 +105,13 @@ def apply_item(text: str, section: str, name: str, value: dict | None, *, create
         position = list(items).index(name)
         items.insert(position, rename, items.pop(name))
     return render(text, document, indent)
+
+
+def new_file(section: str, name: str, value: dict) -> str:
+    """The text of a new file holding one collection or overlay."""
+    if section not in FILE_LISTS:
+        raise ItemProblem(422, f"A new file starts with collections or overlays, not {section}")
+    return render(None, CommentedMap([(section, CommentedMap([(name, value)]))]), TEMPLATE_INDENT)
 
 
 def schema_kind(text: str, path: str) -> str:

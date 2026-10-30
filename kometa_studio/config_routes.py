@@ -12,6 +12,7 @@ from pydantic import BaseModel, StringConstraints
 
 from . import backups
 from .config_items import ItemProblem, read_item, schema_kind
+from .config_sections import add_library, new_file_for_library
 from .config_write import ConfigWriter, Edit, SaveRefused
 from .db import get_setting, set_setting
 from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets
@@ -217,6 +218,16 @@ def _edits(files: list[EditIn]) -> list[Edit]:
     return [Edit(f.path, f.text, f.base_hash) for f in files]
 
 
+class LibraryIn(BaseModel):
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
+@router.post("/config/libraries")
+async def add_config_library(body: LibraryIn, writer: Writer) -> dict:
+    """Add a Plex library to config.yml, empty: its files come next (new collection files, Kometa's defaults)."""
+    return await _write_call(add_library(writer, body.name))
+
+
 @router.get("/config/edit")
 async def edit_file(path: str, writer: Writer) -> dict:
     """A file to edit, with secrets as ••••(n) placeholders, the hash a save must match, and which schema it follows."""
@@ -290,12 +301,13 @@ SCHEMA_FILES = {
 
 class ItemIn(BaseModel):
     path: str
-    base_hash: str
+    base_hash: str | None  # None: a new file, started with this item and added to ``library`` in config.yml
     section: str
     name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
     value: dict | None  # None removes the item
     create: bool = False
     rename: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)] | None = None
+    library: str | None = None
 
 
 @router.get("/config/schemas/{kind}")
@@ -322,6 +334,10 @@ async def config_item(path: str, section: str, name: str, writer: Writer) -> dic
 
 @router.post("/config/item")
 async def save_config_item(body: ItemIn, writer: Writer) -> dict:
+    if body.base_hash is None:
+        if not (body.create and body.library and body.value is not None):
+            raise HTTPException(422, "A new file needs a new item and the library it's for")
+        return await _write_call(new_file_for_library(writer, body.path, body.library, body.section, body.name, body.value))
     action = "Removed" if body.value is None else "Added" if body.create else "Edited"
     return await _write_call(
         writer.edit_item(

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 
 import { ApiError, api } from "../api";
+import { AddLibrary } from "../components/AddLibrary";
 import { Button, Tag } from "../components/ui";
 import { UploadFiles } from "../components/UploadFiles";
 import { libraryPath, libraryTypeLabels, mergeLibraries, type LibraryEntry } from "../libraries";
@@ -17,11 +18,8 @@ function LibraryCard({ entry }: { entry: LibraryEntry }) {
   const { plex, config } = entry;
   const unmanaged = plex ? plex.collections - plex.managed - (plex.maintainerr ?? 0) : 0;
   return (
-    <li>
-      <Link
-        to={libraryPath(entry.name)}
-        className="flex h-full flex-col gap-3 rounded-card border border-border bg-surface p-4 transition-colors hover:border-border-strong hover:bg-surface-2"
-      >
+    <li className="flex flex-col rounded-card border border-border bg-surface transition-colors hover:border-border-strong">
+      <Link to={libraryPath(entry.name)} className="flex flex-1 flex-col gap-3 rounded-card p-4 transition-colors hover:bg-surface-2">
         <div className="flex items-start justify-between gap-2">
           <h2 className="min-w-0 break-words text-lg font-semibold">{entry.name}</h2>
           {plex && <Tag>{libraryTypeLabels[plex.type] ?? plex.type}</Tag>}
@@ -50,6 +48,11 @@ function LibraryCard({ entry }: { entry: LibraryEntry }) {
         )}
         {config && config.problems.length > 0 && <p className="text-sm text-warn">{plural(config.problems.length, "problem")} in its files</p>}
       </Link>
+      {!config && plex && (
+        <div className="px-4 pb-4">
+          <AddLibrary name={entry.name} variant="secondary" />
+        </div>
+      )}
     </li>
   );
 }

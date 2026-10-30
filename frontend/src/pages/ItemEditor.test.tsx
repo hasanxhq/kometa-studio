@@ -122,6 +122,65 @@ describe("The collection form", () => {
     });
   });
 
+  it("starts a new file for the collection and adds it to the library", async () => {
+    const library = {
+      name: "Movies",
+      collection_files: [
+        { kind: "default", value: "basic", template_variables: {}, options: {}, files: [{ path: "defaults/chart/basic.yml" }], error: null },
+        { kind: "file", value: "config/Movies.yml", template_variables: {}, options: {}, files: [{ path: "Movies.yml" }], error: null },
+      ],
+      overlay_files: [],
+    };
+    const calls = mockApi({
+      "GET /config/schemas/collection": () => collectionSchema,
+      "GET /config/libraries/Movies": () => library,
+      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: "collections: {}\n", hash: "h1", hidden: 0, kind: "collection" }),
+      "POST /config/item": () => ({ backup: "b", files: [{ path: "Pixar.yml", hash: "p" }, { path: "config.yml", hash: "c" }], validation: passed }),
+      "GET /config/item?path=Pixar.yml&section=collections&name=Pixar": () => ({ ...heroes, path: "Pixar.yml", name: "Pixar", value: { tmdb_collection: [1] } }),
+    });
+    renderAt("/items?section=collections&new=1&library=Movies");
+
+    expect(await screen.findByText("New collection in a new file")).toBeInTheDocument();
+    const file = screen.getByLabelText("File");
+    await screen.findByRole("option", { name: "Movies.yml" }); // the library's own files; not Kometa's defaults
+    expect(screen.queryByRole("option", { name: "defaults/chart/basic.yml" })).not.toBeInTheDocument();
+    expect(file).toHaveDisplayValue("A new file…");
+    expect(screen.getByLabelText("New file's name")).toHaveValue("Movies Collections.yml"); // Movies.yml is taken
+    fireEvent.change(screen.getByLabelText("New file's name"), { target: { value: "Pixar" } });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Pixar" } });
+    await screen.findByRole("option", { name: "tmdb_collection" });
+    fireEvent.change(screen.getByLabelText("Add a source"), { target: { value: "tmdb_collection" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add collection" }));
+
+    await waitFor(() =>
+      expect(calls.find((c) => c.route === "POST /config/item")?.body).toMatchObject({
+        path: "Pixar.yml",
+        base_hash: null,
+        library: "Movies",
+        name: "Pixar",
+        create: true,
+      }),
+    );
+    expect(await screen.findByText("Pixar.yml", { selector: "span.font-mono" })).toBeInTheDocument(); // now editing it in its new file
+  });
+
+  it("can put a new collection in one of the library's files instead", async () => {
+    mockApi({
+      "GET /config/schemas/collection": () => collectionSchema,
+      "GET /config/libraries/Movies": () => ({
+        name: "Movies",
+        collection_files: [{ kind: "file", value: "config/Movies.yml", template_variables: {}, options: {}, files: [{ path: "Movies.yml" }], error: null }],
+        overlay_files: [],
+      }),
+      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: "collections: {}\n", hash: "h1", hidden: 0, kind: "collection" }),
+    });
+    renderAt("/items?section=collections&new=1&library=Movies");
+    await screen.findByRole("option", { name: "Movies.yml" });
+    fireEvent.change(screen.getByLabelText("File"), { target: { value: "Movies.yml" } });
+    expect(await screen.findByText("New collection in Movies.yml")).toBeInTheDocument();
+    expect(screen.queryByLabelText("New file's name")).not.toBeInTheDocument();
+  });
+
   it("runs just this collection, in its library, ignoring its schedule", async () => {
     const calls = mockApi({ ...routes, "POST /runs": () => ({ id: 21 }) });
     renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
