@@ -40,5 +40,5 @@ ENV STUDIO_HOST=0.0.0.0 \
 
 EXPOSE 8484
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD ["/studio/.venv/bin/python", "-c", "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ['STUDIO_PORT']}/api/v1/status\", timeout=4)"]
+  CMD ["/studio/.venv/bin/python", "-c", "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ['STUDIO_PORT']}/api/v1/ping\", timeout=4)"]
 ENTRYPOINT ["/tini", "-s", "--", "/studio/.venv/bin/kometa-studio", "serve"]

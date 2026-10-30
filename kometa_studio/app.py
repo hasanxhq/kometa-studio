@@ -41,6 +41,12 @@ STATIC_DIR = Path(str(files("kometa_studio") / "static"))
 api = APIRouter(prefix="/api/v1")
 
 
+@api.get("/ping")
+async def ping() -> dict:
+    """Liveness for Docker's health check: open without sign-in, says nothing, asks nothing of Plex."""
+    return {"ok": True}
+
+
 @api.get("/status")
 async def status(request: Request) -> dict:
     settings: Settings = request.app.state.settings

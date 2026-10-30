@@ -158,6 +158,14 @@ def test_too_many_failed_sign_ins_wait(tmp_path):
     assert blocked.status_code == 429
 
 
+def test_the_health_check_ping_needs_no_sign_in(tmp_path):
+    with make_client(tmp_path) as local:
+        set_up_sign_in(local)
+    with make_client(tmp_path, ("127.0.0.1", 50000)) as docker:
+        assert docker.get("/api/v1/status").status_code == 401
+        assert docker.get("/api/v1/ping").json() == {"ok": True}
+
+
 def test_webhooks_check_their_own_token_not_sign_in(tmp_path):
     with make_client(tmp_path) as local:
         set_up_sign_in(local)
