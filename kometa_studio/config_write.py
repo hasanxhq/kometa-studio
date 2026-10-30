@@ -25,6 +25,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.error import MarkedYAMLError, YAMLError
 
 from . import backups
+from .config_items import ItemProblem, apply_item
 from .kometa_config import write_atomic
 from .kometa_files import mask_secrets, unmask_secrets
 from .settings import Settings
@@ -317,6 +318,33 @@ class ConfigWriter:
             "files": [{"path": self.relative(path), "hash": file_hash(path.read_bytes())} for path in changes],
             "validation": asdict(validation),
         }
+
+    async def edit_item(
+        self,
+        relative: str,
+        base_hash: str,
+        section: str,
+        name: str,
+        value: dict | None,
+        *,
+        create: bool,
+        rename: str | None,
+        reason: str,
+    ) -> dict:
+        """Change one collection, overlay or template in a file, then save it like any edit (checked and backed up)."""
+        path = self.resolve(relative)
+        if path == self.config_path.resolve():
+            raise SaveRefused(422, "config.yml is edited as a whole file", path=relative)
+        if not path.is_file():
+            raise SaveRefused(404, f"{relative} doesn't exist", path=relative)
+        current = path.read_bytes()
+        if file_hash(current) != base_hash:
+            raise SaveRefused(409, f"{relative} changed on disk since you opened it. Reload it to see the new version.", path=relative)
+        try:
+            text = apply_item(current.decode("utf-8"), section, name, value, create=create, rename=rename)
+        except ItemProblem as problem:
+            raise SaveRefused(problem.status, problem.message, path=relative) from None
+        return await self.save([Edit(relative, text, base_hash)], reason)
 
     async def restore(self, backup_id: str) -> dict:
         """Put a backup's files back. Always allowed: it's the way out. The current files are backed up first."""
