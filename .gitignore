@@ -1,0 +1,33 @@
+# Upstream Kometa reference clone (read-only, never committed here)
+/kometa/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+dist/
+build/
+
+# Node / frontend
+node_modules/
+frontend/dist/
+
+# Local runtime data and secrets
+/data/
+/config/
+.env
+*.db
+*.log
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
