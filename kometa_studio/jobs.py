@@ -146,13 +146,13 @@ def collect(db: sqlite3.Connection, runner, tasks, arr, maintainerr) -> list[dic
             if job:
                 found.append(job)
 
-    pending = arr.pending() if arr else None
-    if pending:
+    for kind, pending in (arr.pending() if arr else {}).items():
+        name = "Radarr" if kind == "radarr" else "Sonarr"
         found.append(
             {
-                "id": "arr-pending",
+                "id": f"arr-pending-{kind}",
                 "kind": "arr",
-                "title": "Kometa after imports",
+                "title": f"Kometa after {name} imports",
                 "status": "pending",
                 "label": "Waiting",
                 "message": f"{pending['imports']} import{'s' if pending['imports'] != 1 else ''} ({', '.join(pending['titles'])}); "

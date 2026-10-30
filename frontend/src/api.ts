@@ -169,38 +169,47 @@ export type Schedules = {
   catch_ups: { id: number; status: RunStatus; queued_at: string; name: string }[];
 };
 
-// Radarr and Sonarr's webhook (Settings → Connect).
+// Radarr and Sonarr (Settings → Connect). Their URL and key are Kometa's, in config.yml.
 export type ArrKind = "radarr" | "sonarr";
 
-export type ArrSettings = { enabled: boolean; mode: RunMode; wait_minutes: number; libraries: Record<ArrKind, string[]> };
+/** When to run Kometa after one app's imports. */
+export type AppRuns = { enabled: boolean; mode: RunMode; wait_minutes: number; libraries: string[] };
 
-export type ArrSource = "config" | "studio" | "off";
+export type ArrSettings = Record<ArrKind, AppRuns>;
 
 export type ArrConnection = {
-  source: ArrSource; // Kometa's config.yml, entered in Studio, or off
-  url: string | null; // entered in Studio
-  has_key: boolean; // a key is saved (it's never sent back)
-  username: string | null; // for a proxy in front of the app
+  url: string | null; // from config.yml
+  token: string | null; // masked, e.g. "…1234"; the key itself never leaves the server
+  root_folder_path: string | null;
+  quality_profile: string | null;
+  username: string | null; // for a proxy in front of the app (Studio's own)
   has_password: boolean;
-  config_url: string | null; // what config.yml has, if it has a url and token
   status: { checked_at: string; ok: boolean; error: string | null } | null;
 };
 
 export type ArrConnectionInput = {
-  source: ArrSource;
-  url?: string | null;
-  api_key?: string | null;
-  username?: string | null;
-  password?: string | null; // null: keep the saved one
+  url: string;
+  api_key: string | null; // null: keep the key in config.yml
+  username: string | null;
+  password: string | null; // null: keep the saved one
+  root_folder_path: string | null;
+  quality_profile: string | null;
 };
 
-export type ArrTest = { ok: true; app: string; version: string } | { ok: false; error: string };
+export type ArrTest = { ok: true; app: string; version: string; root_folders: string[]; quality_profiles: string[] } | { ok: false; error: string };
+
+export type ArrPending = { first_at: string; last_at: string; due_at: string; imports: number; titles: string[] };
 
 export type ArrState = {
   settings: ArrSettings;
   connections: Record<ArrKind, ArrConnection>;
-  pending: { first_at: string; last_at: string; due_at: string; imports: number; titles: string[]; kinds: ArrKind[] } | null;
+  pending: Partial<Record<ArrKind, ArrPending>>;
 };
+
+// TMDb and MDBList (Settings → Connect): Kometa's keys, in config.yml.
+export type ServiceName = "tmdb" | "mdblist";
+export type ServicesState = Record<ServiceName, { apikey: string | null }>; // masked
+export type ServiceTest = { ok: true; limit?: number | null; used?: number | null } | { ok: false; error: string };
 
 // Kometa's own log files (System → Logs).
 export type LogLevel = "TRACE" | "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
@@ -500,10 +509,18 @@ export const api = {
   },
   arr: {
     get: () => request<ArrState>("GET", "/settings/arr"),
-    save: (settings: ArrSettings) => request<ArrState>("PUT", "/settings/arr", settings),
+    saveRuns: (kind: ArrKind, runs: AppRuns) => request<ArrState>("PUT", `/settings/arr/${kind}/runs`, runs),
     connect: (kind: ArrKind, body: ArrConnectionInput) => request<ArrState>("PUT", `/settings/arr/${kind}`, body),
     test: (kind: ArrKind, body: ArrConnectionInput) => request<ArrTest>("POST", `/settings/arr/${kind}/test`, body),
+    remove: (kind: ArrKind) => request<ArrState>("DELETE", `/settings/arr/${kind}`),
   },
+  services: {
+    get: () => request<ServicesState>("GET", "/settings/services"),
+    test: (name: ServiceName, apikey: string | null) => request<ServiceTest>("POST", `/settings/services/${name}/test`, { apikey }),
+    save: (name: ServiceName, apikey: string | null) => request<ServicesState>("PUT", `/settings/services/${name}`, { apikey }),
+    remove: (name: ServiceName) => request<ServicesState>("DELETE", `/settings/services/${name}`),
+  },
+
   logs: {
     list: () => request<{ files: LogFile[] }>("GET", "/logs"),
     read: (path: string, level: LogLevel, q: string) =>

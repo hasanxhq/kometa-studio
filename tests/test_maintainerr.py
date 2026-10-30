@@ -349,3 +349,16 @@ def test_a_revert_slower_than_the_request_is_waited_for(tmp_path, setup, monkeyp
     assert log.index("still putting posters back") < log.index("Kometa ran") < log.index("drawing them again")
     assert [c for c in fake.calls if c.startswith("POST")] == ["POST /api/overlays/revert/7", "POST /api/overlays/process", "POST /api/overlays/process"]
     assert fake.overlays_enabled is True and pending == "false"
+
+
+def test_a_new_address_or_login_is_saved_only_after_it_passes_a_test(tmp_path, setup):
+    _, _, fake = setup
+    fake.proxy_login = ("hasan", "seedbox-pass")
+    with make_client(tmp_path, setup) as client:
+        refused = client.put("/api/v1/settings/maintainerr", json={"url": MAINTAINERR_URL, "username": "hasan", "password": "nope", "leave_overlays_alone": True})
+        assert client.get("/api/v1/settings/maintainerr").json()["url"] is None
+        connect(client, username="hasan", password="seedbox-pass")
+        fake.proxy_login = ("hasan", "changed-since")  # the overlay choice alone is saved without a test
+        toggled = connect(client, username="hasan", leave_overlays_alone=False)
+    assert refused.status_code == 422 and refused.json()["detail"].startswith("Not saved: The proxy in front of Maintainerr")
+    assert toggled["leave_overlays_alone"] is False

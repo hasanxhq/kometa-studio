@@ -15,7 +15,7 @@ from pathlib import Path
 import httpx
 from ruamel.yaml import YAMLError
 
-from . import full_backup, plex
+from . import arr, full_backup, plex
 from .auth import auth_settings
 from .config_routes import FULL_CHECK
 from .db import get_setting
@@ -121,10 +121,11 @@ def _run_checks(db: sqlite3.Connection) -> list[Check]:
 
 
 def _arr_checks(db: sqlite3.Connection) -> list[Check]:
-    if not get_setting(db, "arr.settings", {}).get("enabled"):
-        return []
+    settings = arr.load_settings(db)
     checks = []
     for kind, name in (("radarr", "Radarr"), ("sonarr", "Sonarr")):
+        if not settings.app(kind).enabled:
+            continue
         status = get_setting(db, f"arr.status.{kind}")
         if isinstance(status, dict) and not status.get("ok"):
             checks.append(Check(kind, "warning", f"Studio can't read {name}'s imports: {status.get('error')}", "/settings/connect"))

@@ -16,6 +16,7 @@ from . import __version__
 from .arr import Arr
 from .maintainerr import Maintainerr
 from .arr_routes import router as arr_router
+from .services import router as services_router
 from .auth import AuthMiddleware, LoginThrottle
 from .auth_routes import TIMEZONE
 from .auth_routes import router as auth_router
@@ -156,6 +157,7 @@ def create_app(
     app.include_router(config_router)
     app.include_router(tasks_router)
     app.include_router(arr_router)
+    app.include_router(services_router)
     app.include_router(logs_router)
     app.include_router(jobs_router)
     app.include_router(maintainerr_router)

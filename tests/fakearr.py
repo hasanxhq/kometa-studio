@@ -41,6 +41,10 @@ class FakeArr:
             return httpx.Response(401)
         if request.url.path == "/api/v3/system/status":
             return httpx.Response(200, json={"appName": kind.capitalize(), "version": "5.14.0.9383" if kind == "radarr" else "4.0.11.2680"})
+        if request.url.path == "/api/v3/rootfolder":
+            return httpx.Response(200, json=[{"id": 1, "path": "/movies" if kind == "radarr" else "/tv", "accessible": True}])
+        if request.url.path == "/api/v3/qualityprofile":
+            return httpx.Response(200, json=[{"id": 4, "name": "HD-1080p"}, {"id": 5, "name": "Ultra-HD"}])
         if request.url.path == "/api/v3/history/since":
             since = request.url.params["date"]
             assert request.url.params["eventType"] == "3"

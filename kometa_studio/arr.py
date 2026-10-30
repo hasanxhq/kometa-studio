@@ -4,12 +4,14 @@ Studio polls each app's import history (``GET /api/v3/history/since``, event typ
 imported", in both apps) every ``POLL_EVERY``. Studio reaches out to them, so nothing has to reach Studio,
 and imports made while Studio was off are found when it starts again (up to ``CATCH_UP`` back).
 
-The connection is Kometa's own (``radarr:``/``sonarr:`` in config.yml) unless one is entered in
-Settings → Connect, whose API key is kept encrypted and never sent to the browser.
+The connection is Kometa's own: ``radarr:``/``sonarr:`` in config.yml, which Settings → Connect edits.
+A seedbox's proxy login in front of an app (HTTP Basic) is Studio's alone, kept encrypted, since
+Kometa can't send one.
 
-A season pack or a big search imports dozens of files, so each import only pushes back one pending
-run: it's queued once no import has arrived for ``wait_minutes``, or ``MAX_WAIT`` after the first,
-whichever is sooner. The pending run lives in SQLite and the scheduler's tick queues it.
+Each app has its own settings (``AppRuns``). A season pack or a big search imports dozens of files,
+so each import only pushes back that app's pending run: it's queued once no import has arrived for
+``wait_minutes``, or ``MAX_WAIT`` after the first, whichever is sooner. Pending runs live in SQLite
+and the scheduler's tick queues them.
 """
 
 import asyncio
@@ -33,9 +35,9 @@ from .scheduler import parse_utc, utc_text
 
 log = logging.getLogger(__name__)
 
-RUNS = "arr.settings"  # when to run Kometa after imports
-CONNECTIONS = "arr.connections"  # where each app is
-PENDING = "arr.pending"
+RUNS = "arr.settings"  # when to run Kometa after each app's imports
+CONNECTIONS = "arr.connections"  # each app's proxy login, if any (url and key are in config.yml)
+PENDING = "arr.pending"  # before per-app settings: one pending run for both apps
 POLL_EVERY = 120.0
 CATCH_UP = timedelta(hours=24)
 MAX_WAIT = timedelta(hours=1)
@@ -48,16 +50,35 @@ KINDS: tuple[Kind, ...] = ("radarr", "sonarr")
 NAMES = {"radarr": "Radarr", "sonarr": "Sonarr"}
 
 
-class ArrSettings(BaseModel):
+class AppRuns(BaseModel):
+    """When to run Kometa after one app's imports."""
+
     enabled: bool = False
     mode: Mode = "all"
     wait_minutes: int = Field(default=10, ge=1, le=240)
-    # Kometa library names (config.yml) to run for each app's imports; empty means every library.
-    libraries: dict[Kind, list[str]] = Field(default_factory=lambda: {"radarr": [], "sonarr": []})
+    # Kometa library names (config.yml) to run for; empty means every library.
+    libraries: list[str] = Field(default_factory=list)
+
+
+class ArrSettings(BaseModel):
+    radarr: AppRuns = Field(default_factory=AppRuns)
+    sonarr: AppRuns = Field(default_factory=AppRuns)
+
+    def app(self, kind: "Kind") -> AppRuns:
+        return getattr(self, kind)
 
 
 def load_settings(db: sqlite3.Connection) -> ArrSettings:
-    return ArrSettings.model_validate(get_setting(db, RUNS) or {})
+    raw = get_setting(db, RUNS) or {}
+    if "enabled" in raw:  # saved before each app had its own settings: one set for both
+        shared = {key: raw[key] for key in ("enabled", "mode", "wait_minutes") if key in raw}
+        libraries = raw.get("libraries") or {}
+        raw = {kind: shared | {"libraries": libraries.get(kind, [])} for kind in KINDS}
+    return ArrSettings.model_validate(raw)
+
+
+def pending_key(kind: "Kind") -> str:
+    return f"arr.pending.{kind}"
 
 
 class ArrProblem(Exception):
@@ -68,36 +89,38 @@ class ArrProblem(Exception):
 class Connection:
     url: str
     api_key: str
-    source: str  # config or studio
     login: tuple[str, str] | None = None  # for a proxy in front of the app (HTTP Basic), as on a seedbox
+
+
+def config_section(config: Path | None, kind: Kind) -> dict:
+    """config.yml's radarr:/sonarr: section, or {}."""
+    if config is None or not config.is_file():
+        return {}
+    try:
+        document = YAML(typ="safe").load(config.read_text(encoding="utf-8")) or {}
+    except (OSError, YAMLError):
+        return {}
+    section = document.get(kind) if isinstance(document, dict) else None
+    return section if isinstance(section, dict) else {}
 
 
 def kometa_connection(config: Path | None, kind: Kind) -> tuple[str | None, str | None]:
     """The url and token in config.yml's radarr:/sonarr: section, if there are both."""
-    if config is None or not config.is_file():
-        return None, None
-    try:
-        document = YAML(typ="safe").load(config.read_text(encoding="utf-8")) or {}
-    except (OSError, YAMLError):
-        return None, None
-    section = document.get(kind) if isinstance(document, dict) else None
-    if not isinstance(section, dict):
-        return None, None
+    section = config_section(config, kind)
     url, token = section.get("url"), section.get("token")
     return (str(url) if url else None, str(token) if token else None)
 
 
-def connection(db: sqlite3.Connection, box: SecretBox, config: Path | None, kind: Kind) -> Connection | None:
+def proxy_login(db: sqlite3.Connection, box: SecretBox, kind: Kind) -> tuple[str, str] | None:
     saved = (get_setting(db, CONNECTIONS) or {}).get(kind) or {}
-    source = saved.get("source", "config")
-    if source == "off":
+    if not saved.get("username"):
         return None
-    if source == "studio":
-        key = box.decrypt(saved.get("api_key", "")) if saved.get("api_key") else None
-        login = (saved["username"], box.decrypt(saved["password"]) or "" if saved.get("password") else "") if saved.get("username") else None
-        return Connection(saved["url"], key, "studio", login) if saved.get("url") and key else None
+    return saved["username"], (box.decrypt(saved["password"]) or "") if saved.get("password") else ""
+
+
+def connection(db: sqlite3.Connection, box: SecretBox, config: Path | None, kind: Kind) -> Connection | None:
     url, token = kometa_connection(config, kind)
-    return Connection(url, token, "config") if url and token else None
+    return Connection(url, token, proxy_login(db, box, kind)) if url and token else None
 
 
 async def _get(http: httpx.AsyncClient, conn: Connection, path: str, params: dict | None = None) -> Any:
@@ -126,11 +149,19 @@ async def _get(http: httpx.AsyncClient, conn: Connection, path: str, params: dic
 
 
 async def test_connection(http: httpx.AsyncClient, conn: Connection, kind: Kind) -> dict:
+    """Whether ``conn`` is this kind of app, with its root folders and quality profiles for Kometa's settings."""
     status = await _get(http, conn, "/api/v3/system/status")
     app = str(status.get("appName") or "") if isinstance(status, dict) else ""
     if app.lower() != kind:
         raise ArrProblem(f"That's {app or 'not Radarr or Sonarr'}, not {NAMES[kind]}")
-    return {"app": app, "version": str(status.get("version") or "")}
+    folders = await _get(http, conn, "/api/v3/rootfolder")
+    profiles = await _get(http, conn, "/api/v3/qualityprofile")
+    return {
+        "app": app,
+        "version": str(status.get("version") or ""),
+        "root_folders": [str(f["path"]) for f in folders if isinstance(f, dict) and f.get("path")] if isinstance(folders, list) else [],
+        "quality_profiles": [str(p["name"]) for p in profiles if isinstance(p, dict) and p.get("name")] if isinstance(profiles, list) else [],
+    }
 
 
 async def imports_since(http: httpx.AsyncClient, conn: Connection, kind: Kind, since: datetime) -> list[dict]:
@@ -162,6 +193,11 @@ class Arr:
         self.box = box
         self.config = config
         self._task: asyncio.Task | None = None
+        shared = get_setting(db, PENDING)
+        if shared:  # one pending run for both apps, from before each app had its own
+            for kind in shared.get("kinds", []):
+                set_setting(db, pending_key(kind), {key: shared[key] for key in ("first_at", "last_at", "imports", "titles")})
+            delete_setting(db, PENDING)
 
     # --- Polling ---------------------------------------------------------------------
 
@@ -183,12 +219,12 @@ class Arr:
             await asyncio.sleep(POLL_EVERY)
 
     async def poll(self, now: datetime) -> dict[str, int]:
-        """Look for new imports in each connected app; returns how many each had."""
+        """Look for new imports in each connected app that runs Kometa; returns how many each had."""
         found = {}
         settings = load_settings(self.db)
         for kind in KINDS:
             conn = connection(self.db, self.box, self.config, kind)
-            if conn is None or not settings.enabled:
+            if conn is None or not settings.app(kind).enabled:
                 continue
             cursor = get_setting(self.db, f"arr.cursor.{kind}") or {"date": utc_text(now), "id": 0}
             since = max(parse_utc(cursor["date"]), now - CATCH_UP)
@@ -213,47 +249,44 @@ class Arr:
         delete_setting(self.db, f"arr.cursor.{kind}")
         delete_setting(self.db, f"arr.status.{kind}")
 
-    # --- The pending run -------------------------------------------------------------
+    # --- The pending runs --------------------------------------------------------------
 
     def record(self, kind: Kind, titles: list[str | None], now: datetime) -> None:
-        pending = get_setting(self.db, PENDING) or {"first_at": utc_text(now), "imports": 0, "titles": [], "kinds": []}
+        pending = get_setting(self.db, pending_key(kind)) or {"first_at": utc_text(now), "imports": 0, "titles": []}
         pending["last_at"] = utc_text(now)
         pending["imports"] += len(titles)
         for title in titles:
             if title and title not in pending["titles"]:
                 pending["titles"] = (pending["titles"] + [title])[-KEEP_TITLES:]
-        if kind not in pending["kinds"]:
-            pending["kinds"].append(kind)
-        set_setting(self.db, PENDING, pending)
+        set_setting(self.db, pending_key(kind), pending)
 
     @staticmethod
-    def due_at(pending: dict, settings: ArrSettings) -> datetime:
-        quiet = parse_utc(pending["last_at"]) + timedelta(minutes=settings.wait_minutes)
+    def due_at(pending: dict, runs: AppRuns) -> datetime:
+        quiet = parse_utc(pending["last_at"]) + timedelta(minutes=runs.wait_minutes)
         return min(quiet, parse_utc(pending["first_at"]) + MAX_WAIT)
 
     @staticmethod
-    def request(pending: dict, settings: ArrSettings) -> RunRequest:
-        libraries: list[str] = []
-        for kind in pending["kinds"]:
-            chosen = settings.libraries.get(kind, [])
-            if not chosen:
-                return RunRequest(mode=settings.mode)  # this app's imports may be in any library
-            libraries += [name for name in chosen if name not in libraries]
-        return RunRequest(mode=settings.mode, libraries=libraries)
+    def request(runs: AppRuns) -> RunRequest:
+        return RunRequest(mode=runs.mode, libraries=list(runs.libraries))
 
-    def tick(self, now: datetime) -> int | None:
-        """Queue the pending run if it's due; returns its run ID (an equal queued run is reused)."""
-        pending = get_setting(self.db, PENDING)
-        if not pending:
-            return None
+    def tick(self, now: datetime) -> list[int]:
+        """Queue each app's pending run that's due; returns their run IDs (an equal queued run is reused)."""
+        queued = []
         settings = load_settings(self.db)
-        if now < self.due_at(pending, settings):
-            return None
-        delete_setting(self.db, PENDING)
-        return self.runner.enqueue(self.request(pending, settings), trigger="arr")
+        for kind in KINDS:
+            pending = get_setting(self.db, pending_key(kind))
+            if not pending or now < self.due_at(pending, settings.app(kind)):
+                continue
+            delete_setting(self.db, pending_key(kind))
+            queued.append(self.runner.enqueue(self.request(settings.app(kind)), trigger="arr"))
+        return queued
 
-    def pending(self) -> dict | None:
-        pending = get_setting(self.db, PENDING)
-        if not pending:
-            return None
-        return pending | {"due_at": utc_text(self.due_at(pending, load_settings(self.db)))}
+    def pending(self) -> dict[str, dict]:
+        """Each app's pending run, with when it's due."""
+        settings = load_settings(self.db)
+        found = {}
+        for kind in KINDS:
+            pending = get_setting(self.db, pending_key(kind))
+            if pending:
+                found[kind] = pending | {"due_at": utc_text(self.due_at(pending, settings.app(kind)))}
+        return found

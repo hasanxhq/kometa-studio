@@ -66,8 +66,18 @@ def _password(db: sqlite3.Connection, service: Maintainerr, username: str | None
 
 @router.put("")
 async def put_maintainerr(body: MaintainerrIn, db: Db, service: Service) -> dict:
+    """Save. A new address or login is tested first and never saved if the test fails; the overlay choice alone needs no test."""
     url = (body.url or "").strip() or None
     username = (body.username or "").strip() or None if url else None
+    saved = maintainerr.load(db)
+    if url and (url != saved.url or username != saved.username or body.password is not None):
+        password = body.password if body.password is not None else (service.box.decrypt(saved.password) or "" if saved.password else "")
+        try:
+            await service.test(url, (username, password) if username else None)
+        except MaintainerrProblem as problem:
+            raise HTTPException(422, f"Not saved: {problem}") from None
+        except Exception as error:  # an address that isn't a URL, say
+            raise HTTPException(422, f"Can't use that address: {error}") from None
     set_setting(
         db,
         maintainerr.SETTINGS,
