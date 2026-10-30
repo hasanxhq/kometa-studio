@@ -114,6 +114,7 @@ class ConfigWriter:
         # Studio's own rules on top of Kometa's check: (config.yml path, Kometa's folder) → problems.
         # A save is refused only for problems it adds. Set by the Maintainerr integration.
         self.guard: Callable[[Path, Path], list[str]] | None = None
+        self.extra_env: Callable[[], dict[str, str]] = dict  # more environment for Kometa: the TMDb DNS bypass (doh.py)
 
     # --- Which files ----------------------------------------------------------------
 
@@ -274,7 +275,7 @@ class ConfigWriter:
                 cwd=cwd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
-                env=os.environ | {"PYTHONUNBUFFERED": "1"},
+                env=os.environ | {"PYTHONUNBUFFERED": "1"} | self.extra_env(),
             )
         except OSError as error:
             return Validation(False, [f"Can't start Kometa to check the files: {error}"], crashed=True)

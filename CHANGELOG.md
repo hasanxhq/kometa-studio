@@ -49,9 +49,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings → Kometa shows where Kometa is, the run time limits and the flags the installed Kometa has (all set by the environment). Settings → UI has the Show Advanced switch. Every page in the menu is now built.
 - Phone-width pass: every page checked at 375 px with no sideways scrolling. Logs show the time and message, without Kometa's fixed-width columns, and wrap. Sign out sits in the menu on phones.
 - System → Updates: the installed Kometa and whether a newer one is out, with its release notes, from the check Kometa makes at the start of each run.
+- Settings → Notifications: set up Notifiarr, Gotify, ntfy and Apprise for Kometa's notifications, each with Test. Save stays off until Test passes for what you entered, and Studio tests again before it saves. Gotify and ntfy get one message titled "Kometa Studio test notification"; Notifiarr's API key is checked the way Kometa checks it; an Apprise configuration must list at least one service. Saved keys and tokens are never shown, only their last four characters; leave a field empty to keep the saved one. Remove takes a service out of config.yml. A grid of Kometa's webhook events (error, version, run start and end, changes, delete) against your services and webhook URLs sets where each event goes; Studio's own entries are shown locked and are never changed. Every save is checked by Kometa and backs up config.yml first, as any edit does.
+- Settings → Notifications shows each provider you've set up as its own card, followed by an **Add notification provider** card. You pick one of the rest, fill it in, and save once its test passes. It then gets its own card, and the Add card moves after it with what's left; the Add card is gone once all four are set up. A removed provider goes back onto the Add card.
 
 ### Changed
 
+- Settings → General: the timezone list is labelled `UTC +05:30 (Asia/Kolkata)` (offset then IANA name). Schedules and Studio's built-in tasks always use this setting; their forms no longer have a timezone picker. Changing it updates every schedule and task.
 - A library's Collections tab says when Plex can't be reached, instead of saying Plex has no library by that name.
 
 - When Studio edits config.yml itself (Plex connection, webhook entries), it keeps the file's own formatting instead of restyling it.
+
+- Settings → General: once sign-in is set up, the card shows the username instead of the username and password fields. A "Change username or password" link opens them, with Cancel to close them again. The current password is asked for only when you change something.
+- Settings → Plex is one "Your servers" card. Opening it tests only the server saved in config.yml and shows whether it answers. Studio fetches and tests every server on your Plex account only when you press Test again, or when the saved server doesn't answer. "Use a custom address" opens the form for typing a URL and token. It saves only after a test passes, replaces the server chosen from the list, and is then marked "Custom address".
+- Settings → Connect: Radarr, Sonarr and Maintainerr share one card, and TMDb and MDBList have their own.
+  - Radarr and Sonarr have plain URL and API key boxes, filled in from Kometa's config.yml, instead of choosing between config.yml, "enter it here" and off. After a passing test you pick the root folder and quality profile Kometa uses for adding items, from the app's own lists. Saving writes all four to config.yml, so Kometa uses the same connection. A connection entered only in Studio before this is no longer used; enter it again.
+  - A seedbox proxy login is behind a checkbox, for Radarr, Sonarr and Maintainerr alike.
+  - Every connection is saved only after a passing test, and Studio tests it again when saving. Changing only Maintainerr's overlay choice needs no test.
+  - Radarr and Sonarr each have their own "run Kometa when it imports" settings: on or off, what to run, how long to wait and which libraries. Settings from before carry over to both.
+  - TMDb and MDBList keys are tested with the same call Kometa makes, and saved to config.yml only after the test passes. MDBList's test shows how much of today's allowance is used. Trakt and the other trackers aren't offered: Kometa 2.5.3 removed Trakt.
+- Runs after imports can be limited to imports that matter to Kometa (per app, "Only imports that matter to Kometa").
+  - An import counts when one of these holds:
+    - a collection wants it;
+    - a collection that searches Plex could take it;
+    - the run draws overlays, runs operations or applies metadata files in that library;
+    - Studio can't tell.
+  - When only collections want it, just those collections run. Other imports are skipped and listed.
+  - What collections want comes from the collection files (IDs written in them) and from Kometa's missing report (`save_report`), which Studio keeps its own copy of after each completed run. Settings → Connect can turn the report on.
+  - Per library, the page says what Studio can tell and why every import still counts where it does.
+- "Leave Maintainerr overlays alone" now puts Maintainerr's overlay on last, over Kometa's.
+  - Studio decides when Maintainerr draws:
+    - after every Kometa run that changes posters (Maintainerr still puts its posters back first);
+    - once a day, for its countdowns.
+  - Kometa's overlays go on first when something is new since Kometa last drew overlays, so a new item never gets Maintainerr's overlay before Kometa's. Putting Maintainerr's overlays back then gives Kometa's poster, not the bare one.
+  - Maintainerr's own overlay schedule is kept off while this is on, and given back when it's turned off or Maintainerr is disconnected. Settings → Connect shows the schedule Studio holds and the next daily redraw.
+  - Maintainerr's overlays are no longer switched off around runs.
+- Every run now records how many calls Kometa made to each service (TMDb, MDBList, IMDb, …), using Kometa's `--timings`. System → Status shows today's totals and how much of MDBList's daily allowance is used.
+- Runs after imports wait once MDBList reaches 80% of its daily allowance, until it resets at midnight UTC. Scheduled and manual runs always go. The jobs drawer and Health say when a run is waiting for this.
+- Overlays page, next to Libraries. For each library it shows:
+  - the overlay files it uses;
+  - when overlays are drawn: schedules, and imports from Radarr or Sonarr;
+  - the last overlay pass;
+  - Kometa's Original Posters backup (how many posters, how big);
+  - whether Maintainerr's overlays go on top.
+
+  Actions:
+  - **Apply now** runs overlays for that library.
+  - **Add** sets up a daily overlay pass.
+  - **Turn overlays off** has Kometa put the original posters back (with "Leave Maintainerr overlays alone" on, Maintainerr puts its posters back first and draws again over the originals), and Kometa draws none until they're turned on again. It's refused without an Original Posters backup.
+- Settings → Connect: a **DNS bypass (quick fix)** checkbox next to the TMDb key. When ticked, TMDb is looked up through Cloudflare's DNS over HTTPS (1.1.1.1) instead of the network's DNS, for networks whose DNS blocks TMDb. It's tested and saved with the key and applies to every call with that key, Studio's and Kometa's. Saving another key without it ticked turns it off. It's a quick fix, to be removed once the proxy on Settings → Network is proven to work.
+- Settings → Network, for Studio's calls and Kometa's alike:
+  - **Proxy:** HTTP, HTTPS or SOCKS5, with an optional login and a list of what to reach directly (local addresses always are). It's saved only after a test shows it works and which address the internet sees. Kometa needs nothing installed for SOCKS5.
+  - **DNS over HTTPS** (Cloudflare or Google) for ticked services: TMDb, MDBList, IMDb, TheTVDB, plex.tv, Letterboxd, GitHub. It's saved only after each one resolves.
+  - **IPv4 first**, for networks with broken IPv6.
+  - **Connection check:** for each service Studio and Kometa use, what this network's DNS says and what DNS over HTTPS says, whether it connects and how fast, and a verdict, such as "Blocked by this network's DNS".

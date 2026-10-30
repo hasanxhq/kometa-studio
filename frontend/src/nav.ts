@@ -20,6 +20,7 @@ export const sections: Section[] = [
         path: "/libraries",
         summary: "One card per Plex library, with its collections, overlays, defaults and operations.",
       },
+      { label: "Overlays", path: "/overlays", summary: "Kometa's overlays per library: what draws them, when, and turning them off and on." },
     ],
   },
   {
@@ -48,7 +49,9 @@ export const sections: Section[] = [
     pages: [
       { label: "General", path: "/settings/general", summary: "Port, sign-in, API key and timezone." },
       { label: "Plex", path: "/settings/plex", summary: "Sign in with Plex and pick your server." },
-      { label: "Connect", path: "/settings/connect", summary: "TMDb, Trakt, Radarr, Sonarr and other services, each with a Test button." },
+      { label: "Connect", path: "/settings/connect", summary: "Radarr, Sonarr, Maintainerr, TMDb and MDBList, each tested before it is saved." },
+      { label: "Notifications", path: "/settings/notifications", summary: "Notifiarr, Gotify, ntfy and Apprise, and which Kometa events go where." },
+      { label: "Network", path: "/settings/network", summary: "A proxy, DNS over HTTPS and IPv4 first, for Studio and Kometa, and a connection check." },
       { label: "Kometa", path: "/settings/kometa", summary: "Kometa's paths and the flags every run uses." },
       { label: "UI", path: "/settings/ui", summary: "Show Advanced by default, and other display options." },
     ],

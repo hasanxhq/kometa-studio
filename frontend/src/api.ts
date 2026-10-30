@@ -51,8 +51,17 @@ export class ApiError extends Error {
 }
 
 export type PlexState = {
-  config: { path: string | null; url: string | null; token: string | null; error: string | null };
+  config: { path: string | null; url: string | null; token: string | null; error: string | null; custom: boolean };
   account: { name: string } | null;
+};
+
+/** One test of the server saved in config.yml. */
+export type PlexConnectionCheck = {
+  status: "ok" | "error" | "unset";
+  name: string | null;
+  version: string | null;
+  latency_ms: number | null;
+  error: string | null;
 };
 
 export type PlexConnection = {
@@ -103,7 +112,7 @@ export type RunSummary = {
   added_to_sonarr?: number;
 };
 
-export type RunTrigger = "manual" | "schedule" | "catch_up" | "arr";
+export type RunTrigger = "manual" | "schedule" | "catch_up" | "arr" | "maintainerr";
 
 export type Run = {
   id: number;
@@ -160,38 +169,115 @@ export type Schedules = {
   catch_ups: { id: number; status: RunStatus; queued_at: string; name: string }[];
 };
 
-// Radarr and Sonarr's webhook (Settings → Connect).
+// Radarr and Sonarr (Settings → Connect). Their URL and key are Kometa's, in config.yml.
 export type ArrKind = "radarr" | "sonarr";
 
-export type ArrSettings = { enabled: boolean; mode: RunMode; wait_minutes: number; libraries: Record<ArrKind, string[]> };
+/** When to run Kometa after one app's imports. */
+export type AppRuns = { enabled: boolean; trigger: "any" | "relevant"; mode: RunMode; wait_minutes: number; libraries: string[] };
 
-export type ArrSource = "config" | "studio" | "off";
+export type ArrSettings = Record<ArrKind, AppRuns>;
 
 export type ArrConnection = {
-  source: ArrSource; // Kometa's config.yml, entered in Studio, or off
-  url: string | null; // entered in Studio
-  has_key: boolean; // a key is saved (it's never sent back)
-  username: string | null; // for a proxy in front of the app
+  url: string | null; // from config.yml
+  token: string | null; // masked, e.g. "…1234"; the key itself never leaves the server
+  root_folder_path: string | null;
+  quality_profile: string | null;
+  username: string | null; // for a proxy in front of the app (Studio's own)
   has_password: boolean;
-  config_url: string | null; // what config.yml has, if it has a url and token
   status: { checked_at: string; ok: boolean; error: string | null } | null;
 };
 
 export type ArrConnectionInput = {
-  source: ArrSource;
-  url?: string | null;
-  api_key?: string | null;
-  username?: string | null;
-  password?: string | null; // null: keep the saved one
+  url: string;
+  api_key: string | null; // null: keep the key in config.yml
+  username: string | null;
+  password: string | null; // null: keep the saved one
+  root_folder_path: string | null;
+  quality_profile: string | null;
 };
 
-export type ArrTest = { ok: true; app: string; version: string } | { ok: false; error: string };
+export type ArrTest = { ok: true; app: string; version: string; root_folders: string[]; quality_profiles: string[] } | { ok: false; error: string };
+
+export type ArrPending = { first_at: string; last_at: string; due_at: string; imports: number; titles: string[] };
+
+/** What Studio can tell about a library, for "only imports that matter". */
+export type LibraryRelevance = {
+  library: string;
+  reports: boolean; // Kometa's missing report (save_report) is on
+  reported_at: string | null; // when Kometa last reported on all its collections
+  changed: boolean; // the collection files changed since
+  wanted: number; // items its collections want that Plex doesn't have
+  ids: number; // items named by ID in its collections
+  lists: number; // list-based collections
+  rule: string[]; // collections that search Plex: every import counts
+  unreadable: string[];
+  overlays: boolean;
+};
 
 export type ArrState = {
   settings: ArrSettings;
   connections: Record<ArrKind, ArrConnection>;
-  pending: { first_at: string; last_at: string; due_at: string; imports: number; titles: string[]; kinds: ArrKind[] } | null;
+  pending: Partial<Record<ArrKind, ArrPending>>;
+  skipped: Record<ArrKind, { at: string; title: string; libraries: string }[]>;
+  libraries: LibraryRelevance[];
 };
+
+// The Overlays page: per library, what draws overlays and Kometa's Original Posters backup.
+export type OverlayLibrary = {
+  library: string; // the name in config.yml
+  plex_name: string;
+  off: boolean; // remove_overlays is set: Kometa keeps the original posters and draws none
+  files: { kind: string; value: string; error: string | null; files: { path: string; title: string | null; docs_url: string | null; overlays: string[] }[] }[];
+  backup: { posters: number; bytes: number } | null;
+  last_pass: { run_id: number; status: RunStatus; started_at: string | null; finished_at: string | null } | null;
+  maintainerr: { collections: string[]; on_top: boolean } | null; // Maintainerr collections with overlays in this library
+};
+
+// Kometa's calls per service today (from --timings), and MDBList's daily allowance (System → Status).
+export type Usage = {
+  today: Record<string, number>;
+  mdblist: { limit: number; used: number; checked_at: string } | null;
+  limit_share: number; // runs after imports wait at this share of MDBList's allowance
+  held: string | null;
+};
+
+// Settings → Network: a proxy, DNS over HTTPS for chosen services, IPv4 first, and a connection check.
+export type NetworkState = {
+  proxy_url: string | null; // http://host:port, https://host:port or socks5://host:port
+  proxy_username: string | null;
+  has_password: boolean;
+  no_proxy: string[];
+  doh_provider: "cloudflare" | "google";
+  doh_services: string[];
+  prefer_ipv4: boolean;
+  local: string[]; // always reached directly
+  services: { id: string; name: string; domains: string[] }[];
+  providers: { id: "cloudflare" | "google"; name: string }[];
+  tmdb_quick_fix: boolean; // the TMDb key's DNS bypass (Settings → Connect) is on
+};
+
+export type ProxyInput = { url: string | null; username: string | null; password: string | null; no_proxy: string[] };
+
+export type NetworkCheck = {
+  name: string;
+  url: string;
+  host: string;
+  via: "direct" | "proxy";
+  system_dns: string[];
+  system_dns_error?: string;
+  doh_dns: string[] | null;
+  doh_dns_error?: string;
+  ok: boolean;
+  status: number | null;
+  ms: number | null;
+  error: string | null;
+  verdict: string;
+};
+
+// TMDb and MDBList (Settings → Connect): Kometa's keys, in config.yml.
+export type ServiceName = "tmdb" | "mdblist";
+export type ServicesState = Record<ServiceName, { apikey: string | null; bypass_dns?: boolean }>; // apikey masked; bypass_dns: TMDb only
+export type ServiceTest = { ok: true; limit?: number | null; used?: number | null } | { ok: false; error: string };
 
 // Kometa's own log files (System → Logs).
 export type LogLevel = "TRACE" | "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
@@ -209,9 +295,38 @@ export type MaintainerrState = {
   error: string | null;
   checked_seconds_ago: number | null;
   risks: string[]; // ways Kometa's config would touch Maintainerr's collections
+  // With "Leave Maintainerr overlays alone", Studio holds Maintainerr's own overlay schedule and has it draw daily, after Kometa.
+  schedule: { taken_over: boolean; own_cron: string | null; last_redraw: string | null; next_redraw: string | null };
 };
 
 export type MaintainerrInput = { url: string | null; username: string | null; password: string | null; leave_overlays_alone: boolean };
+
+// --- Settings → Notifications ---
+
+export type NotificationServiceName = "notifiarr" | "gotify" | "ntfy" | "apprise";
+
+// One config.yml key. A secret's value never comes back: `masked` says one is saved (e.g. "…ab12").
+export type NotificationKey = { name: string; label: string; secret: boolean; value: string | null; masked: string | null };
+
+export type NotificationService = { name: NotificationServiceName; label: string; configured: boolean; keys: NotificationKey[] };
+
+export type WebhookEvent = "error" | "version" | "run_start" | "run_end" | "changes" | "delete";
+
+// A column of the webhook grid. A URL's id hides it ("url:…"); "studio" is Studio's own receiver, which only Studio changes.
+export type WebhookTarget = { id: string; label: string; kind: "service" | "url" | "studio"; configured: boolean };
+
+export type NotificationsState = {
+  path: string;
+  hash: string | null; // config.yml's, which a save must match
+  error: string | null;
+  services: NotificationService[];
+  webhooks: { targets: WebhookTarget[]; events: Record<WebhookEvent, string[]> };
+  saved?: SaveResult;
+};
+
+export type NotificationValues = Record<string, string | null>; // a secret left null keeps the saved one
+
+export type NotificationTest = { ok: true; message: string } | { ok: false; error: string };
 
 // The jobs drawer (Bazarr-style): everything running, waiting, or recently finished.
 export type JobStatus = "running" | "pending" | "failed" | "completed";
@@ -248,7 +363,7 @@ export type BuiltinTask = {
   last: { started_at: string; finished_at: string | null; status: "running" | "succeeded" | "failed" | "interrupted"; message: string | null } | null;
 };
 
-export type BuiltinTaskInput = Pick<BuiltinTask, "enabled" | "days" | "time" | "timezone" | "options">;
+export type BuiltinTaskInput = Pick<BuiltinTask, "enabled" | "days" | "time" | "options"> & { timezone?: string | null };
 
 export type FullBackup = { name: string; size: number; created: string };
 
@@ -451,6 +566,7 @@ export const api = {
     startSignIn: () => request<PlexPin>("POST", "/plex/pin"),
     pollSignIn: (id: number) => request<PlexPinStatus>("GET", `/plex/pin/${id}`),
     signOut: () => request<void>("DELETE", "/plex/account"),
+    connection: () => request<PlexConnectionCheck>("GET", "/plex/connection"),
     servers: () => request<{ servers: PlexServer[] }>("GET", "/plex/servers"),
     test: (url: string, token: string) => request<PlexTestResult>("POST", "/plex/test", { url, token }),
     connect: (body: PlexConnectRequest) => request<PlexState>("POST", "/plex/connect", body),
@@ -490,10 +606,21 @@ export const api = {
   },
   arr: {
     get: () => request<ArrState>("GET", "/settings/arr"),
-    save: (settings: ArrSettings) => request<ArrState>("PUT", "/settings/arr", settings),
+    saveRuns: (kind: ArrKind, runs: AppRuns) => request<ArrState>("PUT", `/settings/arr/${kind}/runs`, runs),
     connect: (kind: ArrKind, body: ArrConnectionInput) => request<ArrState>("PUT", `/settings/arr/${kind}`, body),
     test: (kind: ArrKind, body: ArrConnectionInput) => request<ArrTest>("POST", `/settings/arr/${kind}/test`, body),
+    remove: (kind: ArrKind) => request<ArrState>("DELETE", `/settings/arr/${kind}`),
+    turnOnReports: () => request<ArrState>("POST", "/settings/arr/reports"),
   },
+  services: {
+    get: () => request<ServicesState>("GET", "/settings/services"),
+    test: (name: ServiceName, apikey: string | null, bypass_dns = false) =>
+      request<ServiceTest>("POST", `/settings/services/${name}/test`, { apikey, bypass_dns }),
+    save: (name: ServiceName, apikey: string | null, bypass_dns = false) =>
+      request<ServicesState>("PUT", `/settings/services/${name}`, { apikey, bypass_dns }),
+    remove: (name: ServiceName) => request<ServicesState>("DELETE", `/settings/services/${name}`),
+  },
+
   logs: {
     list: () => request<{ files: LogFile[] }>("GET", "/logs"),
     read: (path: string, level: LogLevel, q: string) =>
@@ -510,7 +637,35 @@ export const api = {
         password,
       }),
   },
+  notifications: {
+    get: () => request<NotificationsState>("GET", "/settings/notifications"),
+    test: (name: NotificationServiceName, values: NotificationValues) =>
+      request<NotificationTest>("POST", `/settings/notifications/${name}/test`, { values }),
+    save: (name: NotificationServiceName, values: NotificationValues, baseHash: string | null) =>
+      request<NotificationsState>("PUT", `/settings/notifications/${name}`, { values, base_hash: baseHash }),
+    remove: (name: NotificationServiceName, baseHash: string) =>
+      request<NotificationsState>("DELETE", `/settings/notifications/${name}?base_hash=${encodeURIComponent(baseHash)}`),
+    saveWebhooks: (events: Record<WebhookEvent, string[]>, baseHash: string | null) =>
+      request<NotificationsState>("PUT", "/settings/notifications/webhooks", { events, base_hash: baseHash }),
+  },
   jobs: () => request<{ jobs: Job[]; at: string }>("GET", "/jobs"),
+  usage: () => request<Usage>("GET", "/usage"),
+  network: {
+    get: () => request<NetworkState>("GET", "/settings/network"),
+    testProxy: (body: ProxyInput) => request<{ ok: true; ip: string } | { ok: false; error: string }>("POST", "/settings/network/proxy/test", body),
+    saveProxy: (body: ProxyInput) => request<NetworkState>("PUT", "/settings/network/proxy", body),
+    testDoh: (provider: string, services: string[]) =>
+      request<{ ok: true; found: Record<string, string> } | { ok: false; error: string }>("POST", "/settings/network/doh/test", { provider, services }),
+    saveDoh: (provider: string, services: string[]) => request<NetworkState>("PUT", "/settings/network/doh", { provider, services }),
+    saveIpv4: (prefer_ipv4: boolean) => request<NetworkState>("PUT", "/settings/network/ipv4", { prefer_ipv4 }),
+    check: () => request<{ results: NetworkCheck[] }>("POST", "/network/check"),
+  },
+  overlays: {
+    list: () => request<{ libraries: OverlayLibrary[] }>("GET", "/overlays"),
+    apply: (library: string) => request<{ run_id: number }>("POST", `/overlays/${encodeURIComponent(library)}/apply`),
+    off: (library: string) => request<{ run_id: number }>("POST", `/overlays/${encodeURIComponent(library)}/off`),
+    on: (library: string) => request<{ run_id: number }>("POST", `/overlays/${encodeURIComponent(library)}/on`),
+  },
   tasks: {
     list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),
     update: (name: TaskName, body: BuiltinTaskInput) => request<BuiltinTask>("PUT", `/tasks/${name}`, body),

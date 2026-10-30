@@ -15,7 +15,15 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .arr import Arr
 from .maintainerr import Maintainerr
+from . import network
 from .arr_routes import router as arr_router
+from .network import NetworkTransport
+from .network_routes import router as network_router
+from .overlays_routes import router as overlays_router
+from .usage import ApiCalls
+from .usage import router as usage_router
+from .wanted import WantedRecorder
+from .services import router as services_router
 from .auth import AuthMiddleware, LoginThrottle
 from .auth_routes import TIMEZONE
 from .auth_routes import router as auth_router
@@ -27,6 +35,7 @@ from .health import PlexCheck, health, kometa_updates, kometa_version
 from .jobs import router as jobs_router
 from .logs_routes import router as logs_router
 from .maintainerr_routes import router as maintainerr_router
+from .notifications_routes import router as notifications_router
 from .plex_routes import router as plex_router
 from .runner import Runner
 from .runs_routes import router as runs_router
@@ -105,7 +114,7 @@ def create_app(
         app.state.db = open_database(settings.db_path)
         app.state.timezone = get_setting(app.state.db, TIMEZONE) or app.state.timezone
         app.state.secrets = SecretBox.load_or_create(settings.data_dir)
-        app.state.http = httpx.AsyncClient(transport=http_transport)
+        app.state.http = httpx.AsyncClient(transport=NetworkTransport(app.state.db, app.state.secrets, settings.kometa_config, http_transport))
         runner = Runner(app.state.db, settings, webhook_url(settings, webhook_token(app.state.db)))
         app.state.runner = runner
         runner.start()
@@ -113,11 +122,18 @@ def create_app(
         tasks.setup(app.state.timezone)
         app.state.tasks = tasks
         # Started after the runner has marked cut-off runs interrupted; its first tick catches up on missed runs.
-        app.state.arr = Arr(app.state.db, runner, app.state.http, app.state.secrets, settings.kometa_config)
+        kometa_root = settings.kometa_entry.parent if settings.kometa_entry else None
+        app.state.arr = Arr(app.state.db, runner, app.state.http, app.state.secrets, settings.kometa_config, kometa_root)
         app.state.arr.start()
         maintainerr = Maintainerr(app.state.db, app.state.http, app.state.secrets, settings.kometa_config, settings.kometa_entry.parent if settings.kometa_entry else None)
         app.state.maintainerr = maintainerr
+        maintainerr.runner = runner
+        runner.extra_env = lambda: network.kometa_env(app.state.db, app.state.secrets, settings.kometa_config, settings.data_dir)
+        if app.state.writer is not None:
+            app.state.writer.extra_env = runner.extra_env
         runner.hooks.append(maintainerr)
+        runner.hooks.append(WantedRecorder(app.state.db, runner, settings.kometa_config, kometa_root))
+        runner.hooks.append(ApiCalls(app.state.db, runner, settings.kometa_config))
         if app.state.writer is not None:
             app.state.writer.guard = lambda path, root: [risk.message for risk in maintainerr.risks(path, root)]
         maintainerr.start()
@@ -156,8 +172,13 @@ def create_app(
     app.include_router(config_router)
     app.include_router(tasks_router)
     app.include_router(arr_router)
+    app.include_router(services_router)
+    app.include_router(usage_router)
+    app.include_router(overlays_router)
+    app.include_router(network_router)
     app.include_router(logs_router)
     app.include_router(jobs_router)
     app.include_router(maintainerr_router)
+    app.include_router(notifications_router)
     mount_frontend(app, static_dir)
     return app

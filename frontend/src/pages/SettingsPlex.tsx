@@ -1,46 +1,18 @@
 // Settings → Plex: the setup wizard (handoff v2 §4). Sign in with Plex, pick a server
 // connection, or type a URL and token. Saving writes plex.url and plex.token into config.yml.
+// Opening the page tests only the saved connection; the account's servers are fetched and
+// probed on "Test again", or when the saved connection doesn't answer.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
-import { api, type PlexConnection, type PlexServer, type PlexState } from "../api";
+import { api, type PlexConnection, type PlexConnectionCheck, type PlexServer, type PlexState } from "../api";
 import { Button, Card, Field, Tag, inputClass } from "../components/ui";
 
 // How often to ask whether the user has approved the sign-in. Tests shorten it.
 export const signInTiming = { pollMs: 1000 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1 border-b border-border py-3 last:border-0 sm:flex-row sm:gap-4">
-      <dt className="w-32 shrink-0 text-muted">{label}</dt>
-      <dd className="min-w-0 break-all font-mono text-sm">{children}</dd>
-    </div>
-  );
-}
-
-function CurrentConnection({ state }: { state: PlexState }) {
-  const { config } = state;
-  return (
-    <Card title="Kometa's Plex connection">
-      {config.path === null && (
-        <p className="mb-2 text-warn">Studio doesn't know where Kometa's config.yml is. Set STUDIO_KOMETA_CONFIG to save a connection.</p>
-      )}
-      {config.error && (
-        <p role="alert" className="mb-2 text-err">
-          {config.error}
-        </p>
-      )}
-      <dl>
-        <Row label="URL">{config.url ?? <span className="text-muted">Not set</span>}</Row>
-        <Row label="Token">{config.token ?? <span className="text-muted">Not set</span>}</Row>
-        {config.path && <Row label="Saved in">{config.path}</Row>}
-      </dl>
-    </Card>
-  );
-}
 
 // --- Sign in --------------------------------------------------------------------
 
@@ -98,13 +70,13 @@ function useSignIn(onSignedIn: () => void) {
   return { signIn, start, cancel };
 }
 
-function SignInCard({ onSignedIn }: { onSignedIn: () => void }) {
+function SignInPrompt({ onSignedIn }: { onSignedIn: () => void }) {
   const { signIn, start, cancel } = useSignIn(onSignedIn);
   return (
-    <Card title="Find your server">
-      <p className="mb-4 text-muted">
-        Sign in with your Plex account and Studio lists your servers and tests every address it can reach them on. Your password goes
-        only to Plex.
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted">
+        Sign in with your Plex account and Studio lists your servers and tests every address it can reach them on. Your password goes only to
+        Plex.
       </p>
       {signIn.kind === "waiting" ? (
         <div className="flex flex-wrap items-center gap-3">
@@ -124,7 +96,7 @@ function SignInCard({ onSignedIn }: { onSignedIn: () => void }) {
           <Button onClick={cancel}>Cancel</Button>
         </div>
       ) : (
-        <>
+        <div>
           <Button variant="primary" onClick={start}>
             Sign in with Plex
           </Button>
@@ -133,9 +105,9 @@ function SignInCard({ onSignedIn }: { onSignedIn: () => void }) {
               {signIn.message}
             </p>
           )}
-        </>
+        </div>
       )}
-    </Card>
+    </div>
   );
 }
 
@@ -204,7 +176,7 @@ function ServerChoice({ server, currentUrl, onSaved }: { server: PlexServer; cur
       </div>
       {server.best === null && (
         <p role="alert" className="mb-3 text-err">
-          Studio couldn't reach this server on any address. Check it's running, or enter an address below.
+          Studio couldn't reach this server on any address. Check it's running, or use a custom address.
         </p>
       )}
       <fieldset className="flex flex-col gap-2">
@@ -250,58 +222,90 @@ function ServerChoice({ server, currentUrl, onSaved }: { server: PlexServer; cur
   );
 }
 
-function ServersCard({ state, onSaved, onSignedOut }: { state: PlexState; onSaved: () => void; onSignedOut: () => void }) {
-  const servers = useQuery({ queryKey: ["plex", "servers"], queryFn: api.plex.servers, staleTime: Infinity, retry: false });
-  const signOut = useMutation({ mutationFn: api.plex.signOut, onSuccess: onSignedOut });
-
-  return (
-    <Card
-      title="Your servers"
-      actions={
-        <Button onClick={() => servers.refetch()} disabled={servers.isFetching}>
-          Test again
-        </Button>
-      }
-    >
-      <p className="mb-4 flex flex-wrap items-center gap-x-2 text-sm text-muted">
-        Signed in to Plex as {state.account?.name}.
-        <button type="button" className="min-h-11 underline hover:text-text" onClick={() => signOut.mutate()}>
-          Sign out
-        </button>
+function ServerList({ currentUrl, onSaved, servers }: { currentUrl: string | null; onSaved: () => void; servers: ReturnType<typeof useServers> }) {
+  if (servers.isFetching)
+    return (
+      <p role="status" className="text-muted">
+        Finding your servers and testing each address. This takes up to 5 seconds…
       </p>
-      {servers.isFetching ? (
-        <p role="status" className="text-muted">
-          Finding your servers and testing each address. This takes up to 5 seconds…
-        </p>
-      ) : servers.isError ? (
-        <p role="alert" className="text-err">
-          {servers.error.message}
-        </p>
-      ) : servers.data?.servers.length === 0 ? (
-        <p className="text-muted">This Plex account doesn't own a server. Enter your server's address below instead.</p>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {servers.data?.servers.map((server) => (
-            <ServerChoice key={server.id} server={server} currentUrl={state.config.url} onSaved={onSaved} />
-          ))}
-        </div>
-      )}
-    </Card>
+    );
+  if (servers.isError)
+    return (
+      <p role="alert" className="text-err">
+        {servers.error.message}
+      </p>
+    );
+  if (servers.data?.servers.length === 0)
+    return <p className="text-muted">This Plex account doesn't own a server. Use a custom address instead.</p>;
+  return (
+    <div className="flex flex-col gap-4">
+      {servers.data?.servers.map((server) => (
+        <ServerChoice key={server.id} server={server} currentUrl={currentUrl} onSaved={onSaved} />
+      ))}
+    </div>
   );
 }
 
-// --- Manual entry ----------------------------------------------------------------
+function useServers(enabled: boolean) {
+  return useQuery({ queryKey: ["plex", "servers"], queryFn: api.plex.servers, staleTime: Infinity, retry: false, enabled });
+}
 
-function ManualCard({ onSaved }: { onSaved: () => void }) {
+// --- The saved connection --------------------------------------------------------
+
+function Row({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1 border-b border-border py-2.5 last:border-0 sm:flex-row sm:gap-4">
+      <dt className="w-24 shrink-0 text-sm text-muted">{label}</dt>
+      <dd className="min-w-0 break-all font-mono text-sm">{children}</dd>
+    </div>
+  );
+}
+
+function Status({ check, testing }: { check: PlexConnectionCheck | undefined; testing: boolean }) {
+  if (testing || !check)
+    return (
+      <span role="status" className="text-sm text-muted">
+        Testing…
+      </span>
+    );
+  if (check.status === "ok") return <span className="text-sm text-ok">Connected · {check.latency_ms} ms</span>;
+  if (check.status === "error") return <span className="text-sm text-err">{check.error}</span>;
+  return null;
+}
+
+function SavedServer({ state, check, testing }: { state: PlexState; check: PlexConnectionCheck | undefined; testing: boolean }) {
+  const { config } = state;
+  if (!config.url) return <p className="text-muted">No Plex server is saved in config.yml yet.</p>;
+  return (
+    <div className="rounded-control border border-border-strong p-3 md:p-4">
+      <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <h3 className="font-semibold">{check?.name ?? "Plex server"}</h3>
+        {check?.version && <span className="text-xs text-muted">Plex Media Server {check.version}</span>}
+        {config.custom && <Tag>Custom address</Tag>}
+        <Status check={check} testing={testing} />
+      </div>
+      <dl>
+        <Row label="URL">{config.url}</Row>
+        <Row label="Token">{config.token ?? <span className="text-muted">Not set</span>}</Row>
+        {config.path && <Row label="Saved in">{config.path}</Row>}
+      </dl>
+    </div>
+  );
+}
+
+// --- Custom address --------------------------------------------------------------
+
+function CustomAddress({ onSaved, onClose }: { onSaved: () => void; onClose: () => void }) {
   const [url, setUrl] = useState("");
   const [token, setToken] = useState("");
   const test = useMutation({ mutationFn: () => api.plex.test(url, token) });
   const save = useMutation({ mutationFn: () => api.plex.connect({ url, token }), onSuccess: onSaved });
   const ready = url.trim() !== "" && token.trim() !== "";
+  const tested = test.data?.ok === true;
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    if (ready) save.mutate();
+    if (ready && tested) save.mutate();
   };
   const reset = () => {
     test.reset();
@@ -309,85 +313,82 @@ function ManualCard({ onSaved }: { onSaved: () => void }) {
   };
 
   return (
-    <Card title="Enter an address">
-      <p className="mb-4 text-muted">
-        For a server behind a reverse proxy, or an address plex.tv doesn't list. Studio tests it before saving.
-      </p>
-      <form className="flex flex-col gap-4" onSubmit={submit}>
-        <Field label="Server URL">
-          <input
-            className={inputClass}
-            value={url}
-            onChange={(e) => {
-              setUrl(e.target.value);
-              reset();
-            }}
-            placeholder="https://plex.example.com"
-            inputMode="url"
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </Field>
-        <Field
-          label="Plex token"
-          hint={
-            <a
-              className="underline"
-              href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
-              target="_blank"
-              rel="noreferrer"
-            >
-              How to find your token
-            </a>
-          }
-        >
-          <input
-            className={inputClass}
-            type="password"
-            value={token}
-            onChange={(e) => {
-              setToken(e.target.value);
-              reset();
-            }}
-            autoComplete="off"
-            spellCheck={false}
-          />
-        </Field>
-        <div className="flex flex-wrap items-center gap-3">
-          <Button disabled={!ready || test.isPending} onClick={() => test.mutate()}>
-            {test.isPending ? "Testing…" : "Test"}
-          </Button>
-          <Button variant="primary" type="submit" disabled={!ready || save.isPending}>
-            {save.isPending ? "Saving…" : "Save"}
-          </Button>
-          {test.data &&
-            (test.data.ok ? (
-              <span role="status" className="text-sm text-ok">
-                Connected to {test.data.name} (Plex {test.data.version})
-              </span>
-            ) : (
-              <span role="alert" className="text-sm text-err">
-                {test.data.error}
-              </span>
-            ))}
-          {test.isError && (
-            <span role="alert" className="text-sm text-err">
-              {test.error.message}
-            </span>
-          )}
-          {save.isSuccess && (
+    <form className="flex flex-col gap-4 rounded-control border border-border-strong p-3 md:p-4" onSubmit={submit} aria-label="Custom address">
+      <div>
+        <h3 className="font-semibold">Custom address</h3>
+        <p className="mt-1 text-sm text-muted">
+          For a server behind a reverse proxy, or an address plex.tv doesn't list. It replaces the server chosen above. Test it, then save.
+        </p>
+      </div>
+      <Field label="Server URL">
+        <input
+          className={inputClass}
+          value={url}
+          onChange={(e) => {
+            setUrl(e.target.value);
+            reset();
+          }}
+          placeholder="https://plex.example.com"
+          inputMode="url"
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </Field>
+      <Field
+        label="Plex token"
+        hint={
+          <a
+            className="underline"
+            href="https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            How to find your token
+          </a>
+        }
+      >
+        <input
+          className={inputClass}
+          type="password"
+          value={token}
+          onChange={(e) => {
+            setToken(e.target.value);
+            reset();
+          }}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </Field>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button disabled={!ready || test.isPending} onClick={() => test.mutate()}>
+          {test.isPending ? "Testing…" : "Test"}
+        </Button>
+        <Button variant="primary" type="submit" disabled={!tested || save.isPending} title={tested ? undefined : "Test the address first"}>
+          {save.isPending ? "Saving…" : "Save"}
+        </Button>
+        <Button onClick={onClose}>Cancel</Button>
+        {test.data &&
+          (test.data.ok ? (
             <span role="status" className="text-sm text-ok">
-              Saved to config.yml
+              Connected to {test.data.name} (Plex {test.data.version})
             </span>
-          )}
-          {save.isError && (
+          ) : (
             <span role="alert" className="text-sm text-err">
-              {save.error.message}
+              {test.data.error}
             </span>
-          )}
-        </div>
-      </form>
-    </Card>
+          ))}
+        {test.isError && (
+          <span role="alert" className="text-sm text-err">
+            {test.error.message}
+          </span>
+        )}
+        {save.isError && (
+          <span role="alert" className="text-sm text-err">
+            {save.error.message}
+          </span>
+        )}
+      </div>
+    </form>
   );
 }
 
@@ -396,8 +397,42 @@ function ManualCard({ onSaved }: { onSaved: () => void }) {
 export function SettingsPlex() {
   const queryClient = useQueryClient();
   const state = useQuery({ queryKey: ["plex"], queryFn: api.plex.state });
-  // Only the state query: refetching the server list would re-run every probe.
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["plex"], exact: true });
+  const url = state.data?.config.url ?? null;
+  const connection = useQuery({ queryKey: ["plex", "connection", url], queryFn: api.plex.connection, enabled: url !== null, retry: false });
+  const [listing, setListing] = useState(false); // the user asked to see the account's servers
+  const [custom, setCustom] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const unavailable = connection.data !== undefined && connection.data.status !== "ok";
+  const signedIn = Boolean(state.data?.account);
+  const showList = signedIn && (listing || unavailable || (state.data !== undefined && url === null));
+  const servers = useServers(showList);
+  const signOut = useMutation({
+    mutationFn: api.plex.signOut,
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ["plex", "servers"] });
+      setListing(false);
+      refresh();
+    },
+  });
+
+  // Only the state and the saved connection: refetching the server list would re-run every probe.
+  function refresh() {
+    queryClient.invalidateQueries({ queryKey: ["plex"], exact: true });
+    queryClient.invalidateQueries({ queryKey: ["plex", "connection"] });
+  }
+  const onSaved = () => {
+    setListing(false);
+    setCustom(false);
+    setSaved(true);
+    refresh();
+  };
+  const testAgain = () => {
+    setSaved(false);
+    if (url !== null) connection.refetch();
+    if (!signedIn) return;
+    if (showList) servers.refetch();
+    else setListing(true);
+  };
 
   if (state.isPending) {
     return <p className="text-muted">Loading…</p>;
@@ -409,23 +444,73 @@ export function SettingsPlex() {
       </p>
     );
   }
+  const { config, account } = state.data;
 
   return (
     <div className="flex max-w-3xl flex-col gap-4">
-      <CurrentConnection state={state.data} />
-      {state.data.account ? (
-        <ServersCard
-          state={state.data}
-          onSaved={refresh}
-          onSignedOut={() => {
-            queryClient.removeQueries({ queryKey: ["plex", "servers"] });
-            refresh();
-          }}
-        />
-      ) : (
-        <SignInCard onSignedIn={refresh} />
-      )}
-      <ManualCard onSaved={refresh} />
+      <Card
+        title="Your servers"
+        actions={
+          (url !== null || signedIn) && (
+            <Button onClick={testAgain} disabled={connection.isFetching || servers.isFetching}>
+              Test again
+            </Button>
+          )
+        }
+      >
+        <div className="flex flex-col gap-4">
+          {config.path === null && (
+            <p className="text-warn">Studio doesn't know where Kometa's config.yml is. Set STUDIO_KOMETA_CONFIG to save a connection.</p>
+          )}
+          {config.error && (
+            <p role="alert" className="text-err">
+              {config.error}
+            </p>
+          )}
+          <SavedServer state={state.data} check={connection.data} testing={connection.isFetching} />
+          {saved && (
+            <p role="status" className="text-sm text-ok">
+              Saved to config.yml
+            </p>
+          )}
+
+          {account ? (
+            <>
+              <p className="flex flex-wrap items-center gap-x-2 text-sm text-muted">
+                Signed in to Plex as {account.name}.
+                <button type="button" className="min-h-11 underline hover:text-text" onClick={() => signOut.mutate()}>
+                  Sign out
+                </button>
+              </p>
+              {showList && (
+                <section aria-label="Servers on your Plex account" className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold">{unavailable ? "Choose another address" : "Servers on your Plex account"}</h3>
+                    {listing && !unavailable && url !== null && (
+                      <button type="button" className="min-h-11 text-sm text-muted underline hover:text-text" onClick={() => setListing(false)}>
+                        Hide
+                      </button>
+                    )}
+                  </div>
+                  <ServerList currentUrl={config.url} onSaved={onSaved} servers={servers} />
+                </section>
+              )}
+            </>
+          ) : (
+            <SignInPrompt onSignedIn={refresh} />
+          )}
+
+          {custom ? (
+            <CustomAddress onSaved={onSaved} onClose={() => setCustom(false)} />
+          ) : (
+            <div>
+              <button type="button" className="min-h-11 text-sm text-accent underline hover:no-underline" onClick={() => setCustom(true)}>
+                Use a custom address
+              </button>
+            </div>
+          )}
+        </div>
+      </Card>
     </div>
   );
 }

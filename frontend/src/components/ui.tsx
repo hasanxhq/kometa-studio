@@ -1,6 +1,6 @@
 // Small building blocks shared by the pages.
 
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 export function Card({ title, children, actions }: { title: string; children: ReactNode; actions?: ReactNode }) {
   return (
@@ -52,3 +52,18 @@ export function Field({ label, children, hint }: { label: string; children: Reac
 
 export const inputClass =
   "min-h-11 w-full rounded-control border border-border-strong bg-bg px-3 font-mono text-sm text-text placeholder:text-muted/60 focus:border-accent focus:outline-none";
+
+/** A button that asks once more before doing something hard to undo. */
+export function ConfirmButton({ label, confirm, warning, onConfirm, busy }: { label: string; confirm: string; warning: string; onConfirm: () => void; busy: boolean }) {
+  const [asking, setAsking] = useState(false);
+  if (!asking) return <Button onClick={() => setAsking(true)}>{label}</Button>;
+  return (
+    <span className="flex flex-wrap items-center gap-2">
+      <span className="text-sm text-warn">{warning}</span>
+      <Button className="border-err/60 text-err" onClick={onConfirm} disabled={busy}>
+        {confirm}
+      </Button>
+      <Button onClick={() => setAsking(false)}>Keep</Button>
+    </span>
+  );
+}

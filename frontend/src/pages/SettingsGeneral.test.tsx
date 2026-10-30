@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { AuthStatus, GeneralSettings } from "../api";
@@ -84,7 +84,45 @@ describe("Settings → General", () => {
       required: "enabled",
       current_password: null,
     });
-    expect(screen.getByLabelText("Current password")).toBeInTheDocument(); // changes from now on need it
+    // Set up: the fields fold away behind a link.
+    expect(await screen.findByRole("button", { name: "Change username or password" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Password")).toBeNull();
+  });
+
+  it("once set up, shows the username and asks for the current password only to change something", async () => {
+    const configured: GeneralSettings = { ...general, auth: { configured: true, username: "hasan", required: "enabled" } };
+    const calls = mockApi({
+      "GET /settings/general": () => configured,
+      "PUT /settings/auth": () => ({ ...configured, auth: { ...configured.auth, username: "hasanq" } }),
+    });
+    renderAt("/settings/general");
+
+    expect(await screen.findByText("hasan")).toBeInTheDocument();
+    const form = screen.getByRole("form", { name: "Sign-in" });
+    for (const label of ["Username", "New password", "Current password"]) expect(screen.queryByLabelText(label)).toBeNull();
+    expect(within(form).queryByRole("button", { name: "Save" })).toBeNull();
+
+    // Changing who has to sign in still needs the current password; Cancel puts it back.
+    fireEvent.change(screen.getByLabelText("Authentication required"), { target: { value: "disabled_for_local" } });
+    expect(screen.getByLabelText("Current password")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByLabelText("Authentication required")).toHaveValue("enabled");
+    expect(screen.queryByLabelText("Current password")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Change username or password" }));
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "hasanq" } });
+    fireEvent.change(screen.getByLabelText("Current password"), { target: { value: "correct horse" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Saved.");
+    expect(screen.queryByLabelText("Username")).toBeNull();
+    expect(screen.getByText("hasanq")).toBeInTheDocument();
+    expect(calls.find((c) => c.route === "PUT /settings/auth")?.body).toEqual({
+      username: "hasanq",
+      password: null,
+      required: "enabled",
+      current_password: "correct horse",
+    });
   });
 
   it("replaces the API key only after a second click", async () => {
@@ -98,5 +136,20 @@ describe("Settings → General", () => {
     expect(calls.some((c) => c.route === "POST /settings/api-key")).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Replace it" }));
     await waitFor(() => expect(screen.getByLabelText("API key")).toHaveValue("fedcba9876543210fedcba9876543210"));
+  });
+
+  it("saves a timezone chosen from the UTC-offset list", async () => {
+    const calls = mockApi({
+      "GET /settings/general": () => general,
+      "PUT /settings/timezone": () => ({ ...general, timezone: "UTC" }),
+    });
+    renderAt("/settings/general");
+
+    const select = await screen.findByLabelText("Schedules and tasks use");
+    expect(within(select).getByRole("option", { name: /UTC \+05:30 \(Asia\/Kolkata\)/ })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "UTC" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/timezone")?.body).toEqual({ timezone: "UTC" }));
   });
 });

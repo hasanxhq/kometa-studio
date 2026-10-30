@@ -75,6 +75,12 @@ class PlexServer:
         container = await self._get("/library/sections")
         return [PlexLibrary(str(d["key"]), str(d["title"]), str(d.get("type", ""))) for d in container.get("Directory", [])]
 
+    async def added_since(self, library_key: str, library_type: str, since: int) -> int:
+        """How many movies (or episodes, in a show library) Plex added to a library at or after ``since`` (Unix time)."""
+        params = {"type": "4" if library_type == "show" else "1", "addedAt>>": str(since), "X-Plex-Container-Start": "0", "X-Plex-Container-Size": "0"}
+        container = await self._get(f"/library/sections/{library_key}/all", params)
+        return int(container.get("totalSize", container.get("size", 0)) or 0)
+
     async def collections(self, library_key: str) -> list[PlexCollection]:
         listing, labels = await asyncio.gather(
             self._get(f"/library/sections/{library_key}/collections"),

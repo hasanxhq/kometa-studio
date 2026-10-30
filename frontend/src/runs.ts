@@ -65,6 +65,7 @@ export const triggerLabels: Record<RunTrigger, string> = {
   schedule: "Scheduled",
   catch_up: "Catch-up",
   arr: "Radarr/Sonarr",
+  maintainerr: "Before Maintainerr's redraw",
 };
 
 export const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

@@ -75,7 +75,7 @@ describe("Studio's tasks", () => {
       enabled: true,
       days: [0, 1, 2, 3, 4],
       time: "04:00",
-      timezone: "Asia/Kolkata",
+      timezone: null,
       options: {},
     });
   });

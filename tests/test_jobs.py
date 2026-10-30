@@ -93,7 +93,7 @@ def test_waiting_imports_tasks_and_maintainerr(tmp_path):
     client, _ = make_client(tmp_path)
     with client:
         db = client.app.state.db
-        set_setting(db, arr.PENDING, {"first_at": "2026-10-30T20:00:00Z", "last_at": "2026-10-30T20:01:00Z", "imports": 2, "titles": ["Flow (2024)"], "kinds": ["radarr"]})
+        set_setting(db, arr.pending_key("radarr"), {"first_at": "2026-10-30T20:00:00Z", "last_at": "2026-10-30T20:01:00Z", "imports": 2, "titles": ["Flow (2024)"]})
         with db:
             db.execute(
                 "UPDATE tasks SET last_status = 'failed', last_started_at = '2026-10-30T04:30:00Z', "
@@ -102,7 +102,8 @@ def test_waiting_imports_tasks_and_maintainerr(tmp_path):
         set_setting(db, maintainerr.SETTINGS, {"url": "http://maintainerr.test"})
         set_setting(db, maintainerr.PENDING_PROCESS, True)
         found = jobs(client)
-    assert found["arr-pending"]["status"] == "pending" and "2 imports (Flow (2024))" in found["arr-pending"]["message"]
+    assert found["arr-pending-radarr"]["status"] == "pending" and "2 imports (Flow (2024))" in found["arr-pending-radarr"]["message"]
+    assert found["arr-pending-radarr"]["title"] == "Kometa after Radarr imports"
     assert (found["task-full_backup"]["status"], found["task-full_backup"]["message"]) == ("failed", "Not enough disk space")
     assert "task-full_check" not in found  # never run
     assert found["maintainerr-resume"]["label"] == "Retrying"

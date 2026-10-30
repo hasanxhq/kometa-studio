@@ -6,18 +6,21 @@ refreshed every ``REFRESH`` and before each run. With that it:
 - shows Maintainerr's collections as Maintainerr's in Libraries (matched by Plex rating key);
 - refuses a save that adds a way for Kometa to touch them (maintainerr_guard), and holds a run that
   would, saying why;
-- with "Leave Maintainerr overlays alone" on, wraps every Kometa run that can change posters:
-  1. Maintainerr's overlays are switched off (``PUT /api/overlays/settings {enabled: false}``), so
-     its own scheduled or event-driven passes can't draw a countdown while Kometa runs (every pass
-     checks ``enabled`` first; changing it only reschedules its cron);
-  2. Maintainerr reverts its overlays (``POST /api/overlays/revert/{id}``: its saved poster goes
-     back and its overlay state is dropped), so Kometa only ever sees, and backs up as "original",
-     posters without a countdown;
-  3. Kometa runs;
-  4. Maintainerr's overlays are switched back on and processed (``POST /api/overlays/process``):
-     it saves Kometa's fresh poster as its original and draws its countdown on top, last, so it's
-     the one that shows.
-  Step 4 is retried every few minutes until it works, including after a restart.
+- with "Leave Maintainerr overlays alone" on, decides when Maintainerr draws, so its overlay always
+  goes on last: original poster, then Kometa's overlay, then Maintainerr's. Maintainerr's revert
+  then hands back exactly Kometa's poster.
+  1. Studio takes over Maintainerr's overlay schedule: its job's cron becomes Maintainerr's own
+     "never" (``NEVER``), and the schedule it had is kept, to give back when the setting is turned
+     off or Maintainerr is disconnected. Its overlays stay enabled, because every pass, including
+     one asked for, checks ``enabled`` first.
+  2. Before a Kometa run that can change posters, Maintainerr reverts its overlays (``POST
+     /api/overlays/revert/{id}``: its saved poster goes back), so Kometa only ever sees its own
+     posters and never backs up a countdown as an "original".
+  3. After the run, Maintainerr draws again (``POST /api/overlays/process``), on top of Kometa's.
+     Retried every few minutes until it works, including after a restart.
+  4. Once a day (``DAILY``) Maintainerr redraws, for its countdowns. If anything was added to a
+     library that has Kometa overlays since Kometa's last overlay pass there, Kometa's overlays run
+     first (wrapped as above), so a new item never gets Maintainerr's overlay before Kometa's.
 
 If Maintainerr doesn't answer when a poster-changing run starts and the setting is on, the run is held:
 running Kometa then could bake the countdown into Kometa's Original Posters.
@@ -32,15 +35,16 @@ import logging
 import sqlite3
 import time
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
 from pydantic import BaseModel
 
-from . import maintainerr_guard
+from . import maintainerr_guard, wanted
 from .crypto import SecretBox
-from .db import get_setting, set_setting
+from .db import delete_setting, get_setting, set_setting
 from .kometa_command import RunRequest
 from .kometa_config import read_plex
 from .kometa_files import load_yaml
@@ -51,7 +55,7 @@ from .runner import After, RunHeld, Say
 log = logging.getLogger(__name__)
 
 SETTINGS = "maintainerr"  # {url, username, password (encrypted), leave_overlays_alone}
-PAUSED = "maintainerr.paused"  # Studio switched Maintainerr's overlays off for a run and hasn't switched them back on yet
+PAUSED = "maintainerr.paused"  # an older Studio switched Maintainerr's overlays off for a run; switched back on by _resume
 PENDING_PROCESS = "maintainerr.pending_process"  # an after step that didn't reach Maintainerr
 REFRESH = 300.0
 TIMEOUT = 15.0
@@ -60,6 +64,10 @@ REVERT_WAIT = 3600.0  # how long a revert may take: it walks every show, season 
 RETRY = 60.0  # how soon the loop tries again while a switch-back or redraw is pending
 POLL = 5.0
 POSTER_MODES = frozenset({"all", "overlays", "operations", "metadata"})  # runs that can change posters
+NEVER = "0 0 0 1 1 *"  # what Maintainerr itself sets its overlay job to when it's off: once a year, 1 January
+OWN_CRON = "maintainerr.own_cron"  # {cron}: Maintainerr's overlay schedule before Studio took it over, to give back
+LAST_REDRAW = "maintainerr.last_redraw"  # Unix time Maintainerr last drew, at Studio's request
+DAILY = 24 * 3600.0
 
 
 class MaintainerrSettings(BaseModel):
@@ -139,7 +147,8 @@ class Maintainerr:
         self.db = db
         self.http = http
         self.box = box
-        self._wrapping = False  # a run is between switching Maintainerr's overlays off and back on
+        self._wrapping = False  # a run is between Maintainerr reverting its overlays and drawing them again
+        self.runner = None  # set by the app: queues Kometa's overlays before a daily redraw when they're needed first
         self.config = config
         self.kometa_root = kometa_root
         self.snapshot = Snapshot()
@@ -250,12 +259,104 @@ class Maintainerr:
                 await self.refresh()
                 if not self._wrapping and self.connected():
                     await self._resume(lambda line: log.info(line))
+                    if self.controls():
+                        await self.take_over()
+                        await self._daily(time.time())
+                    elif not load(self.db).leave_overlays_alone:
+                        await self.hand_back()  # owed since the setting was turned off while Maintainerr didn't answer
             except MaintainerrProblem:
                 pass  # kept on the snapshot / retried next time
             except Exception:
                 log.exception("Maintainerr refresh failed")
             pending = get_setting(self.db, PAUSED) or get_setting(self.db, PENDING_PROCESS)
             await asyncio.sleep(RETRY if pending else REFRESH)
+
+    # --- Who decides when Maintainerr draws ---------------------------------------------
+
+    def controls(self) -> bool:
+        """Whether Studio decides when Maintainerr draws: the setting is on and Maintainerr has overlays at all."""
+        return self.connected() and load(self.db).leave_overlays_alone and self.snapshot.overlays_enabled and not self.snapshot.error
+
+    async def take_over(self) -> None:
+        """Set Maintainerr's overlay job to never run on its own, keeping its schedule to give back."""
+        current = await self._call("GET", "/api/overlays/settings")
+        cron = current.get("cronSchedule") if isinstance(current, dict) else None
+        if cron == NEVER:
+            return
+        if get_setting(self.db, OWN_CRON) is None:
+            set_setting(self.db, OWN_CRON, {"cron": cron})
+        await self._call("PUT", "/api/overlays/settings", json={"cronSchedule": NEVER})
+        if get_setting(self.db, LAST_REDRAW) is None:
+            set_setting(self.db, LAST_REDRAW, time.time())  # it has just drawn on its own schedule; the daily redraw counts from now
+
+    async def hand_back(self) -> None:
+        """Give Maintainerr its own overlay schedule back."""
+        own = get_setting(self.db, OWN_CRON)
+        if own is None:
+            return
+        await self._call("PUT", "/api/overlays/settings", json={"cronSchedule": own.get("cron")})
+        delete_setting(self.db, OWN_CRON)
+        delete_setting(self.db, LAST_REDRAW)
+
+    def schedule(self) -> dict:
+        """For Settings → Connect: Maintainerr's own schedule, if Studio holds it, and the daily redraws."""
+        own = get_setting(self.db, OWN_CRON)
+        last = get_setting(self.db, LAST_REDRAW)
+        return {
+            "taken_over": own is not None,
+            "own_cron": own.get("cron") if own else None,
+            "last_redraw": _utc(last) if last else None,
+            "next_redraw": _utc(last + DAILY) if last else None,
+        }
+
+    async def _daily(self, now: float) -> None:
+        last = get_setting(self.db, LAST_REDRAW)
+        if last is not None and now - last < DAILY:
+            return
+        set_setting(self.db, LAST_REDRAW, now)
+        first = await self._kometa_first()
+        if first and self.runner is not None:
+            # Kometa's overlays go on first; the run's after step has Maintainerr draw.
+            self.runner.enqueue(RunRequest(mode="overlays", libraries=first), trigger="maintainerr")
+            log.info("Daily Maintainerr redraw: Kometa's overlays run first for %s", ", ".join(first))
+            return
+        set_setting(self.db, PENDING_PROCESS, True)
+        await self._resume(lambda line: log.info(line))
+
+    async def _kometa_first(self) -> list[str]:
+        """Kometa libraries with overlays and Maintainerr overlay collections that got something since Kometa's last overlay pass there."""
+        try:
+            plans = wanted.plan(self.config, self.kometa_root) if self.config else {}
+        except (FileNotFoundError, ValueError):
+            return []
+        by_title = {plan.plex_name.lower(): plan.name for plan in plans.values() if plan.overlays}
+        try:
+            current = read_plex(self.config) if self.config else None
+            plex = PlexServer(self.http, current.url, current.token) if current and current.url and current.token else None
+            types = {library.key: library.type for library in await plex.libraries()} if plex else {}
+        except (PlexUnavailable, OSError, ValueError):
+            plex, types = None, {}
+        first: list[str] = []
+        for collection in self._overlaid([]):
+            name = by_title.get(self.snapshot.library_titles.get(collection.library_key, "").lower())
+            if name is None or name in first:
+                continue
+            since = self._last_overlay_pass(name)
+            try:
+                added = await plex.added_since(collection.library_key, types.get(collection.library_key, "movie"), since) if plex and since else 1
+            except PlexUnavailable:
+                added = 1  # can't tell: Kometa first
+            if added:
+                first.append(name)
+        return first
+
+    def _last_overlay_pass(self, library: str) -> int | None:
+        """When Kometa's last finished overlay pass over this library started (Unix time)."""
+        for row in self.db.execute("SELECT request, started_at FROM runs WHERE status = 'succeeded' AND started_at IS NOT NULL ORDER BY id DESC"):
+            request = RunRequest.model_validate_json(row[0])
+            if request.mode in ("all", "overlays") and not request.collections and (not request.libraries or library in request.libraries):
+                return int(datetime.fromisoformat(row[1].replace("Z", "+00:00")).timestamp())
+        return None
 
     # --- Kometa's config ------------------------------------------------------------
 
@@ -289,10 +390,8 @@ class Maintainerr:
         await self._wait_until_idle(say)
         self._wrapping = True
         try:
-            await self._call("PUT", "/api/overlays/settings", json={"enabled": False})
-            set_setting(self.db, PAUSED, True)
-            say("Maintainerr's overlays are paused while Kometa runs, so its own schedule can't draw a countdown meanwhile.")
-            say(f"Maintainerr puts back the posters under its overlays ({len(overlaid)} collection(s)), so its countdowns stay out of Kometa's originals.")
+            await self.take_over()  # its own schedule can't draw while Kometa runs
+            say(f"Maintainerr puts back the posters under its overlays ({len(overlaid)} collection(s)), so Kometa only sees its own posters.")
             for collection in overlaid:
                 try:
                     await self._call("POST", f"/api/overlays/revert/{collection.id}")
@@ -349,7 +448,7 @@ class Maintainerr:
         raise RunHeld(f"Held: Maintainerr's overlay processor is still busy after {limit / 60:.0f} minutes")
 
     async def _resume(self, say: Say) -> None:
-        """Switch Maintainerr's overlays back on and have it draw them, if a run left either undone.
+        """Have Maintainerr draw, if a run left that undone. (Also switches its overlays back on if an older Studio paused them.)
 
         Each step's flag is cleared only once Maintainerr has done it, so the loop retries what's left.
         """
@@ -368,6 +467,11 @@ class Maintainerr:
                         raise Busy("Maintainerr stayed busy") from None
                     await self._call("POST", "/api/overlays/process", json={})
                 set_setting(self.db, PENDING_PROCESS, False)
-                say("Maintainerr's overlays are back on, and it's drawing them again, on top of Kometa's.")
+                set_setting(self.db, LAST_REDRAW, time.time())
+                say("Maintainerr is drawing its overlays again, on top of Kometa's.")
         except MaintainerrProblem as problem:
-            say(f"Couldn't switch Maintainerr's overlays back on ({problem}); Studio keeps trying every few minutes.")
+            say(f"Couldn't have Maintainerr draw its overlays again ({problem}); Studio keeps trying every few minutes.")
+
+
+def _utc(seconds: float) -> str:
+    return datetime.fromtimestamp(seconds, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

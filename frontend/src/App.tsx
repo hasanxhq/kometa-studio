@@ -13,12 +13,15 @@ import { FileEditor } from "./pages/FileEditor";
 // The form editor brings Kometa's schema checking; load it when it's opened.
 const ItemEditor = lazy(() => import("./pages/ItemEditor"));
 import { Libraries } from "./pages/Libraries";
+import { Overlays } from "./pages/Overlays";
 import { LibraryDetail } from "./pages/LibraryDetail";
 import { Placeholder } from "./pages/Placeholder";
 import { RunDetail } from "./pages/RunDetail";
 import { SettingsConnect } from "./pages/SettingsConnect";
 import { SettingsGeneral } from "./pages/SettingsGeneral";
 import { SettingsKometa } from "./pages/SettingsKometa";
+import { SettingsNetwork } from "./pages/SettingsNetwork";
+import { SettingsNotifications } from "./pages/SettingsNotifications";
 import { SettingsPlex } from "./pages/SettingsPlex";
 import { SettingsUI } from "./pages/SettingsUI";
 import { SystemBackup } from "./pages/SystemBackup";
@@ -30,6 +33,7 @@ import { SystemUpdates } from "./pages/SystemUpdates";
 // Pages that exist so far; every other nav entry shows a placeholder.
 const built: Record<string, ComponentType> = {
   "/libraries": Libraries,
+  "/overlays": Overlays,
   "/activity/queue": ActivityQueue,
   "/activity/history": ActivityHistory,
   "/system/status": SystemStatus,
@@ -40,6 +44,8 @@ const built: Record<string, ComponentType> = {
   "/settings/general": SettingsGeneral,
   "/settings/plex": SettingsPlex,
   "/settings/connect": SettingsConnect,
+  "/settings/notifications": SettingsNotifications,
+  "/settings/network": SettingsNetwork,
   "/settings/kometa": SettingsKometa,
   "/settings/ui": SettingsUI,
 };

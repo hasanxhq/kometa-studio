@@ -146,17 +146,17 @@ def collect(db: sqlite3.Connection, runner, tasks, arr, maintainerr) -> list[dic
             if job:
                 found.append(job)
 
-    pending = arr.pending() if arr else None
-    if pending:
+    for kind, pending in (arr.pending() if arr else {}).items():
+        name = "Radarr" if kind == "radarr" else "Sonarr"
         found.append(
             {
-                "id": "arr-pending",
+                "id": f"arr-pending-{kind}",
                 "kind": "arr",
-                "title": "Kometa after imports",
+                "title": f"Kometa after {name} imports",
                 "status": "pending",
-                "label": "Waiting",
+                "label": "Held" if pending.get("held") else "Waiting",
                 "message": f"{pending['imports']} import{'s' if pending['imports'] != 1 else ''} ({', '.join(pending['titles'])}); "
-                "runs once no more arrive",
+                + (f"held: {pending['held']}" if pending.get("held") else "runs once no more arrive"),
                 "progress": None,
                 "started_at": pending["first_at"],
                 "finished_at": None,
@@ -166,6 +166,28 @@ def collect(db: sqlite3.Connection, runner, tasks, arr, maintainerr) -> list[dic
                 "cancellable": False,
             }
         )
+
+    for kind in ("radarr", "sonarr"):
+        skipped = get_setting(db, f"arr.skipped.{kind}") or []
+        if arr and skipped:
+            last = skipped[-1]
+            name = "Radarr" if kind == "radarr" else "Sonarr"
+            found.append(
+                {
+                    "id": f"arr-skipped-{kind}",
+                    "kind": "arr",
+                    "title": f"Kometa after {name} imports",
+                    "status": "completed",
+                    "label": "Skipped",
+                    "message": f"{last['title']}: no collection in {last['libraries']} wants it",
+                    "progress": None,
+                    "started_at": last["at"],
+                    "finished_at": last["at"],
+                    "link": "/settings/connect",
+                    "run_id": None,
+                    "cancellable": False,
+                }
+            )
 
     if maintainerr is not None and maintainerr.connected():
         paused = get_setting(db, maintainerr_module.PAUSED)

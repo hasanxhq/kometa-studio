@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { api, type HealthCheck } from "../api";
 import { Button, Card } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
-import { formatTime } from "../runs";
+import { formatRelative, formatTime } from "../runs";
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -50,6 +50,54 @@ function Health({ checks }: { checks: HealthCheck[] }) {
   );
 }
 
+const serviceNames: Record<string, string> = { tmdb: "TMDb", mdblist: "MDBList", imdb: "IMDb", tvdb: "TheTVDB", omdb: "OMDb", plex: "Plex", letterboxd: "Letterboxd" };
+
+// What today's runs asked of each service (Kometa's --timings), and how close MDBList's key is to its daily allowance.
+function Usage() {
+  const usage = useQuery({ queryKey: ["usage"], queryFn: api.usage, refetchInterval: 60_000 });
+  if (!usage.data) return null;
+  const { today, mdblist, limit_share, held } = usage.data;
+  const sources = Object.entries(today)
+    .filter(([source]) => !source.startsWith("other:") && source !== "plex")
+    .sort((a, b) => b[1] - a[1]);
+  const share = mdblist ? mdblist.used / mdblist.limit : null;
+  return (
+    <Card title="Service use today">
+      <div className="flex flex-col gap-3 text-sm">
+        {sources.length === 0 ? (
+          <p className="text-muted">No runs have called TMDb, MDBList or other services today (UTC).</p>
+        ) : (
+          <ul className="flex flex-wrap gap-x-6 gap-y-1">
+            {sources.map(([source, calls]) => (
+              <li key={source}>
+                <span className="text-muted">{serviceNames[source] ?? source}</span> <span className="font-mono">{calls}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {mdblist && share !== null && (
+          <div className="flex flex-col gap-1">
+            <div className="flex flex-wrap justify-between gap-2">
+              <span>
+                MDBList: {mdblist.used} of {mdblist.limit} requests today
+              </span>
+              <span className="text-xs text-muted">MDBList last asked {formatRelative(mdblist.checked_at)}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-surface-2" role="img" aria-label={`${Math.round(share * 100)}% of MDBList's daily allowance used`}>
+              <div className={`h-full ${share >= limit_share ? "bg-warn" : "bg-accent"}`} style={{ width: `${Math.min(share, 1) * 100}%` }} />
+            </div>
+          </div>
+        )}
+        <p className="text-xs text-muted">
+          Runs after imports wait once MDBList reaches {Math.round(limit_share * 100)}% of its daily allowance, until it resets at midnight UTC. Scheduled and
+          manual runs always go.
+        </p>
+        {held && <p className="text-warn">{held}.</p>}
+      </div>
+    </Card>
+  );
+}
+
 export function SystemStatus() {
   const status = useQuery({ queryKey: ["status"], queryFn: api.status });
 
@@ -68,6 +116,7 @@ export function SystemStatus() {
   return (
     <div className="flex max-w-3xl flex-col gap-4">
       <Health checks={health} />
+      <Usage />
       <section className="rounded-card border border-border bg-surface px-6 py-3">
         <h2 className="py-2 text-base font-semibold">About</h2>
         <dl>

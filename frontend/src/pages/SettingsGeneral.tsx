@@ -5,14 +5,7 @@ import { useState, type FormEvent } from "react";
 
 import { api, type AuthRequired, type GeneralSettings } from "../api";
 import { Button, Card, Field, inputClass } from "../components/ui";
-
-const timezones: string[] = (() => {
-  try {
-    return Intl.supportedValuesOf("timeZone");
-  } catch {
-    return [];
-  }
-})();
+import { timezoneOptions } from "../timezones";
 
 function SignIn({ settings }: { settings: GeneralSettings }) {
   const queryClient = useQueryClient();
@@ -21,19 +14,38 @@ function SignIn({ settings }: { settings: GeneralSettings }) {
   const [password, setPassword] = useState("");
   const [required, setRequired] = useState<AuthRequired>(settings.auth.required);
   const [current, setCurrent] = useState("");
+  // Once sign-in is set up, the username and password fields stay hidden until asked for.
+  const [changing, setChanging] = useState(false);
   const save = useMutation({
-    mutationFn: () => api.general.setAuth({ username, password: password || null, required, current_password: configured ? current : null }),
+    mutationFn: () =>
+      api.general.setAuth({
+        username,
+        password: password || null,
+        required,
+        current_password: configured ? current : null,
+      }),
     onSuccess: (data) => {
       queryClient.setQueryData(["general"], data);
       queryClient.invalidateQueries({ queryKey: ["auth"] });
       setPassword("");
       setCurrent("");
+      setChanging(false);
     },
   });
   const submit = (event: FormEvent) => {
     event.preventDefault();
     save.mutate();
   };
+  const cancel = () => {
+    setUsername(settings.auth.username ?? "");
+    setPassword("");
+    setCurrent("");
+    setRequired(settings.auth.required);
+    setChanging(false);
+    save.reset();
+  };
+  const editing = !configured || changing;
+  const dirty = editing || required !== settings.auth.required;
 
   return (
     <Card title="Sign-in">
@@ -49,21 +61,36 @@ function SignIn({ settings }: { settings: GeneralSettings }) {
             <option value="disabled_for_local">Disabled for local addresses: only the internet signs in</option>
           </select>
         </Field>
-        <Field label="Username">
-          <input className={inputClass} value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
-        </Field>
-        <Field label={configured ? "New password" : "Password"} hint={configured ? "Leave empty to keep the current one." : "At least 8 characters."}>
-          <input
-            className={inputClass}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-            minLength={8}
-            required={!configured}
-          />
-        </Field>
-        {configured && (
+        {editing ? (
+          <>
+            <Field label="Username">
+              <input className={inputClass} value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
+            </Field>
+            <Field
+              label={configured ? "New password" : "Password"}
+              hint={configured ? "Leave empty to keep the current one." : "At least 8 characters."}
+            >
+              <input
+                className={inputClass}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="new-password"
+                minLength={8}
+                required={!configured}
+              />
+            </Field>
+          </>
+        ) : (
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+            <span className="text-muted">Username</span>
+            <span className="font-semibold">{settings.auth.username}</span>
+            <button type="button" className="min-h-11 text-accent underline hover:no-underline" onClick={() => setChanging(true)}>
+              Change username or password
+            </button>
+          </div>
+        )}
+        {configured && dirty && (
           <Field label="Current password" hint="Needed to change anything here. Changing the username or password signs out every other browser.">
             <input
               className={inputClass}
@@ -75,21 +102,28 @@ function SignIn({ settings }: { settings: GeneralSettings }) {
             />
           </Field>
         )}
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variant="primary" type="submit" disabled={save.isPending}>
-            {save.isPending ? "Saving…" : configured ? "Save" : "Set up sign-in"}
-          </Button>
-          {save.isError && (
-            <span role="alert" className="text-sm text-err">
-              {save.error.message}
-            </span>
-          )}
-          {save.isSuccess && (
-            <span role="status" className="text-sm text-ok">
-              Saved.
-            </span>
-          )}
-        </div>
+        {(dirty || save.isSuccess) && (
+          <div className="flex flex-wrap items-center gap-3">
+            {dirty && (
+              <>
+                <Button variant="primary" type="submit" disabled={save.isPending}>
+                  {save.isPending ? "Saving…" : configured ? "Save" : "Set up sign-in"}
+                </Button>
+                {configured && <Button onClick={cancel}>Cancel</Button>}
+              </>
+            )}
+            {save.isError && (
+              <span role="alert" className="text-sm text-err">
+                {save.error.message}
+              </span>
+            )}
+            {save.isSuccess && !dirty && (
+              <span role="status" className="text-sm text-ok">
+                Saved.
+              </span>
+            )}
+          </div>
+        )}
       </form>
     </Card>
   );
@@ -142,11 +176,13 @@ function ApiKey({ settings }: { settings: GeneralSettings }) {
 function Timezone({ settings }: { settings: GeneralSettings }) {
   const queryClient = useQueryClient();
   const [timezone, setTimezone] = useState(settings.timezone);
+  const options = timezoneOptions(undefined, [settings.timezone, timezone]);
   const save = useMutation({
     mutationFn: () => api.general.setTimezone(timezone),
     onSuccess: (data) => {
       queryClient.setQueryData(["general"], data);
       queryClient.invalidateQueries({ queryKey: ["schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["tasks"] });
     },
   });
   return (
@@ -159,15 +195,16 @@ function Timezone({ settings }: { settings: GeneralSettings }) {
         }}
       >
         <div className="min-w-60 flex-1">
-          <Field label="New schedules use" hint="Schedules you already have keep their own timezone.">
-            <input className={inputClass} list="general-timezones" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
+          <Field label="Schedules and tasks use" hint="Kometa schedules and Studio's built-in tasks share this timezone. Daylight saving changes are handled.">
+            <select className={inputClass} value={timezone} onChange={(e) => setTimezone(e.target.value)} aria-label="Schedules and tasks use">
+              {options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </Field>
         </div>
-        <datalist id="general-timezones">
-          {timezones.map((zone) => (
-            <option key={zone} value={zone} />
-          ))}
-        </datalist>
         <Button type="submit" disabled={save.isPending || timezone === settings.timezone}>
           Save
         </Button>

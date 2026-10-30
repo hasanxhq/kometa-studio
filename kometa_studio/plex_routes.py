@@ -6,6 +6,7 @@ only ever sees server IDs, URIs and masked tokens.
 
 import asyncio
 import sqlite3
+import time
 import uuid
 from dataclasses import asdict
 from pathlib import Path
@@ -26,6 +27,7 @@ from .settings import Settings
 CLIENT_ID = "plex.client_id"
 ACCOUNT_TOKEN = "plex.account_token"
 ACCOUNT_NAME = "plex.account_name"
+CUSTOM_URL = "plex.custom_url"  # the address last saved by hand, so the page can say the saved one is custom
 
 router = APIRouter(prefix="/api/v1/plex", tags=["plex"])
 
@@ -99,6 +101,7 @@ def current_state(db: sqlite3.Connection, settings: Settings) -> dict:
             config["error"] = f"Can't read config.yml: {error}"
         except YAMLError as error:
             config["error"] = f"config.yml isn't valid YAML: {error}"
+    config["custom"] = config["url"] is not None and config["url"] == get_setting(db, CUSTOM_URL)
     name = get_setting(db, ACCOUNT_NAME)
     return {"config": config, "account": {"name": name} if get_setting(db, ACCOUNT_TOKEN) else None}
 
@@ -106,6 +109,24 @@ def current_state(db: sqlite3.Connection, settings: Settings) -> dict:
 @router.get("")
 async def get_plex(db: Db, settings: AppSettings) -> dict:
     return current_state(db, settings)
+
+
+@router.get("/connection")
+async def check_connection(http: Http, settings: AppSettings) -> dict:
+    """Whether the server in config.yml answers with its token: one probe, without asking plex.tv for the server list."""
+    try:
+        current = read_plex(settings.kometa_config) if settings.kometa_config else None
+    except (OSError, ValueError, YAMLError):
+        current = None
+    if current is None or not current.url or not current.token:
+        return {"status": "unset", "name": None, "version": None, "latency_ms": None, "error": None}
+    started = time.monotonic()
+    try:
+        identity = await plex.probe(http, current.url, current.token)
+    except plex.PlexError as error:
+        return {"status": "error", "name": None, "version": None, "latency_ms": None, "error": str(error)}
+    latency = round((time.monotonic() - started) * 1000)
+    return {"status": "ok", "name": identity.name, "version": identity.version, "latency_ms": latency, "error": None}
 
 
 # --- Sign in ---------------------------------------------------------------------
@@ -254,6 +275,10 @@ async def connect_server(body: ConnectRequest, db: Db, http: Http, box: Box, set
         raise HTTPException(500, f"Couldn't write {path}: {error}") from None
     except (ValueError, YAMLError) as error:
         raise HTTPException(409, f"Can't update config.yml: {error}") from None
+    if body.server_id is None:
+        set_setting(db, CUSTOM_URL, url)
+    else:
+        delete_setting(db, CUSTOM_URL)
     return current_state(db, settings)
 
 

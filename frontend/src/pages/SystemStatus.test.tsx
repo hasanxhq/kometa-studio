@@ -53,3 +53,27 @@ describe("Updates", () => {
     expect(await screen.findByText(/Up to date when Kometa last checked/)).toBeInTheDocument();
   });
 });
+
+describe("Service use today", () => {
+  it("shows each service's calls and how close MDBList is to its daily allowance", async () => {
+    mockApi({
+      "GET /status": () => ({ ...status, health: [] }),
+      "GET /kometa/full-check": () => ({ last: null }),
+      "GET /usage": () => ({
+        today: { tmdb: 912, mdblist: 830, "other:example.com": 3 },
+        mdblist: { limit: 1000, used: 830, checked_at: new Date().toISOString() },
+        limit_share: 0.8,
+        held: "MDBList has used 830 of today's 1000 requests (80% is Studio's limit for runs after imports); waiting until it resets at midnight UTC",
+      }),
+    });
+    renderAt("/system/status");
+
+    const card = (await screen.findByRole("heading", { name: "Service use today" })).closest("section")!;
+    expect(within(card).getByText("TMDb")).toBeInTheDocument();
+    expect(within(card).getByText("912")).toBeInTheDocument();
+    expect(within(card).queryByText(/example\.com/)).toBeNull();
+    expect(within(card).getByText("MDBList: 830 of 1000 requests today")).toBeInTheDocument();
+    expect(within(card).getByRole("img", { name: "83% of MDBList's daily allowance used" })).toBeInTheDocument();
+    expect(within(card).getByText(/waiting until it resets at midnight UTC/)).toBeInTheDocument();
+  });
+});

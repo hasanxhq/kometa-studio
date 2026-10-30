@@ -205,26 +205,75 @@ def test_a_run_that_would_touch_its_collections_is_held(tmp_path, setup):
     assert not any("revert" in call for call in fake.calls)
 
 
-def test_maintainerrs_overlays_take_precedence(tmp_path, setup):
+def test_maintainerrs_overlays_go_on_last(tmp_path, setup):
+    from kometa_studio import maintainerr
+
     _, _, fake = setup
     with make_client(tmp_path, setup) as client:
-        connect(client)
+        connect(client)  # Studio takes over Maintainerr's overlay schedule straight away
+        assert fake.cron == maintainerr.NEVER
         fake.calls.clear()
         run = finished(client, client.post("/api/v1/runs", json={"mode": "overlays"}).json()["id"])
         log = log_of(client, run["id"])
         collections_only = finished(client, client.post("/api/v1/runs", json={"mode": "collections"}).json()["id"])
+        page = client.get("/api/v1/settings/maintainerr").json()
     assert run["status"] == "succeeded"
     changes = [call for call in fake.calls if call.startswith(("POST", "PUT"))]
-    # Maintainerr's overlays are paused, only the collection with overlays is reverted, then they're back on and drawn again.
-    assert changes == ["PUT /api/overlays/settings", "POST /api/overlays/revert/7", "PUT /api/overlays/settings", "POST /api/overlays/process"]
+    # Only the collection with overlays is reverted, Kometa runs, then Maintainerr draws on top. Its overlays are never switched off.
+    assert changes == ["POST /api/overlays/revert/7", "POST /api/overlays/process"]
     assert fake.overlays_enabled is True
     lines = log.splitlines()
     put_back = next(i for i, line in enumerate(lines) if "puts back the posters under its overlays" in line)
     kometa = next(i for i, line in enumerate(lines) if "Kometa ran" in line)
-    again = next(i for i, line in enumerate(lines) if "drawing them again, on top of Kometa" in line)
+    again = next(i for i, line in enumerate(lines) if "drawing its overlays again, on top of Kometa" in line)
     assert put_back < kometa < again
     assert collections_only["status"] == "succeeded"
-    assert len([c for c in fake.calls if c.startswith(("POST", "PUT"))]) == 4  # a collections run changes no posters
+    assert len([c for c in fake.calls if c.startswith(("POST", "PUT"))]) == 2  # a collections run changes no posters
+    assert page["schedule"]["taken_over"] is True and page["schedule"]["own_cron"] == "0 * * * *"
+    assert page["schedule"]["next_redraw"] is not None
+
+
+def test_turning_the_setting_off_or_disconnecting_gives_maintainer_its_schedule_back(tmp_path, setup):
+    _, _, fake = setup
+    with make_client(tmp_path, setup) as client:
+        connect(client)
+        off = connect(client, leave_overlays_alone=False)
+        assert fake.cron == "0 * * * *" and off["schedule"]["taken_over"] is False
+        connect(client)
+        assert fake.cron != "0 * * * *"
+        client.put("/api/v1/settings/maintainerr", json={"url": None})
+    assert fake.cron == "0 * * * *"
+
+
+def test_the_daily_redraw_lets_kometa_draw_first_when_something_is_new(tmp_path, setup):
+    from kometa_studio import maintainerr
+
+    root, plex, fake = setup
+    config = root / "config" / "config.yml"
+    config.write_text(config.read_text().replace("      - file: config/Movies.yml\n", "      - file: config/Movies.yml\n    overlay_files:\n      - file: config/Movies.yml\n"))
+    with make_client(tmp_path, setup) as client:
+        connect(client)
+        service = client.app.state.maintainerr
+        db = service.db
+
+        # Kometa has never drawn overlays in Movies: its overlays run first, and that run's after step has Maintainerr draw.
+        fake.calls.clear()
+        client.portal.call(service._daily, time.time() + maintainerr.DAILY)
+        queued = db.execute("SELECT request, trigger FROM runs ORDER BY id DESC LIMIT 1").fetchone()
+        assert json.loads(queued[0])["mode"] == "overlays" and json.loads(queued[0])["libraries"] == ["Movies"] and queued[1] == "maintainerr"
+        finished(client, db.execute("SELECT MAX(id) FROM runs").fetchone()[0])
+        assert fake.calls[-1] == "POST /api/overlays/process"
+
+        # Nothing new since that pass: the next day Maintainerr just redraws.
+        drawn = fake.processed
+        client.portal.call(service._daily, time.time() + 2 * maintainerr.DAILY)
+        assert fake.processed == drawn + 1
+        assert db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 1
+
+        # A movie added since: Kometa first again.
+        plex.added["1"] = [int(time.time()) + 10]
+        client.portal.call(service._daily, time.time() + 3 * maintainerr.DAILY)
+        assert db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 2
 
 
 def test_a_run_for_another_library_leaves_its_overlays_alone(tmp_path, setup):
@@ -275,7 +324,7 @@ def test_maintainerr_down_holds_poster_runs_only_while_the_setting_is_on(tmp_pat
     assert off["status"] == "succeeded"
 
 
-def test_switching_overlays_back_on_is_retried_until_it_works(tmp_path, setup, monkeypatch):
+def test_drawing_again_is_retried_until_it_works(tmp_path, setup, monkeypatch):
     from kometa_studio import maintainerr
 
     _, _, fake = setup
@@ -284,7 +333,7 @@ def test_switching_overlays_back_on_is_retried_until_it_works(tmp_path, setup, m
 
     def flaky(request):
         # Maintainerr goes away just as Kometa finishes.
-        if failing["on"] and request.method == "PUT":
+        if failing["on"] and request.url.path == "/api/overlays/process":
             raise httpx.ConnectError("Connection refused", request=request)
         return real_handle(request)
 
@@ -302,13 +351,26 @@ def test_switching_overlays_back_on_is_retried_until_it_works(tmp_path, setup, m
         run = finished(client, client.post("/api/v1/runs", json={"mode": "overlays"}).json()["id"])
         assert run["status"] == "succeeded"
         assert "keeps trying" in log_of(client, run["id"])
-        assert fake.overlays_enabled is False
-        assert client.get("/api/v1/settings/maintainerr").json()["overlays_enabled"] is True  # its real setting
+        assert fake.processed == 0
 
         failing["on"] = False
         client.portal.call(service._resume, lambda line: None)  # what the loop does every few minutes
-    assert fake.overlays_enabled is True
+    assert fake.processed == 1
     assert fake.calls[-1] == "POST /api/overlays/process"
+
+
+def test_overlays_an_older_studio_paused_are_switched_back_on(tmp_path, setup):
+    from kometa_studio import maintainerr
+    from kometa_studio.db import set_setting
+
+    _, _, fake = setup
+    fake.overlays_enabled = False
+    with make_client(tmp_path, setup) as client:
+        connect(client)
+        service = client.app.state.maintainerr
+        set_setting(service.db, maintainerr.PAUSED, True)
+        client.portal.call(service._resume, lambda line: None)
+    assert fake.overlays_enabled is True
 
 
 def test_a_seedbox_proxy_login(tmp_path, setup):
@@ -346,6 +408,32 @@ def test_a_revert_slower_than_the_request_is_waited_for(tmp_path, setup, monkeyp
         pending = client.app.state.maintainerr.db.execute("SELECT value FROM settings WHERE key = 'maintainerr.pending_process'").fetchone()[0]
     assert run["status"] == "succeeded", log
     assert "still putting posters back" in log and "Kometa ran" in log
-    assert log.index("still putting posters back") < log.index("Kometa ran") < log.index("drawing them again")
+    assert log.index("still putting posters back") < log.index("Kometa ran") < log.index("drawing its overlays again")
     assert [c for c in fake.calls if c.startswith("POST")] == ["POST /api/overlays/revert/7", "POST /api/overlays/process", "POST /api/overlays/process"]
     assert fake.overlays_enabled is True and pending == "false"
+
+
+def test_a_new_address_or_login_is_saved_only_after_it_passes_a_test(tmp_path, setup):
+    _, _, fake = setup
+    fake.proxy_login = ("hasan", "seedbox-pass")
+    with make_client(tmp_path, setup) as client:
+        refused = client.put("/api/v1/settings/maintainerr", json={"url": MAINTAINERR_URL, "username": "hasan", "password": "nope", "leave_overlays_alone": True})
+        assert client.get("/api/v1/settings/maintainerr").json()["url"] is None
+        connect(client, username="hasan", password="seedbox-pass")
+        fake.proxy_login = ("hasan", "changed-since")  # the overlay choice alone is saved without a test
+        toggled = connect(client, username="hasan", leave_overlays_alone=False)
+    assert refused.status_code == 422 and refused.json()["detail"].startswith("Not saved: The proxy in front of Maintainerr")
+    assert toggled["leave_overlays_alone"] is False
+
+
+def test_turning_the_setting_off_while_maintainerr_is_away_gives_its_schedule_back_later(tmp_path, setup):
+    _, _, fake = setup
+    with make_client(tmp_path, setup) as client:
+        connect(client)
+        fake.down = True
+        assert connect(client, leave_overlays_alone=False)["schedule"]["taken_over"] is True  # saved, and still owed
+        fake.down = False
+        service = client.app.state.maintainerr
+        client.portal.call(service.hand_back)  # what the loop does
+        assert client.get("/api/v1/settings/maintainerr").json()["schedule"]["taken_over"] is False
+    assert fake.cron == "0 * * * *"
