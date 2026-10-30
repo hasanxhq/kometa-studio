@@ -8,13 +8,16 @@ An unofficial, arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kom
 
 **Never modify Kometa.** No patches, no imports of Kometa internals. Studio only writes the user's own config and YAML files that Kometa reads.
 
-## Layout (planned)
+## Layout
 
 | Path | Holds |
 |---|---|
-| `kometa_studio/` | Python backend (FastAPI) |
-| `frontend/` | React + Vite + TypeScript app |
+| `kometa_studio/` | Python backend (FastAPI). `app.py` API and SPA serving, `db.py` SQLite and migrations, `settings.py` `STUDIO_*` env settings |
+| `kometa_studio/migrations/` | Numbered schema migrations (`0001_initial.sql`, ...). Never edit one that has been merged; add the next number |
+| `kometa_studio/static/` | Built frontend (git-ignored; `npm run build` writes it) |
+| `frontend/` | React + Vite + TypeScript app. `src/nav.ts` defines the navigation and routes |
 | `tests/` | Backend tests and fixtures |
+| `Dockerfile`, `compose.yaml` | Image built on `kometateam/kometa:<tag>`; Kometa stays at `/` with its own venv |
 | `kometa/` | Read-only clone of upstream Kometa for reference. Git-ignored; never commit it or edit it |
 
 ## Tests
@@ -22,7 +25,7 @@ An unofficial, arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kom
 CI runs one job, `test` (`.github/workflows/ci.yml`). Each part runs once it exists:
 
 - Backend: `python -m pip install -e ".[dev]"` then `python -m pytest`
-- Frontend: `cd frontend && npm ci && npm test`
+- Frontend: `cd frontend && npm ci && npm run typecheck && npm test`
 
 Run the same commands locally before every commit. Keep the job name `test`: branch protection requires it by that name.
 
