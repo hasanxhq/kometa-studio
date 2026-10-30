@@ -20,12 +20,13 @@ An unofficial, arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kom
 | `kometa_studio/scheduler.py`, `schedules_routes.py` | Schedule maths (zoneinfo, DST), the 30 s tick with catch-up and coalescing; the `/api/v1/schedules` endpoints. Queue runs and move `last_fired_at` in one transaction |
 | `kometa_studio/kometa_files.py`, `config_routes.py` | Reads config.yml and the files it references, resolved as Kometa does (read-only); `/api/v1/config*` and `/api/v1/history`. The file endpoint must never serve Studio's data folder, and masks secrets |
 | `kometa_studio/plex_library.py` | Reads libraries and collections from the Plex server in config.yml. "Managed" means the `Kometa` or `PMM` label, Kometa's own rule. Posters only go through `/api/v1/plex/image`, so the token stays on the server |
+| `kometa_studio/config_write.py`, `backups.py`, `textmerge.py` | Saving Kometa's files: hash check, secrets put back, Kometa's check in a sandbox (edited files written in, the rest linked, webhooks removed), backup, atomic write. Rules: never write a file that wasn't edited; refuse a save only for problems it adds; a crashed check always refuses; Studio's own edits keep the file's formatting (three-way merge, used only if the data matches) |
 | `kometa_studio/crypto.py` | Encrypts secrets kept in SQLite with the key in `<data dir>/secret.key`. Never send stored tokens to the browser |
 | `kometa_studio/migrations/` | Numbered schema migrations (`0001_initial.sql`, ...). Never edit one that has been merged; add the next number |
 | `kometa_studio/static/` | Built frontend (git-ignored; `npm run build` writes it) |
 | `frontend/` | React + Vite + TypeScript app. `src/nav.ts` defines the navigation and routes, `src/api.ts` the API calls, `src/components/ui.tsx` shared building blocks, `src/components/RunRequestFields.tsx` the run fields shared by Run now and schedules |
 | `tests/` | Backend tests and fixtures. `fakeplex.py` stands in for plex.tv and a Plex server (shaped like a real server's answers), `fixtures/fake_kometa.py` for `kometa.py`; tests never touch the network |
-| `Dockerfile`, `compose.yaml` | Image built on `kometateam/kometa:<tag>`; Kometa stays at `/` with its own venv |
+| `Dockerfile`, `compose.yaml` | Image built on `kometateam/kometa:<tag>`; Kometa stays at `/` with its own venv. Kometa's JSON schemas come from the same tag's source into `/studio/json-schema` (Kometa's image leaves them out) |
 | `kometa/` | Read-only clone of upstream Kometa for reference. Git-ignored; never commit it or edit it |
 
 ## Tests

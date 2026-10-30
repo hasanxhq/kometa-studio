@@ -24,3 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Libraries: a card per Plex library, with its collections split into those Kometa manages (they carry Plex's `Kometa` label, Kometa's own test) and unmanaged ones, and what Kometa's config.yml does with the library. Libraries not in config.yml show too, so this works before any setup.
 - Each library has Collections (a poster grid from Plex, filterable by managed and unmanaged, plus collections your config defines that aren't in Plex yet), Overlays, Defaults and Operations tabs, with read-only YAML views. Tokens and API keys are masked.
 - Activity → History: what each run changed, collection by collection (items added and removed, new and deleted collections, Radarr/Sonarr adds), filterable by library and name.
+- Edit Kometa's YAML files in Studio. Kometa checks every save first, and nothing is written if the change adds a problem. Problems already in your files are shown but don't block saving, so an incomplete config can be built up a step at a time. Secrets show as ••••(n) and are kept when you save.
+- Studio never writes a file you didn't edit, refuses to overwrite a file that changed on disk since you opened it, and backs up every file before writing it (System → Backup, the newest 30, with a comparison to today's file and Restore).
+- Add files: upload collection, overlay, metadata or playlist files into the config folder, checked by Kometa first.
+- System → Status: Full check, where Kometa connects to Plex and every service in your config and changes nothing.
+- Checks never send notifications: Kometa validates a sandboxed copy with the webhooks removed. The Docker image now includes Kometa's JSON schemas (left out of Kometa's own image), so Kometa's schema check runs too.
+
+### Changed
+
+- When Studio edits config.yml itself (Plex connection, webhook entries), it keeps the file's own formatting instead of restyling it.
