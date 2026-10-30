@@ -48,9 +48,11 @@ class Edit:
 @dataclass
 class Validation:
     ok: bool
-    errors: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)  # problems this change would introduce
     warnings: list[str] = field(default_factory=list)
+    existing_errors: list[str] = field(default_factory=list)  # problems the files already had; they don't block a save
     checked_by_kometa: bool = True
+    crashed: bool = False  # Kometa's check didn't produce a verdict; never treated as "already there"
     output: str = ""  # the end of Kometa's output, for when the report doesn't say enough
 
 
@@ -173,23 +175,46 @@ class ConfigWriter:
         return s.kometa_python is not None and s.kometa_entry is not None and s.kometa_entry.exists()
 
     async def validate(self, changes: dict[Path, str], level: str = "structure") -> Validation:
+        """Kometa's verdict on ``changes``: refused only for problems the change introduces.
+
+        The files are checked before and after the change; errors that were already there are
+        reported separately and don't block the save, so an incomplete config can be built up a
+        step at a time. A check that crashed is never counted as "already there".
+        """
         if not self._kometa_ready():
             return Validation(True, warnings=["Kometa isn't installed where Studio expects it, so only the YAML syntax was checked."], checked_by_kometa=False)
+        if not changes or level != "structure":
+            return await self._check(changes, level)
+        config_path = self.config_path.resolve()
+        current = {path: path.read_text(encoding="utf-8") for path in changes if path != config_path and path.exists()}
+        before, after = await asyncio.gather(self._check({}, level, current), self._check(changes, level))
+        if after.crashed:
+            return after
+        new = [e for e in after.errors if e not in before.errors or before.crashed]
+        existing = [e for e in after.errors if e not in new]
+        return Validation(not new and (after.ok or bool(existing)), new, after.warnings, existing, output=after.output)
+
+    async def _check(self, changes: dict[Path, str], level: str, per_file: dict[Path, str] | None = None) -> Validation:
+        """One sandboxed check: config.yml and its files, plus ``per_file`` (default: the changed files) on their own."""
+        config_path = self.config_path.resolve()
+        if per_file is None:
+            per_file = {path: text for path, text in changes.items() if path != config_path}
         self.data_dir.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix="validate-", dir=self.data_dir) as temp:
             sandbox = Path(temp)
             mirror_config = self._mirror(sandbox, changes)
             base = ["--config", str(mirror_config), "--no-source-integrity", "--read-only-config", "--width", "300"]
+            if self.settings.kometa_schemas is not None:
+                base += ["--schema-path", str(self.settings.kometa_schemas)]
             checks = [self._kometa([*base, "--validate", "--validate-level", level, "--validate-schema"], sandbox, level)]
-            others = [path for path in changes if path != self.config_path.resolve()]
-            if others and level == "structure":
+            if per_file and level == "structure":
                 staged = sandbox / "_edited"
                 staged.mkdir()
-                for path in others:
-                    (staged / path.name).write_text(changes[path], encoding="utf-8")
+                for path, text in per_file.items():
+                    (staged / path.name).write_text(text, encoding="utf-8")
                 checks.append(self._kometa([*base, "--validate-dir", str(staged)], sandbox, level))
             results = await asyncio.gather(*checks)
-        merged = Validation(all(r.ok for r in results), checked_by_kometa=True)
+        merged = Validation(all(r.ok for r in results), crashed=any(r.crashed for r in results))
         for result in results:
             merged.errors += [e for e in result.errors if e not in merged.errors]
             merged.warnings += [w for w in result.warnings if w not in merged.warnings]
@@ -246,7 +271,7 @@ class ConfigWriter:
                 env=os.environ | {"PYTHONUNBUFFERED": "1"},
             )
         except OSError as error:
-            return Validation(False, [f"Can't start Kometa to check the files: {error}"])
+            return Validation(False, [f"Can't start Kometa to check the files: {error}"], crashed=True)
         try:
             raw, _ = await asyncio.wait_for(process.communicate(), timeout)
         except (TimeoutError, asyncio.CancelledError) as error:
@@ -254,13 +279,14 @@ class ConfigWriter:
             await process.wait()
             if isinstance(error, asyncio.CancelledError):
                 raise
-            return Validation(False, [f"Kometa's check didn't finish within {timeout:g} s"])
+            return Validation(False, [f"Kometa's check didn't finish within {timeout:g} s"], crashed=True)
         output = raw.decode("utf-8", errors="replace")
         errors, warnings = parse_report(output)
         ok = process.returncode == 0
-        if not ok and not errors:
-            errors = ["Kometa's check failed; its output is below."]
-        return Validation(ok, errors, warnings, output="\n".join(output.splitlines()[-60:]))
+        crashed = not ok and not errors
+        if crashed:
+            errors = ["Kometa's check failed without a report; its output is below."]
+        return Validation(ok, errors, warnings, crashed=crashed, output="\n".join(output.splitlines()[-60:]))
 
     # --- Saving -----------------------------------------------------------------------
 

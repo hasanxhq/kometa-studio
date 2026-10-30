@@ -82,7 +82,9 @@ def test_a_good_edit_is_checked_by_kometa_backed_up_and_saved(tmp_path, kometa):
     assert (backup["reason"], backup["files"]) == ("Added Pixar", ["Movies.yml"])
     assert (kometa / "config" / ".studio" / "backups" / backup["id"] / "Movies.yml").read_text() == MOVIES
 
-    [structure, per_file] = sorted(calls(kometa), key=lambda c: "--validate-dir" in c["args"])
+    edited = [c for c in calls(kometa) if "Pixar" in json.dumps(c["files"]) or any("_edited" in a for a in c["args"])]
+    structure = next(c for c in edited if "--validate-dir" not in c["args"])
+    per_file = next(c for c in calls(kometa) if "--validate-dir" in c["args"])
     # Kometa checked the edited text in a sandbox, from the sandbox's working directory, without webhooks or logs.
     assert "Pixar" in structure["files"]["Movies.yml"]
     assert structure["cwd"] != str(kometa) and Path(structure["cwd"]).name.startswith("validate-")
@@ -109,6 +111,43 @@ def test_a_broken_edit_is_refused_with_kometas_message_and_nothing_changes(tmp_p
     assert detail["validation"]["errors"] == ["Movies.yml: Collection Error: BROKEN is not a builder"]
     assert (kometa / "config" / "Movies.yml").read_text() == MOVIES
     assert listed["backups"] == []
+
+
+def test_problems_already_there_do_not_block_a_save(tmp_path, kometa):
+    (kometa / "config" / "Movies.yml").write_text(MOVIES + "  Old: {BROKEN: 1}\n")
+    with make_client(tmp_path, kometa) as client:
+        config = opened(client, "config.yml")
+        text = config["text"].replace("url: http://plex:32400", "url: http://plex:32401")
+        saved = client.put("/api/v1/config/files", json={"files": [{"path": "config.yml", "text": text, "base_hash": config["hash"]}]})
+        # Adding a new problem on top is still refused.
+        movies = opened(client, "Movies.yml")
+        worse = client.put("/api/v1/config/files", json={"files": [{"path": "Movies.yml", "text": movies["text"] + "  SCHEMA-BAD: 1\n", "base_hash": movies["hash"]}]})
+    assert saved.status_code == 200
+    assert saved.json()["validation"]["existing_errors"] == ["Movies.yml: Collection Error: BROKEN is not a builder"]
+    assert saved.json()["validation"]["errors"] == []
+    assert worse.status_code == 422
+    assert worse.json()["detail"]["validation"]["errors"] == ["Movies.yml: [collection-schema.json] at collections: not allowed"]
+
+
+def test_fixing_a_problem_saves_cleanly(tmp_path, kometa):
+    (kometa / "config" / "Movies.yml").write_text(MOVIES + "  Old: {BROKEN: 1}\n")
+    with make_client(tmp_path, kometa) as client:
+        movies = opened(client, "Movies.yml")
+        saved = client.put("/api/v1/config/files", json={"files": [{"path": "Movies.yml", "text": MOVIES, "base_hash": movies["hash"]}]}).json()
+    assert saved["validation"] | {"output": ""} == {
+        "ok": True, "errors": [], "warnings": [], "existing_errors": [], "checked_by_kometa": True, "crashed": False, "output": ""
+    }
+
+
+def test_a_crashed_check_never_lets_a_save_through(tmp_path, kometa):
+    broken_kometa = tmp_path / "crashing_kometa.py"
+    broken_kometa.write_text("import sys\nprint('Traceback (most recent call last): boom')\nsys.exit(1)\n")
+    with make_client(tmp_path, kometa, kometa_entry=broken_kometa) as client:
+        movies = opened(client, "Movies.yml")
+        response = client.put("/api/v1/config/files", json={"files": [{"path": "Movies.yml", "text": MOVIES, "base_hash": movies["hash"]}]})
+    assert response.status_code == 422
+    assert response.json()["detail"]["validation"]["crashed"] is True
+    assert "boom" in response.json()["detail"]["validation"]["output"]
 
 
 def test_yaml_mistakes_are_caught_before_kometa_runs(tmp_path, kometa):
@@ -199,6 +238,16 @@ def test_checking_without_saving(tmp_path, kometa):
         result = client.post("/api/v1/config/check", json={"files": [{"path": "Movies.yml", "text": "x:\n  BROKEN: 1\n", "base_hash": movies["hash"]}]}).json()
     assert result["ok"] is False and "BROKEN" in result["errors"][0]
     assert (kometa / "config" / "Movies.yml").read_text() == MOVIES
+
+
+def test_schemas_are_passed_to_kometa_when_studio_has_them(tmp_path, kometa):
+    schemas = tmp_path / "json-schema"
+    schemas.mkdir()
+    with make_client(tmp_path, kometa, kometa_schemas=schemas) as client:
+        movies = opened(client, "Movies.yml")
+        client.post("/api/v1/config/check", json={"files": [{"path": "Movies.yml", "text": MOVIES, "base_hash": movies["hash"]}]})
+    for call in calls(kometa):
+        assert call["args"][call["args"].index("--schema-path") + 1] == str(schemas)
 
 
 def test_full_check_is_remembered(tmp_path, kometa):

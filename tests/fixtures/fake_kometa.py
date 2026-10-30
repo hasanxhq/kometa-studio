@@ -24,7 +24,7 @@ FLAGS = (
     "--timeout --no-verify-ssl --collections-only --metadata-only --playlists-only --operations-only --overlays-only "
     "--run-collections --run-libraries --run-files --ignore-schedules --ignore-ghost --delete-collections "
     "--delete-labels --resume --no-countdown --no-missing --no-report --read-only-config --divider --width "
-    "--low-priority --validate --validate-level --validate-schema --validate-dir"
+    "--low-priority --validate --validate-level --validate-schema --validate-dir --schema-path"
 )
 
 if "--help" in sys.argv:

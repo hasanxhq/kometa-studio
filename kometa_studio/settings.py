@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     kometa_python: Path | None = None
     kometa_entry: Path | None = None
     kometa_config: Path | None = None
+    # Kometa's JSON schemas for validation; its Docker image leaves them out, so Studio's image brings them.
+    kometa_schemas: Path | None = None
 
     # The timezone new schedules use. Unset: the TZ environment variable, else UTC.
     timezone: str | None = None
