@@ -132,6 +132,14 @@ function Poster({ collection }: { collection: PlexCollection }) {
 
 type Filter = "all" | "managed" | "unmanaged";
 
+function itemLink(path: string, section: string, name: string, library: string): string {
+  return `/items?${new URLSearchParams({ path, section, name, library })}`;
+}
+
+function newItemLink(path: string, section: string, library: string): string {
+  return `/items?${new URLSearchParams({ path, section, new: "1", library })}`;
+}
+
 function CollectionsTab({ plexKey, config }: { plexKey: string | null; config: ConfigLibrary | undefined }) {
   const [filter, setFilter] = useState<Filter>("all");
   const plex = useQuery({
@@ -195,7 +203,14 @@ function CollectionsTab({ plexKey, config }: { plexKey: string | null; config: C
                       {collection.managed ? <Tag tone="ok">By Kometa</Tag> : <Tag>Unmanaged</Tag>}
                       {collection.smart && <Tag>Smart</Tag>}
                     </span>
-                    {file && <span className="text-xs text-muted">Defined in {file}</span>}
+                    {file && config && (
+                      <Link
+                        className="text-xs text-muted underline-offset-2 hover:underline"
+                        to={itemLink(file, "collections", configured.find((c) => c.name.toLowerCase() === collection.title.toLowerCase())!.name, config.name)}
+                      >
+                        Defined in {file}
+                      </Link>
+                    )}
                   </li>
                 );
               })}
@@ -234,13 +249,24 @@ function CollectionsTab({ plexKey, config }: { plexKey: string | null; config: C
                       <ul className="flex flex-col gap-1 text-sm">
                         {file.collections.map((c) => (
                           <li key={c.name} className="flex flex-wrap items-center gap-2">
-                            <span>{c.name}</span>
+                            {editable(file.path) ? (
+                              <Link className="underline-offset-2 hover:underline" to={itemLink(file.path, c.dynamic ? "dynamic_collections" : "collections", c.name, config.name)}>
+                                {c.name}
+                              </Link>
+                            ) : (
+                              <span>{c.name}</span>
+                            )}
                             {c.dynamic && <Tag tone="info">Dynamic{c.type ? `: ${c.type}` : ""}</Tag>}
                             <Chips items={c.builders} />
                             {c.templates.length > 0 && <span className="text-xs text-muted">template: {c.templates.join(", ")}</span>}
                           </li>
                         ))}
                       </ul>
+                      {editable(file.path) && (
+                        <Link className="min-h-11 content-center text-sm text-accent underline" to={newItemLink(file.path, "collections", config.name)}>
+                          + New collection in {file.path}
+                        </Link>
+                      )}
                       <FileYaml path={file.path} />
                     </div>
                   ))}
@@ -269,7 +295,13 @@ function OverlaysTab({ config }: { config: ConfigLibrary }) {
                 <ul className="flex flex-col gap-1 text-sm">
                   {file.overlays.map((o) => (
                     <li key={o.name} className="flex flex-wrap items-center gap-2">
-                      <span>{o.name}</span>
+                      {editable(file.path) ? (
+                        <Link className="underline-offset-2 hover:underline" to={itemLink(file.path, "overlays", o.name, config.name)}>
+                          {o.name}
+                        </Link>
+                      ) : (
+                        <span>{o.name}</span>
+                      )}
                       {o.overlay && o.overlay !== o.name && <span className="text-xs text-muted">shows {o.overlay}</span>}
                       {Object.keys(o.position).length > 0 && (
                         <span className="font-mono text-xs text-muted">
@@ -282,6 +314,11 @@ function OverlaysTab({ config }: { config: ConfigLibrary }) {
                     </li>
                   ))}
                 </ul>
+                {editable(file.path) && (
+                  <Link className="min-h-11 content-center text-sm text-accent underline" to={newItemLink(file.path, "overlays", config.name)}>
+                    + New overlay in {file.path}
+                  </Link>
+                )}
                 {reference.kind !== "default" && <FileYaml path={file.path} />}
               </div>
             ))}

@@ -1,12 +1,14 @@
 // Editing one of Kometa's YAML files. Kometa checks every save; nothing is written if it finds new problems.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { ApiError, api, saveRefusal, type EditableFile, type Validation } from "../api";
 import { Button, Card } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
+
+const YamlEditor = lazy(() => import("../components/YamlEditor"));
 
 function Editor({ file, onSaved, onReload }: { file: EditableFile; onSaved: () => void; onReload: () => void }) {
   const queryClient = useQueryClient();
@@ -62,24 +64,6 @@ function Editor({ file, onSaved, onReload }: { file: EditableFile; onSaved: () =
   });
   const busy = check.isPending || save.isPending;
 
-  // Tab indents with two spaces, as YAML wants. Escape, then Tab, moves on (so Tab isn't a trap).
-  const escaped = useRef(false);
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Escape") {
-      escaped.current = true;
-      return;
-    }
-    const leaving = escaped.current;
-    escaped.current = false;
-    if (leaving || event.key !== "Tab" || event.shiftKey || event.altKey || event.ctrlKey || event.metaKey) return;
-    event.preventDefault();
-    const el = event.currentTarget;
-    const { selectionStart, selectionEnd } = el;
-    const next = text.slice(0, selectionStart) + "  " + text.slice(selectionEnd);
-    setText(next);
-    requestAnimationFrame(() => el.setSelectionRange(selectionStart + 2, selectionStart + 2));
-  };
-
   return (
     <div className="flex flex-col gap-4">
       {file.hidden > 0 && (
@@ -88,20 +72,12 @@ function Editor({ file, onSaved, onReload }: { file: EditableFile; onSaved: () =
           it completely to change it.
         </p>
       )}
-      <textarea
-        aria-label={`Contents of ${file.path}`}
-        className="min-h-[28rem] w-full resize-y whitespace-pre rounded-control border border-border-strong bg-bg p-3 font-mono text-xs leading-5 text-text focus:border-accent focus:outline-none"
-        value={text}
-        onChange={(event) => setText(event.target.value)}
-        onKeyDown={onKeyDown}
-        spellCheck={false}
-        autoCapitalize="off"
-        autoComplete="off"
-        wrap="off"
-        aria-describedby="editor-keys"
-      />
-      <p id="editor-keys" className="-mt-2 text-xs text-muted">
-        Tab indents two spaces. Press Esc, then Tab, to move on.
+      <Suspense fallback={<p className="text-muted">Loading the editor…</p>}>
+        <YamlEditor value={text} onChange={setText} kind={file.kind} label={`Contents of ${file.path}`} />
+      </Suspense>
+      <p className="-mt-2 text-xs text-muted">
+        Kometa's schema is checked as you type, and keys complete with Ctrl+Space. Tab indents; press Esc, then Tab, to move on. Saving still
+        runs Kometa's own check.
       </p>
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="primary" onClick={() => save.mutate()} disabled={!dirty || busy}>

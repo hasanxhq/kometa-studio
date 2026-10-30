@@ -1,8 +1,15 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Backup, Validation } from "../api";
 import { mockApi, renderAt } from "../test-utils";
+
+// CodeMirror doesn't run in jsdom; a textarea stands in (the checking logic has its own tests in src/yaml).
+vi.mock("../components/YamlEditor", () => ({
+  default: ({ value, onChange, label }: { value: string; onChange: (text: string) => void; label: string }) => (
+    <textarea aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} />
+  ),
+}));
 
 const MOVIES = "collections:\n  Trending:\n    tmdb_trending_weekly: 30\n";
 const passed: Validation = { ok: true, errors: [], warnings: [], existing_errors: [], checked_by_kometa: true, crashed: false, output: "" };
@@ -15,7 +22,7 @@ describe("Editing a file", () => {
   it("saves after Kometa's check and says where the backup is", async () => {
     let saved = MOVIES;
     const calls = mockApi({
-      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: saved, hash: saved === MOVIES ? "h1" : "h2", hidden: 0 }),
+      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: saved, hash: saved === MOVIES ? "h1" : "h2", hidden: 0, kind: "collection" }),
       "PUT /config/files": (body) => {
         saved = (body as { files: { text: string }[] }).files[0].text;
         return { backup: "20261030T050000.000000Z", files: [{ path: "Movies.yml", hash: "h2" }], validation: passed };
@@ -40,7 +47,7 @@ describe("Editing a file", () => {
 
   it("shows Kometa's reasons when it refuses, separating problems already there", async () => {
     mockApi({
-      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: MOVIES, hash: "h1", hidden: 0 }),
+      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: MOVIES, hash: "h1", hidden: 0, kind: "collection" }),
       "PUT /config/files": refusal(422, "Kometa found problems, so nothing was saved.", {
         ...passed,
         ok: false,
@@ -63,7 +70,7 @@ describe("Editing a file", () => {
 
   it("offers a reload when the file changed on disk meanwhile", async () => {
     mockApi({
-      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: MOVIES, hash: "h1", hidden: 0 }),
+      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: MOVIES, hash: "h1", hidden: 0, kind: "collection" }),
       "PUT /config/files": refusal(409, "Movies.yml changed on disk since you opened it. Reload it to see the new version."),
     });
     renderAt("/files?path=Movies.yml");
@@ -73,17 +80,11 @@ describe("Editing a file", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("changed on disk");
   });
 
-  it("explains hidden secrets, and Tab indents until Escape", async () => {
-    mockApi({ "GET /config/edit?path=config.yml": () => ({ path: "config.yml", text: "plex:\n  token: ••••(1)\n", hash: "h", hidden: 1 }) });
+  it("explains hidden secrets", async () => {
+    mockApi({ "GET /config/edit?path=config.yml": () => ({ path: "config.yml", text: "plex:\n  token: ••••(1)\n", hash: "h", hidden: 1, kind: "config" }) });
     renderAt("/files?path=config.yml");
-    const editor = (await screen.findByLabelText("Contents of config.yml")) as HTMLTextAreaElement;
+    expect(await screen.findByLabelText("Contents of config.yml")).toHaveValue("plex:\n  token: ••••(1)\n");
     expect(screen.getByText(/1 secret is hidden as ••••\(n\)/)).toBeInTheDocument();
-
-    editor.setSelectionRange(0, 0);
-    fireEvent.keyDown(editor, { key: "Tab" });
-    expect(editor.value.startsWith("  plex:")).toBe(true);
-    fireEvent.keyDown(editor, { key: "Escape" });
-    expect(fireEvent.keyDown(editor, { key: "Tab" })).toBe(true); // not prevented: focus can move on
   });
 });
 
