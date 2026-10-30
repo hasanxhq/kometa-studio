@@ -1,6 +1,6 @@
 // Wording and formatting for Kometa runs, shared by the Queue and run pages.
 
-import type { RunMode, RunRequest, RunStatus } from "./api";
+import type { RunMode, RunRequest, RunStatus, RunTrigger } from "./api";
 
 export const modes: { value: RunMode; label: string; flag: string | null }[] = [
   { value: "all", label: "Everything", flag: null },
@@ -58,4 +58,29 @@ export function splitNames(text: string): string[] {
     .split(",")
     .map((name) => name.trim())
     .filter(Boolean);
+}
+
+export const triggerLabels: Record<RunTrigger, string> = {
+  manual: "Manual",
+  schedule: "Scheduled",
+  catch_up: "Catch-up",
+  arr: "Radarr/Sonarr",
+};
+
+export const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+export function describeDays(days: number[]): string {
+  const key = [...days].sort().join("");
+  if (key === "0123456") return "Every day";
+  if (key === "01234") return "Weekdays";
+  if (key === "56") return "Weekends";
+  return [...days].sort().map((day) => dayNames[day]).join(", ");
+}
+
+export function formatRelative(iso: string, now = Date.now()): string {
+  const minutes = Math.round((Date.parse(iso) - now) / 60000);
+  const future = minutes >= 0;
+  const size = Math.abs(minutes);
+  const amount = size < 60 ? `${size} min` : size < 48 * 60 ? `${Math.round(size / 60)} h` : `${Math.round(size / 1440)} days`;
+  return future ? `in ${amount}` : `${amount} ago`;
 }

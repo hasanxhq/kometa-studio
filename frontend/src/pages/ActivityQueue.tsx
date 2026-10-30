@@ -5,50 +5,21 @@ import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
 
 import { useAdvanced } from "../advanced";
-import { api, type KometaInfo, type Run, type RunMode, type RunRequest } from "../api";
+import { api, type KometaInfo, type Run, type RunRequest } from "../api";
 import { RunLog } from "../components/RunLog";
-import { Button, Card, Field, Tag, inputClass } from "../components/ui";
-import { describeRequest, formatDuration, formatTime, isActive, modes, splitNames, statusLabels, statusTones } from "../runs";
-
-const supports = (kometa: KometaInfo | undefined, flag: string | null) => !flag || !kometa?.flags || kometa.flags.includes(flag);
-
-function Checkbox({ label, checked, onChange, disabled }: { label: string; checked: boolean; onChange: (value: boolean) => void; disabled?: boolean }) {
-  return (
-    <label className={`flex min-h-11 items-center gap-2 text-sm ${disabled ? "opacity-50" : "cursor-pointer"}`}>
-      <input type="checkbox" className="size-4 accent-accent" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
-      {label}
-    </label>
-  );
-}
+import { RunRequestFields, emptyDraft, requestFromDraft, type RunDraft } from "../components/RunRequestFields";
+import { Button, Card, Tag } from "../components/ui";
+import { describeRequest, formatDuration, formatTime, isActive, statusLabels, statusTones, triggerLabels } from "../runs";
 
 function RunForm({ kometa, onQueued }: { kometa: KometaInfo | undefined; onQueued: () => void }) {
   const { showAdvanced } = useAdvanced();
-  const [mode, setMode] = useState<RunMode>("all");
-  const [libraries, setLibraries] = useState("");
-  const [collections, setCollections] = useState("");
-  const [files, setFiles] = useState("");
-  const [options, setOptions] = useState({ ignore_schedules: false, no_missing: false, tests: false, timings: false, low_priority: true });
+  const [draft, setDraft] = useState<RunDraft>(emptyDraft);
   const create = useMutation({ mutationFn: (body: RunRequest) => api.runs.create(body), onSuccess: onQueued });
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    // Advanced fields only count while they're shown.
-    create.mutate({
-      mode,
-      libraries: splitNames(libraries),
-      collections: showAdvanced ? splitNames(collections) : [],
-      files: showAdvanced ? splitNames(files) : [],
-      ...(showAdvanced ? options : { ignore_schedules: false, no_missing: false, tests: false, timings: false, low_priority: true }),
-    });
+    create.mutate(requestFromDraft(draft, showAdvanced)); // advanced fields only count while they're shown
   };
-  const option = (key: keyof typeof options, label: string, flag: string) => (
-    <Checkbox
-      label={label}
-      checked={options[key]}
-      disabled={!supports(kometa, flag)}
-      onChange={(value) => setOptions({ ...options, [key]: value })}
-    />
-  );
 
   return (
     <Card title="Run Kometa">
@@ -58,55 +29,7 @@ function RunForm({ kometa, onQueued }: { kometa: KometaInfo | undefined; onQueue
         </p>
       )}
       <form className="flex flex-col gap-4" onSubmit={submit}>
-        <fieldset>
-          <legend className="mb-1.5 text-sm text-muted">What to run</legend>
-          <div className="flex flex-wrap gap-2">
-            {modes.map((m) => {
-              const available = supports(kometa, m.flag);
-              return (
-                <label
-                  key={m.value}
-                  className={[
-                    "flex min-h-11 items-center rounded-control border px-3 text-sm",
-                    mode === m.value ? "border-accent bg-surface-2 text-accent" : "border-border-strong",
-                    available ? "cursor-pointer" : "opacity-50",
-                  ].join(" ")}
-                >
-                  <input
-                    type="radio"
-                    name="mode"
-                    className="sr-only"
-                    value={m.value}
-                    checked={mode === m.value}
-                    disabled={!available}
-                    onChange={() => setMode(m.value)}
-                  />
-                  {m.label}
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
-        <Field label="Libraries" hint="Names as in config.yml, separated by commas. Leave empty for every library.">
-          <input className={inputClass} value={libraries} onChange={(e) => setLibraries(e.target.value)} placeholder="All libraries" />
-        </Field>
-        {showAdvanced && (
-          <>
-            <Field label="Collections" hint="Only these collections, separated by commas.">
-              <input className={inputClass} value={collections} onChange={(e) => setCollections(e.target.value)} placeholder="All collections" />
-            </Field>
-            <Field label="Files" hint="Only these collection, overlay or playlist files, separated by commas.">
-              <input className={inputClass} value={files} onChange={(e) => setFiles(e.target.value)} placeholder="All files" />
-            </Field>
-            <div className="grid gap-x-6 sm:grid-cols-2">
-              {option("low_priority", "Low priority (gentler on this computer)", "--low-priority")}
-              {option("ignore_schedules", "Ignore schedules", "--ignore-schedules")}
-              {option("no_missing", "Skip missing-item reports", "--no-missing")}
-              {option("tests", "Only collections marked test: true", "--tests")}
-              {option("timings", "Record timings", "--timings")}
-            </div>
-          </>
-        )}
+        <RunRequestFields value={draft} onChange={setDraft} kometa={kometa} />
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="primary" type="submit" disabled={create.isPending || !!kometa?.problem}>
             {create.isPending ? "Queueing…" : "Run now"}
@@ -141,6 +64,7 @@ export function RunRow({ run }: { run: Run }) {
         </span>
         <span className="min-w-0 flex-1 truncate text-sm">{describeRequest(run.request)}</span>
         <span className="flex flex-wrap gap-x-3 text-xs text-muted">
+          {run.trigger !== "manual" && <span>{triggerLabels[run.trigger]}</span>}
           {summary && (
             <span>
               <span className="text-ok">+{summary.items_added ?? 0}</span> <span className="text-err">−{summary.items_removed ?? 0}</span> items

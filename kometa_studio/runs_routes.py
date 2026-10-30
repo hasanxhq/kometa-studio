@@ -54,6 +54,7 @@ def run_json(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         "id": row["id"],
         "status": row["status"],
         "trigger": row["trigger"],
+        "schedule_id": row["schedule_id"],
         "request": json.loads(row["request"]),
         "command": row["command"],
         "queued_at": row["queued_at"],

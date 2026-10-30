@@ -109,16 +109,25 @@ class Runner:
     def current_run_id(self) -> int | None:
         return self._active.run_id if self._active else None
 
-    def enqueue(self, request: RunRequest, trigger: str = "manual") -> int:
+    def enqueue(self, request: RunRequest, trigger: str = "manual", schedule_id: int | None = None) -> int:
         """Queue a run. An identical request that's already waiting is reused rather than queued twice."""
+        with self.db:
+            run_id = self.insert_run(request, trigger, schedule_id)
+        self.wake()
+        return run_id
+
+    def insert_run(self, request: RunRequest, trigger: str, schedule_id: int | None = None) -> int:
+        """Queue a run inside the caller's transaction; call wake() once it's committed."""
         payload = request.model_dump_json()
         existing = self.db.execute("SELECT id FROM runs WHERE status = 'queued' AND request = ? ORDER BY id LIMIT 1", (payload,)).fetchone()
         if existing:
             return existing[0]
-        with self.db:
-            run_id = self.db.execute("INSERT INTO runs (request, trigger) VALUES (?, ?)", (payload, trigger)).lastrowid
+        return self.db.execute(
+            "INSERT INTO runs (request, trigger, schedule_id) VALUES (?, ?, ?)", (payload, trigger, schedule_id)
+        ).lastrowid
+
+    def wake(self) -> None:
         self._wake.set()
-        return run_id
 
     def cancel(self, run_id: int) -> bool:
         """Cancel a queued or running run. Returns False if it had already finished."""

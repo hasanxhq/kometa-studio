@@ -17,10 +17,11 @@ An unofficial, arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kom
 | `kometa_studio/kometa_config.py` | Reads and writes Kometa's `config.yml` (ruamel round-trip: comments survive; backup, then atomic replace), including Studio's own webhook entries |
 | `kometa_studio/kometa_command.py` | Builds Kometa's command line from a `RunRequest` and reads the flags its `--help` lists. Never add free-form flags to `RunRequest` |
 | `kometa_studio/runner.py`, `runs_routes.py` | The run queue (one Kometa at a time), live logs, cancel, and Kometa's webhook receiver; the `/api/v1/runs` and `/api/v1/kometa` endpoints. Endpoints that use SQLite are `async`, so the shared connection stays on the event loop |
+| `kometa_studio/scheduler.py`, `schedules_routes.py` | Schedule maths (zoneinfo, DST), the 30 s tick with catch-up and coalescing; the `/api/v1/schedules` endpoints. Queue runs and move `last_fired_at` in one transaction |
 | `kometa_studio/crypto.py` | Encrypts secrets kept in SQLite with the key in `<data dir>/secret.key`. Never send stored tokens to the browser |
 | `kometa_studio/migrations/` | Numbered schema migrations (`0001_initial.sql`, ...). Never edit one that has been merged; add the next number |
 | `kometa_studio/static/` | Built frontend (git-ignored; `npm run build` writes it) |
-| `frontend/` | React + Vite + TypeScript app. `src/nav.ts` defines the navigation and routes, `src/api.ts` the API calls, `src/components/ui.tsx` shared building blocks |
+| `frontend/` | React + Vite + TypeScript app. `src/nav.ts` defines the navigation and routes, `src/api.ts` the API calls, `src/components/ui.tsx` shared building blocks, `src/components/RunRequestFields.tsx` the run fields shared by Run now and schedules |
 | `tests/` | Backend tests and fixtures. `fakeplex.py` stands in for plex.tv and a Plex server, `fixtures/fake_kometa.py` for `kometa.py`; tests never touch the network |
 | `Dockerfile`, `compose.yaml` | Image built on `kometateam/kometa:<tag>`; Kometa stays at `/` with its own venv |
 | `kometa/` | Read-only clone of upstream Kometa for reference. Git-ignored; never commit it or edit it |

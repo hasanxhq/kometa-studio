@@ -7,7 +7,7 @@ import { Link, useParams } from "react-router";
 import { api, type RunEvent, type RunSummary } from "../api";
 import { RunLog } from "../components/RunLog";
 import { Button, Card, Tag } from "../components/ui";
-import { describeRequest, formatDuration, formatTime, isActive, statusLabels, statusTones } from "../runs";
+import { describeRequest, formatDuration, formatTime, isActive, statusLabels, statusTones, triggerLabels } from "../runs";
 
 function Stat({ label, value, tone }: { label: string; value: number | undefined; tone?: string }) {
   return (
@@ -90,6 +90,9 @@ export function RunDetail() {
       >
         <dl className="flex flex-col gap-2 text-sm">
           <Row label="Started">{r.started_at ? formatTime(r.started_at) : `Queued ${formatTime(r.queued_at)}`}</Row>
+          <Row label="Started by">
+            {r.trigger === "catch_up" ? "Catch-up: Studio was off when its schedule was due" : triggerLabels[r.trigger]}
+          </Row>
           {r.started_at && <Row label="Took">{formatDuration(r.started_at, r.finished_at)}</Row>}
           {r.error && (
             <Row label="Problem">

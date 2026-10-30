@@ -68,10 +68,13 @@ export type RunSummary = {
   added_to_sonarr?: number;
 };
 
+export type RunTrigger = "manual" | "schedule" | "catch_up" | "arr";
+
 export type Run = {
   id: number;
   status: RunStatus;
-  trigger: string;
+  trigger: RunTrigger;
+  schedule_id: number | null;
   request: RunRequest;
   command: string | null;
   queued_at: string;
@@ -100,6 +103,27 @@ export type RunEvent = {
 };
 
 export type RunDetail = Run & { events: RunEvent[] };
+
+export type Schedule = {
+  id: number;
+  name: string;
+  request: RunRequest;
+  days: number[]; // 0 = Monday ... 6 = Sunday
+  time: string; // HH:MM in the schedule's timezone
+  timezone: string;
+  enabled: boolean;
+  catch_up: "run_once" | "skip";
+  next_run: string | null;
+  last_run: { id: number; status: RunStatus; trigger: RunTrigger; started_at: string | null; finished_at: string | null } | null;
+};
+
+export type ScheduleInput = Pick<Schedule, "name" | "request" | "days" | "time" | "enabled" | "catch_up"> & { timezone: string | null };
+
+export type Schedules = {
+  schedules: Schedule[];
+  timezone: string; // what new schedules use
+  catch_ups: { id: number; status: RunStatus; queued_at: string; name: string }[];
+};
 
 export type KometaInfo = { flags: string[] | null; flags_error: string | null; problem: string | null };
 
@@ -139,6 +163,13 @@ export const api = {
     connect: (body: PlexConnectRequest) => request<PlexState>("POST", "/plex/connect", body),
   },
   kometa: () => request<KometaInfo>("GET", "/kometa"),
+  schedules: {
+    list: () => request<Schedules>("GET", "/schedules"),
+    create: (body: ScheduleInput) => request<Schedule>("POST", "/schedules", body),
+    update: (id: number, body: ScheduleInput) => request<Schedule>("PUT", `/schedules/${id}`, body),
+    remove: (id: number) => request<void>("DELETE", `/schedules/${id}`),
+    run: (id: number) => request<Run>("POST", `/schedules/${id}/run`),
+  },
   runs: {
     list: () => request<{ runs: Run[]; current: number | null }>("GET", "/runs"),
     get: (id: number) => request<RunDetail>("GET", `/runs/${id}`),
