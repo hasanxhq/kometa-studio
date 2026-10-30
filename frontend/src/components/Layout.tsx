@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router";
 
 import { useAdvanced } from "../advanced";
 import { api } from "../api";
+import { JobsButton, JobsDrawer } from "./Jobs";
 import { otherPages, pages, sections } from "../nav";
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
@@ -96,6 +97,7 @@ function SignInNotice() {
 export function Layout() {
   const auth = useQuery({ queryKey: ["auth"], queryFn: api.auth.status });
   const [menuOpen, setMenuOpen] = useState(false);
+  const [jobsOpen, setJobsOpen] = useState(false);
   const { pathname } = useLocation();
   const current = [...pages, ...otherPages].find((page) => pathname.startsWith(page.path));
 
@@ -129,6 +131,7 @@ export function Layout() {
             ☰
           </button>
           <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{current?.label ?? "Kometa Studio"}</h1>
+          <JobsButton onOpen={() => setJobsOpen(true)} />
           <AdvancedToggle />
           {auth.data?.signed_in && <SignOut className="hidden sm:block" />}
         </header>
@@ -136,6 +139,7 @@ export function Layout() {
         <main className="flex-1 overflow-y-auto p-4 md:p-6">
           <Outlet />
         </main>
+        <JobsDrawer open={jobsOpen} onClose={() => setJobsOpen(false)} />
       </div>
     </div>
   );

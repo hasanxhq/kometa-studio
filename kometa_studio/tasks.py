@@ -44,6 +44,7 @@ class Tasks:
         self.runner = runner
         self.writer = writer
         self._running: dict[str, asyncio.Task] = {}
+        self.notes: dict[str, str] = {}  # what a running task is doing right now, for the jobs drawer
 
     def setup(self, timezone: str) -> None:
         """Add rows for tasks this version has and the database doesn't, and close off runs a restart cut short."""
@@ -111,12 +112,15 @@ class Tasks:
                 )
         finally:
             self._running.pop(name, None)
+            self.notes.pop(name, None)
 
     async def _full_backup(self, options: dict) -> str:
         if self.settings.kometa_config is None:
             raise full_backup.BackupFailed("Studio doesn't know where Kometa's config folder is")
         while self.runner.current_run_id is not None:
+            self.notes["full_backup"] = f"Waiting for Kometa's run #{self.runner.current_run_id} to finish"
             await asyncio.sleep(BUSY_WAIT)
+        self.notes["full_backup"] = "Zipping the config folder and Original Posters"
         result = await asyncio.to_thread(
             full_backup.create, self.settings.kometa_config.parent, self.settings.data_dir, self.settings.db_path, int(options.get("keep", 4))
         )

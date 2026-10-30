@@ -79,7 +79,8 @@ export function describeDays(days: number[]): string {
 
 export function formatRelative(iso: string, now = Date.now()): string {
   const minutes = Math.round((Date.parse(iso) - now) / 60000);
-  const future = minutes >= 0;
+  if (minutes === 0) return "just now";
+  const future = minutes > 0;
   const size = Math.abs(minutes);
   const amount = size < 60 ? `${size} min` : size < 48 * 60 ? `${Math.round(size / 60)} h` : `${Math.round(size / 1440)} days`;
   return future ? `in ${amount}` : `${amount} ago`;

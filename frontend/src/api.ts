@@ -213,6 +213,25 @@ export type MaintainerrState = {
 
 export type MaintainerrInput = { url: string | null; username: string | null; password: string | null; leave_overlays_alone: boolean };
 
+// The jobs drawer (Bazarr-style): everything running, waiting, or recently finished.
+export type JobStatus = "running" | "pending" | "failed" | "completed";
+
+export type Job = {
+  id: string;
+  kind: "run" | "task" | "arr" | "maintainerr";
+  title: string;
+  status: JobStatus;
+  label: string; // e.g. Queued, Timed out, Retrying
+  message: string | null; // a running run's latest log line
+  progress: { value: number; max: number } | null;
+  started_at: string | null;
+  finished_at: string | null;
+  due_at?: string;
+  link: string;
+  run_id: number | null;
+  cancellable: boolean;
+};
+
 // Studio's own tasks on System → Tasks.
 export type TaskName = "full_backup" | "full_check";
 
@@ -491,6 +510,7 @@ export const api = {
         password,
       }),
   },
+  jobs: () => request<{ jobs: Job[]; at: string }>("GET", "/jobs"),
   tasks: {
     list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),
     update: (name: TaskName, body: BuiltinTaskInput) => request<BuiltinTask>("PUT", `/tasks/${name}`, body),
