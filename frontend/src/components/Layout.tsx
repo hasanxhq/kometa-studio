@@ -2,7 +2,7 @@ import { useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router";
 
 import { useAdvanced } from "../advanced";
-import { pages, sections } from "../nav";
+import { otherPages, pages, sections } from "../nav";
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
   return [
@@ -56,7 +56,7 @@ function AdvancedToggle() {
 export function Layout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { pathname } = useLocation();
-  const current = pages.find((page) => pathname.startsWith(page.path));
+  const current = [...pages, ...otherPages].find((page) => pathname.startsWith(page.path));
 
   return (
     <div className="flex h-full">

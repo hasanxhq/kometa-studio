@@ -10,6 +10,7 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly detail?: unknown, // FastAPI's `detail`, when it's more than a message (e.g. Kometa's verdict)
   ) {
     super(message);
   }
@@ -229,18 +230,46 @@ export type HistoryEvent = {
 
 export type HistoryPage = { events: HistoryEvent[]; libraries: string[]; next: number | null };
 
+// --- Editing (milestone 6) ---
+
+export type Validation = {
+  ok: boolean;
+  errors: string[]; // problems this change would introduce
+  warnings: string[];
+  existing_errors: string[]; // problems the files already had; they don't block a save
+  checked_by_kometa: boolean;
+  crashed: boolean;
+  output: string;
+};
+
+export type EditableFile = { path: string; text: string; hash: string; hidden: number };
+
+export type FileEdit = { path: string; text: string; base_hash: string | null };
+
+export type SaveResult = { backup: string; files: { path: string; hash: string }[]; validation: Validation };
+
+export type SaveRefusal = { message: string; path: string | null; validation: Validation | null };
+
+export type Backup = { id: string; created: string | null; reason: string; files: string[]; new_files: string[] };
+
+export type FullCheck = Validation & { at: string };
+
 export type KometaInfo = { flags: string[] | null; flags_error: string | null; problem: string | null };
 
-// FastAPI puts the reason in `detail`: a string from our own errors, a list from request validation.
-async function errorMessage(response: Response): Promise<string> {
+// FastAPI puts the reason in `detail`: a string from most errors, a list from request validation,
+// and {message, path, validation} from a refused save.
+async function errorFrom(response: Response): Promise<ApiError> {
+  let detail: unknown;
   try {
-    const body = (await response.json()) as { detail?: unknown };
-    if (typeof body.detail === "string") return body.detail;
-    if (Array.isArray(body.detail)) return body.detail.map((item: { msg?: string }) => item.msg ?? "").join("; ");
+    detail = ((await response.json()) as { detail?: unknown }).detail;
   } catch {
     // not JSON (a proxy's error page, say)
   }
-  return `${response.status} ${response.statusText}`;
+  let message = `${response.status} ${response.statusText}`;
+  if (typeof detail === "string") message = detail;
+  else if (Array.isArray(detail)) message = detail.map((item: { msg?: string }) => item.msg ?? "").join("; ");
+  else if (detail && typeof detail === "object" && "message" in detail) message = String((detail as { message: unknown }).message);
+  return new ApiError(response.status, message, detail);
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -250,7 +279,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new ApiError(response.status, await errorMessage(response));
+    throw await errorFrom(response);
   }
   return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
 }
@@ -282,6 +311,22 @@ export const api = {
     imageUrl: (path: string, width = 240, height = 360) =>
       `/api/v1/plex/image?path=${encodeURIComponent(path)}&width=${width}&height=${height}`,
   },
+  files: {
+    open: (path: string) => request<EditableFile>("GET", `/config/edit?path=${encodeURIComponent(path)}`),
+    check: (files: FileEdit[]) => request<Validation>("POST", "/config/check", { files }),
+    save: (files: FileEdit[], reason: string) => request<SaveResult>("PUT", "/config/files", { files, reason }),
+  },
+  backups: {
+    list: () => request<{ backups: Backup[]; keep: number }>("GET", "/backups"),
+    file: (id: string, path: string) =>
+      request<{ path: string; backup: string; current: string | null }>("GET", `/backups/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`),
+    restore: (id: string) =>
+      request<{ backup: string; restored: string[]; removed: string[]; validation: Validation }>("POST", `/backups/${encodeURIComponent(id)}/restore`),
+  },
+  fullCheck: {
+    last: () => request<{ last: FullCheck | null }>("GET", "/kometa/full-check"),
+    run: () => request<FullCheck>("POST", "/kometa/full-check"),
+  },
   history: (filters: { library?: string; q?: string; before?: number }) => {
     const params = new URLSearchParams();
     if (filters.library) params.set("library", filters.library);
@@ -306,3 +351,11 @@ export const api = {
     streamUrl: (id: number) => `/api/v1/runs/${id}/stream`,
   },
 };
+
+/** The refusal behind a failed save, if that's what the error is. */
+export function saveRefusal(error: unknown): SaveRefusal | null {
+  if (error instanceof ApiError && error.detail && typeof error.detail === "object" && "message" in error.detail) {
+    return error.detail as SaveRefusal;
+  }
+  return null;
+}

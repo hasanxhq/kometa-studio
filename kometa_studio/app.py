@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .config_routes import router as config_router
+from .config_write import ConfigWriter
 from .crypto import SecretBox
 from .db import open_database, schema_version
 from .plex_routes import router as plex_router
@@ -114,6 +115,8 @@ def create_app(
     app = FastAPI(title="Kometa Studio", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.timezone = default_timezone(settings.timezone)
+    # One writer, so its lock keeps saves one at a time.
+    app.state.writer = ConfigWriter(settings) if settings.kometa_config else None
     app.include_router(api)
     app.include_router(plex_router)
     app.include_router(runs_router)

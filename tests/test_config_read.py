@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from kometa_studio.app import create_app
-from kometa_studio.kometa_files import ConfigReader, mask_secrets
+from kometa_studio.kometa_files import ConfigReader, mask_secrets, unmask_secrets
 from kometa_studio.settings import Settings
 
 CONFIG = """\
@@ -178,13 +178,33 @@ def test_broken_config(kometa):
         reader(kometa).read()
 
 
-def test_secrets_are_masked():
-    masked = mask_secrets(CONFIG)
+def test_secrets_are_masked_with_numbered_placeholders():
+    masked, secrets = mask_secrets(CONFIG)
     for secret in ("abcdefgh12345678", "tmdb-secret", "studio-secret", "discord-secret"):
         assert secret not in masked
-    assert "  apikey: ••••   # from themoviedb.org\n" in masked
-    assert "events?token=••••  # managed by Kometa Studio" in masked
+    assert secrets == ["abcdefgh12345678", "tmdb-secret", "studio-secret", "123/discord-secret"]
+    assert "  token: ••••(1)\n" in masked
+    assert "  apikey: ••••(2)   # from themoviedb.org\n" in masked
+    assert "events?token=••••(3)  # managed by Kometa Studio" in masked
+    assert "https://discord.com/api/webhooks/••••(4)\n" in masked  # the whole path after /webhooks/
     assert "url: http://plex:32400" in masked
+
+
+def test_placeholders_are_put_back():
+    masked, secrets = mask_secrets(CONFIG)
+    assert unmask_secrets(masked, secrets) == CONFIG
+    # Moving lines around keeps each secret with its own placeholder.
+    moved = masked.replace("tmdb:\n  apikey: ••••(2)", "tmdb:\n  language: en\n  apikey: ••••(2)")
+    assert "  apikey: tmdb-secret" in unmask_secrets(moved, secrets)
+    # A new value typed over a placeholder is kept.
+    assert "  token: new-token\n" in unmask_secrets(masked.replace("token: ••••(1)", "token: new-token"), secrets)
+
+
+@pytest.mark.parametrize("bad", ["token: ••••(9)", "token: ••••", "token: ab••••(1)cd"])
+def test_damaged_placeholders_are_refused(bad):
+    masked, secrets = mask_secrets(CONFIG)
+    with pytest.raises(ValueError):
+        unmask_secrets(masked.replace("token: ••••(1)", bad), secrets)
 
 
 # --- API ---------------------------------------------------------------------

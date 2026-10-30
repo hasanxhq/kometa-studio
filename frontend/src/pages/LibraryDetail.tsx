@@ -28,14 +28,24 @@ const kindLabels: Record<FileReference["kind"], string> = {
 
 // --- Shared pieces --------------------------------------------------------------
 
+// Kometa's defaults can't be edited (Studio never changes Kometa); the user's own files can.
+const editable = (path: string) => !path.startsWith("/") && !path.startsWith("defaults/");
+
 function FileYaml({ path }: { path: string }) {
   const [open, setOpen] = useState(false);
   const file = useQuery({ queryKey: ["config", "file", path], queryFn: () => api.config.file(path), enabled: open });
   return (
     <div>
-      <button type="button" className="min-h-11 text-sm text-muted underline hover:text-text" onClick={() => setOpen(!open)} aria-expanded={open}>
-        {open ? "Hide YAML" : "View YAML"}
-      </button>
+      <span className="flex flex-wrap gap-x-4">
+        <button type="button" className="min-h-11 text-sm text-muted underline hover:text-text" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? "Hide YAML" : "View YAML"}
+        </button>
+        {editable(path) && (
+          <Link to={`/files?path=${encodeURIComponent(path)}`} className="min-h-11 content-center text-sm text-muted underline hover:text-text">
+            Edit {path}
+          </Link>
+        )}
+      </span>
       {open && (
         <pre className="mt-1 max-h-[28rem] overflow-auto rounded-control border border-border bg-bg p-3 font-mono text-xs leading-5">
           {file.isPending ? "Loading…" : file.isError ? file.error.message : file.data.text}

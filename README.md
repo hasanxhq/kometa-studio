@@ -4,7 +4,7 @@ An arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kometa): it sch
 
 > **Unofficial.** Kometa Studio is an independent project. It is not made by, endorsed by, or affiliated with the Kometa team. It runs an unmodified Kometa install and never changes Kometa's code.
 
-**Status:** early development. Settings → Plex connects Kometa to your Plex server, Libraries shows your Plex collections (managed by Kometa or not) next to what Kometa's config does, Activity → Queue runs Kometa with a live log, History shows what each run changed, and System → Tasks schedules runs. Editing Kometa's config comes next.
+**Status:** early development. Settings → Plex connects Kometa to your Plex server, Libraries shows your Plex collections (managed by Kometa or not) next to what Kometa's config does, Activity → Queue runs Kometa with a live log, History shows what each run changed, System → Tasks schedules runs, and Kometa's YAML files can be edited with Kometa checking every save (with backups and restore). Designed forms for collections and overlays come next.
 
 ## Run it with Docker (WSL2 or Linux)
 

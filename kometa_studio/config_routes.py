@@ -3,13 +3,20 @@
 import json
 import sqlite3
 from dataclasses import asdict
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, StringConstraints
 
+from . import backups
+from .config_write import ConfigWriter, Edit, SaveRefused
+from .db import get_setting, set_setting
 from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets
 from .runs_routes import get_db
 from .settings import Settings
+
+FULL_CHECK = "kometa.full_check"
 
 router = APIRouter(prefix="/api/v1", tags=["config"])
 
@@ -93,7 +100,8 @@ async def config_file(path: str, request: Request, reader: Reader) -> dict:
                 text = candidate.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as error:
                 raise HTTPException(422, f"Can't read {path}: {error}") from None
-            return {"path": reader.display_path(candidate), "text": mask_secrets(text)}
+            masked, _ = mask_secrets(text)
+            return {"path": reader.display_path(candidate), "text": masked}
     raise HTTPException(404, "Studio only shows .yml files from Kometa's config and defaults folders")
 
 
@@ -170,3 +178,99 @@ def _history_event(row: sqlite3.Row) -> dict:
         "radarr_adds": items("radarr_adds"),
         "sonarr_adds": items("sonarr_adds"),
     }
+
+
+# --- Editing, backups and Kometa's full check ----------------------------------------
+
+
+class EditIn(BaseModel):
+    path: str
+    text: str
+    base_hash: str | None = None
+
+
+class SaveIn(BaseModel):
+    files: list[EditIn]
+    reason: Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)] = "Edited in Studio"
+
+
+def get_writer(request: Request) -> ConfigWriter:
+    writer = request.app.state.writer
+    if writer is None:
+        raise HTTPException(409, "Studio doesn't know where Kometa's config.yml is. Set STUDIO_KOMETA_CONFIG.")
+    return writer
+
+
+Writer = Annotated[ConfigWriter, Depends(get_writer)]
+
+
+async def _write_call(awaitable):
+    try:
+        return await awaitable
+    except SaveRefused as refused:
+        raise HTTPException(refused.status, refused.detail()) from None
+
+
+def _edits(files: list[EditIn]) -> list[Edit]:
+    return [Edit(f.path, f.text, f.base_hash) for f in files]
+
+
+@router.get("/config/edit")
+async def edit_file(path: str, writer: Writer) -> dict:
+    """A file to edit, with secrets as ••••(n) placeholders and the hash a save must match."""
+    try:
+        return writer.read(path)
+    except SaveRefused as refused:
+        raise HTTPException(refused.status, refused.detail()) from None
+
+
+@router.post("/config/check")
+async def check_files(body: SaveIn, writer: Writer) -> dict:
+    return asdict(await _write_call(writer.check(_edits(body.files))))
+
+
+@router.put("/config/files")
+async def save_files(body: SaveIn, writer: Writer) -> dict:
+    return await _write_call(writer.save(_edits(body.files), body.reason))
+
+
+@router.get("/backups")
+async def list_all_backups(writer: Writer) -> dict:
+    return {"backups": backups.list_backups(writer.backup_root), "keep": backups.KEEP}
+
+
+@router.get("/backups/{backup_id}/file")
+async def backup_file(backup_id: str, path: str, writer: Writer) -> dict:
+    """One file from a backup next to the current version, both masked, for comparing."""
+    folder = backups.backup_folder(writer.backup_root, backup_id)
+    if folder is None:
+        raise HTTPException(404, "No such backup")
+    try:
+        current = writer.resolve(path)
+    except SaveRefused as refused:
+        raise HTTPException(refused.status, refused.detail()) from None
+    saved = (folder / writer.relative(current)).resolve()
+    if not saved.is_relative_to(folder.resolve()) or not saved.is_file():
+        raise HTTPException(404, "That file isn't in this backup")
+    return {
+        "path": writer.relative(current),
+        "backup": mask_secrets(saved.read_text(encoding="utf-8"))[0],
+        "current": mask_secrets(current.read_text(encoding="utf-8"))[0] if current.is_file() else None,
+    }
+
+
+@router.post("/backups/{backup_id}/restore")
+async def restore_backup(backup_id: str, writer: Writer) -> dict:
+    return await _write_call(writer.restore(backup_id))
+
+
+@router.post("/kometa/full-check")
+async def full_check(db: Db, writer: Writer) -> dict:
+    result = asdict(await _write_call(writer.full_check())) | {"at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    set_setting(db, FULL_CHECK, result)
+    return result
+
+
+@router.get("/kometa/full-check")
+async def last_full_check(db: Db) -> dict:
+    return {"last": get_setting(db, FULL_CHECK)}
