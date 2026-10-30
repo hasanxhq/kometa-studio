@@ -299,21 +299,58 @@ SECRET_KEYS = re.compile(
     re.IGNORECASE,
 )
 SECRET_URL_PARTS = [
-    (re.compile(r"([?&](?:token|apikey|api_key|key)=)[^&\s#]+", re.IGNORECASE), r"\1••••"),
-    (re.compile(r"(https://(?:discord(?:app)?\.com/api/webhooks|hooks\.slack\.com/services)/)\S+"), r"\1••••"),
+    re.compile(r"(?P<key>[?&](?:token|apikey|api_key|key)=)(?P<value>[^&\s#]+)", re.IGNORECASE),
+    re.compile(r"(?P<key>https://(?:discord(?:app)?\.com/api/webhooks|hooks\.slack\.com/services)/)(?P<value>\S+)"),
 ]
+PLACEHOLDER = re.compile(r"••••\((\d+)\)")
+BARE_MASK = "••••"
 
 
-def mask_secrets(text: str) -> str:
-    """Hide tokens, API keys and passwords before a file is shown in the browser."""
+def mask_secrets(text: str) -> tuple[str, list[str]]:
+    """Hide tokens, API keys, passwords and webhook secrets before a file goes to the browser.
+
+    Each secret becomes a numbered placeholder ••••(n); the list holds the real values, so a
+    saved copy that still contains the placeholders can have them put back (unmask_secrets).
+    """
+    secrets: list[str] = []
+
+    def hide(value: str) -> str:
+        secrets.append(value)
+        return f"{BARE_MASK}({len(secrets)})"
+
     lines = []
     for line in text.splitlines(keepends=True):
-        ending = "\n" if line.endswith("\n") else ""
+        ending = line[len(line.rstrip("\r\n")) :]
         body = line[: len(line) - len(ending)]
         match = SECRET_KEYS.match(body)
         if match:
-            body = f"{match['key']}••••{match['rest'] or ''}"
-        for pattern, replacement in SECRET_URL_PARTS:
-            body = pattern.sub(replacement, body)
+            body = f"{match['key']}{hide(match['value'])}{match['rest'] or ''}"
+        for pattern in SECRET_URL_PARTS:
+            body = pattern.sub(lambda m: m["key"] + hide(m["value"]), body)
         lines.append(body + ending)
-    return "".join(lines)
+    return "".join(lines), secrets
+
+
+def unmask_secrets(text: str, secrets: list[str]) -> str:
+    """Put the real values back for every ••••(n) placeholder. Raises ValueError for one that doesn't match."""
+
+    def restore(match: re.Match) -> str:
+        index = int(match.group(1))
+        if not 1 <= index <= len(secrets):
+            raise ValueError(f"{match.group(0)} isn't one of this file's hidden values")
+        # A placeholder must stand alone (a whole value, or the hidden part of a URL); text typed
+        # against it would silently change the secret.
+        before = match.string[match.start() - 1] if match.start() > 0 else " "
+        after = match.string[match.end()] if match.end() < len(match.string) else " "
+        if before not in " :=/\"'" or not (after.isspace() or after in "&\"'"):
+            raise ValueError(f"{match.group(0)} has been edited around. Leave it exactly as it is, or replace it completely.")
+        return secrets[index - 1]
+
+    restored = PLACEHOLDER.sub(restore, text)
+    for number, line in enumerate(restored.splitlines(), start=1):
+        if BARE_MASK in line:
+            raise ValueError(
+                f"Line {number} still has a partly hidden value (••••). Leave a ••••(n) placeholder exactly as it is to keep that secret, "
+                "or replace it completely with the new value."
+            )
+    return restored
