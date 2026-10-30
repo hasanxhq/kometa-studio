@@ -276,7 +276,10 @@ class ConfigWriter:
         try:
             raw, _ = await asyncio.wait_for(process.communicate(), timeout)
         except (TimeoutError, asyncio.CancelledError) as error:
-            process.kill()
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass  # it finished on its own just as it was stopped
             await process.wait()
             if isinstance(error, asyncio.CancelledError):
                 raise
