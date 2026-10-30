@@ -51,8 +51,17 @@ export class ApiError extends Error {
 }
 
 export type PlexState = {
-  config: { path: string | null; url: string | null; token: string | null; error: string | null };
+  config: { path: string | null; url: string | null; token: string | null; error: string | null; custom: boolean };
   account: { name: string } | null;
+};
+
+/** One test of the server saved in config.yml. */
+export type PlexConnectionCheck = {
+  status: "ok" | "error" | "unset";
+  name: string | null;
+  version: string | null;
+  latency_ms: number | null;
+  error: string | null;
 };
 
 export type PlexConnection = {
@@ -451,6 +460,7 @@ export const api = {
     startSignIn: () => request<PlexPin>("POST", "/plex/pin"),
     pollSignIn: (id: number) => request<PlexPinStatus>("GET", `/plex/pin/${id}`),
     signOut: () => request<void>("DELETE", "/plex/account"),
+    connection: () => request<PlexConnectionCheck>("GET", "/plex/connection"),
     servers: () => request<{ servers: PlexServer[] }>("GET", "/plex/servers"),
     test: (url: string, token: string) => request<PlexTestResult>("POST", "/plex/test", { url, token }),
     connect: (body: PlexConnectRequest) => request<PlexState>("POST", "/plex/connect", body),

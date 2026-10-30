@@ -72,7 +72,7 @@ def test_current_config_masks_the_token(tmp_path, fake, config):
     with make_client(tmp_path, fake) as client:
         body = client.get("/api/v1/plex").json()
     assert body == {
-        "config": {"path": str(config), "url": "http://old:32400", "token": "…1234", "error": None},
+        "config": {"path": str(config), "url": "http://old:32400", "token": "…1234", "error": None, "custom": False},
         "account": None,
     }
 
@@ -148,6 +148,33 @@ def test_manual_test_and_connect(tmp_path, fake, config):
     assert good == {"ok": True, "name": "Seedbox", "version": "1.41.2.9200", "url": REMOTE_URI}
     assert saved.status_code == 200
     assert read_plex(config).url == REMOTE_URI
+
+
+def test_the_saved_connection_is_checked_without_plex_tv(tmp_path, fake, config):
+    with make_client(tmp_path, fake) as client:
+        old = client.get("/api/v1/plex/connection").json()
+        client.post("/api/v1/plex/connect", json={"url": REMOTE_URI, "token": SERVER_TOKEN})
+        fake.requests.clear()
+        good = client.get("/api/v1/plex/connection").json()
+        asked = [request.url.host for request in fake.requests]
+    assert old == {"status": "error", "name": None, "version": None, "latency_ms": None, "error": old["error"]} and old["error"]
+    assert (good["status"], good["name"], good["version"], good["error"]) == ("ok", "Seedbox", "1.41.2.9200", None)
+    assert isinstance(good["latency_ms"], int)
+    assert "plex.tv" not in asked
+
+
+def test_a_typed_address_is_marked_custom_until_a_discovered_one_replaces_it(tmp_path, fake, config):
+    with make_client(tmp_path, fake) as client:
+        typed = client.post("/api/v1/plex/connect", json={"url": REMOTE_URI, "token": SERVER_TOKEN}).json()
+        sign_in(client, fake)
+        picked = client.post("/api/v1/plex/connect", json={"server_id": SERVER_ID, "uri": REMOTE_URI}).json()
+    assert typed["config"]["custom"] is True
+    assert picked["config"]["custom"] is False
+
+
+def test_no_saved_connection(tmp_path, fake):
+    with make_client(tmp_path, fake) as client:
+        assert client.get("/api/v1/plex/connection").json()["status"] == "unset"
 
 
 def test_manual_url_is_checked(tmp_path, fake, config):

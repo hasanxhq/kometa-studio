@@ -57,3 +57,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When Studio edits config.yml itself (Plex connection, webhook entries), it keeps the file's own formatting instead of restyling it.
 
 - Settings → General: once sign-in is set up, the card shows the username instead of the username and password fields. A "Change username or password" link opens them, with Cancel to close them again. The current password is asked for only when you change something.
+- Settings → Plex is one "Your servers" card. Opening it tests only the server saved in config.yml and shows whether it answers. Studio fetches and tests every server on your Plex account only when you press Test again, or when the saved server doesn't answer. "Use a custom address" opens the form for typing a URL and token. It saves only after a test passes, replaces the server chosen from the list, and is then marked "Custom address".
