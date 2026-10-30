@@ -24,8 +24,8 @@ def test_libraries_with_collection_counts(tmp_path, config):
     with make_client(tmp_path, FakePlex()) as client:
         body = client.get("/api/v1/plex/libraries").json()
     assert body["libraries"] == [
-        {"key": "1", "title": "Movies", "type": "movie", "collections": 3, "managed": 2},
-        {"key": "2", "title": "TV Shows", "type": "show", "collections": 0, "managed": 0},
+        {"key": "1", "title": "Movies", "type": "movie", "collections": 3, "managed": 2, "maintainerr": 0},
+        {"key": "2", "title": "TV Shows", "type": "show", "collections": 0, "managed": 0, "maintainerr": 0},
     ]
 
 

@@ -8,7 +8,8 @@ A save is all or nothing:
    notifies anyone. config.yml and the files it references get `--validate --validate-level
    structure --validate-schema`; edited files get `--validate-dir` too, which covers files
    config.yml doesn't reference yet (an upload, say).
-4. Only then are the current versions backed up and the new ones written, atomically.
+4. Studio's own guard (``guard``: Maintainerr's collections) mustn't find a problem the files didn't have.
+5. Only then are the current versions backed up and the new ones written, atomically.
 
 Only the files that were edited are ever written.
 """
@@ -18,6 +19,7 @@ import hashlib
 import io
 import os
 import tempfile
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -109,6 +111,9 @@ class ConfigWriter:
         self.backup_root = settings.data_dir / "backups"
         self.root = settings.kometa_entry.parent if settings.kometa_entry else self.config_dir.parent
         self.lock = asyncio.Lock()
+        # Studio's own rules on top of Kometa's check: (config.yml path, Kometa's folder) → problems.
+        # A save is refused only for problems it adds. Set by the Maintainerr integration.
+        self.guard: Callable[[Path, Path], list[str]] | None = None
 
     # --- Which files ----------------------------------------------------------------
 
@@ -310,6 +315,11 @@ class ConfigWriter:
             validation = await self.validate(changes)
             if not validation.ok:
                 raise SaveRefused(422, "Kometa found problems, so nothing was saved.", validation)
+            added = self._guarded(changes)
+            if added:
+                raise SaveRefused(
+                    422, "This would let Kometa touch Maintainerr's collections, so nothing was saved.", Validation(False, added, checked_by_kometa=False)
+                )
             # Hashes again: a file may have changed while Kometa was checking.
             self._prepare(edits)
             backup = backups.take_backup(self.backup_root, self.config_dir.resolve(), list(changes), reason)
@@ -321,6 +331,16 @@ class ConfigWriter:
             "files": [{"path": self.relative(path), "hash": file_hash(path.read_bytes())} for path in changes],
             "validation": asdict(validation),
         }
+
+    def _guarded(self, changes: dict[Path, str]) -> list[str]:
+        """Problems ``guard`` finds with the changes that it doesn't find in the files as they are."""
+        if self.guard is None:
+            return []
+        before = self.guard(self.config_path, self.root)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix="guard-", dir=self.data_dir) as temp:
+            after = self.guard(self._mirror(Path(temp), changes), Path(temp))
+        return [problem for problem in after if problem not in before]
 
     async def edit_item(
         self,

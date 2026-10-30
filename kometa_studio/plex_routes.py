@@ -291,8 +291,17 @@ async def _plex_read(awaitable):
         raise HTTPException(502, str(error)) from None
 
 
+def maintainerr_keys(request: Request) -> set[str]:
+    """Rating keys of the Plex collections Maintainerr owns (empty if it isn't connected)."""
+    service = getattr(request.app.state, "maintainerr", None)
+    if service is None:
+        return set()
+    return {c.rating_key for c in service.snapshot.collections if c.rating_key}
+
+
 @router.get("/libraries")
-async def plex_libraries(http: Http, settings: AppSettings) -> dict:
+async def plex_libraries(request: Request, http: Http, settings: AppSettings) -> dict:
+    theirs = maintainerr_keys(request)
     server = kometa_plex(settings, http)
     libraries = await _plex_read(server.libraries())
     collections = await _plex_read(asyncio.gather(*(server.collections(library.key) for library in libraries)))
@@ -304,6 +313,7 @@ async def plex_libraries(http: Http, settings: AppSettings) -> dict:
                 "type": library.type,
                 "collections": len(found),
                 "managed": sum(c.managed for c in found),
+                "maintainerr": sum(c.rating_key in theirs for c in found),
             }
             for library, found in zip(libraries, collections, strict=True)
         ]
@@ -311,7 +321,8 @@ async def plex_libraries(http: Http, settings: AppSettings) -> dict:
 
 
 @router.get("/libraries/{key}/collections")
-async def plex_collections(key: str, http: Http, settings: AppSettings) -> dict:
+async def plex_collections(key: str, request: Request, http: Http, settings: AppSettings) -> dict:
+    theirs = maintainerr_keys(request)
     server = kometa_plex(settings, http)
     libraries = await _plex_read(server.libraries())
     library = next((lib for lib in libraries if lib.key == key), None)
@@ -320,7 +331,7 @@ async def plex_collections(key: str, http: Http, settings: AppSettings) -> dict:
     collections = await _plex_read(server.collections(key))
     return {
         "library": {"key": library.key, "title": library.title, "type": library.type},
-        "collections": [asdict(c) for c in sorted(collections, key=lambda c: c.title.casefold())],
+        "collections": [asdict(c) | {"maintainerr": c.rating_key in theirs} for c in sorted(collections, key=lambda c: c.title.casefold())],
     }
 
 

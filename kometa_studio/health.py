@@ -164,7 +164,18 @@ def _disk_check(settings: Settings) -> list[Check]:
     return []
 
 
-async def health(db: sqlite3.Connection, settings: Settings, http: httpx.AsyncClient, plex_check: PlexCheck, flags_error: str | None) -> list[dict]:
+def _maintainerr_checks(service) -> list[Check]:
+    if service is None or not service.connected():
+        return []
+    checks = [Check(f"maintainerr-{index}", "error", risk.message, "/settings/connect") for index, risk in enumerate(service.risks(), 1)]
+    if service.snapshot.error:
+        checks.append(Check("maintainerr", "warning", f"Studio can't read Maintainerr: {service.snapshot.error}", "/settings/connect"))
+    return checks
+
+
+async def health(
+    db: sqlite3.Connection, settings: Settings, http: httpx.AsyncClient, plex_check: PlexCheck, flags_error: str | None, maintainerr=None
+) -> list[dict]:
     checks = _config_checks(settings, flags_error)
     if settings.kometa_config and settings.kometa_config.exists():
         plex_result = await plex_check.run(http, settings.kometa_config)
@@ -172,6 +183,7 @@ async def health(db: sqlite3.Connection, settings: Settings, http: httpx.AsyncCl
             checks.append(plex_result)
     checks += _run_checks(db)
     checks += _arr_checks(db)
+    checks += _maintainerr_checks(maintainerr)
     checks += _backup_checks(db, settings)
     checks += _disk_check(settings)
     if auth_settings(db) is None:

@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .arr import Arr
+from .maintainerr import Maintainerr
 from .arr_routes import router as arr_router
 from .auth import AuthMiddleware, LoginThrottle
 from .auth_routes import TIMEZONE
@@ -24,6 +25,7 @@ from .crypto import SecretBox
 from .db import get_setting, open_database, schema_version
 from .health import PlexCheck, health, kometa_updates, kometa_version
 from .logs_routes import router as logs_router
+from .maintainerr_routes import router as maintainerr_router
 from .plex_routes import router as plex_router
 from .runner import Runner
 from .runs_routes import router as runs_router
@@ -59,7 +61,9 @@ async def status(request: Request) -> dict:
             "config": str(settings.kometa_config) if settings.kometa_config else None,
             "updates": kometa_updates(db, installed),
         },
-        "health": await health(db, settings, request.app.state.http, request.app.state.plex_check, request.app.state.runner.flags_error),
+        "health": await health(
+            db, settings, request.app.state.http, request.app.state.plex_check, request.app.state.runner.flags_error, request.app.state.maintainerr
+        ),
         "database": {"schema_version": schema_version(request.app.state.db)},
         "runs": {
             "current": request.app.state.runner.current_run_id,
@@ -110,6 +114,12 @@ def create_app(
         # Started after the runner has marked cut-off runs interrupted; its first tick catches up on missed runs.
         app.state.arr = Arr(app.state.db, runner, app.state.http, app.state.secrets, settings.kometa_config)
         app.state.arr.start()
+        maintainerr = Maintainerr(app.state.db, app.state.http, app.state.secrets, settings.kometa_config, settings.kometa_entry.parent if settings.kometa_entry else None)
+        app.state.maintainerr = maintainerr
+        runner.hooks.append(maintainerr)
+        if app.state.writer is not None:
+            app.state.writer.guard = lambda path, root: [risk.message for risk in maintainerr.risks(path, root)]
+        maintainerr.start()
         scheduler = Scheduler(app.state.db, runner, also=(tasks, app.state.arr))
         app.state.scheduler = scheduler
         scheduler.start()
@@ -124,6 +134,7 @@ def create_app(
             await scheduler.stop()
             await tasks.stop()
             await app.state.arr.stop()
+            await maintainerr.stop()
             await runner.stop()
             await app.state.http.aclose()
             app.state.db.close()
@@ -145,5 +156,6 @@ def create_app(
     app.include_router(tasks_router)
     app.include_router(arr_router)
     app.include_router(logs_router)
+    app.include_router(maintainerr_router)
     mount_frontend(app, static_dir)
     return app
