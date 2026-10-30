@@ -55,7 +55,8 @@ Follow this exactly; branch protection and CI enforce most of it.
 
 - **Never commit or push to `main` or `dev` directly.** Check `git branch --show-current` before every commit.
 - **PRs into `main` come only from `release/*` or `hotfix/*`.** The `pr-source-check` workflow fails any other source.
-- **One topic branch per piece of work**, cut from the latest `dev`. Open its PR into `dev` at the first checkpoint so CI runs on every push.
+- **One topic branch per piece of work**, cut from the latest `dev`. At the first checkpoint, open its PR into `dev` **as a draft** (`gh pr create --draft`). CI then runs on every push, tested against the latest `dev`, and others can see the work, but nobody can merge it half-done.
+- **Mark the PR ready only when the work is complete:** merge the latest `dev` into the branch, rerun the tests, bring the PR description up to date, then `gh pr ready`.
 - **Before pushing, check the branch's PR is still open** (`gh pr view`). Never push to a merged branch; start a new one from `dev`.
 - **Keep a branch current by merging `dev` into it**, not by rebasing. Rerun the tests after.
 - **Delete topic branches** (local and remote) after their PR merges.
@@ -69,7 +70,7 @@ Follow this exactly; branch protection and CI enforce most of it.
 
 ### Merging
 
-- **Topic → `dev`:** squash merge once CI is green. No review is required; the author may merge their own PR.
+- **Topic → `dev`:** squash merge once the PR is marked ready and CI is green. No review is required; the author may merge their own PR. Never merge a draft, and never mark someone else's PR ready.
 - **`release/*` or `hotfix/*` → `main`, and `main` → `dev`:** always a **merge commit**, never squash or rebase.
 - After merging into `dev`, once that commit's CI is green, tag it `checkpoint/<YYYY-MM-DD>-<topic>` (annotated; check the name is free with `git ls-remote --tags origin`).
 
