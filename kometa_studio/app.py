@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
-from .arr_hooks import ArrHooks
+from .arr import Arr
 from .arr_routes import router as arr_router
 from .auth import AuthMiddleware, LoginThrottle
 from .auth_routes import TIMEZONE
@@ -108,7 +108,8 @@ def create_app(
         tasks.setup(app.state.timezone)
         app.state.tasks = tasks
         # Started after the runner has marked cut-off runs interrupted; its first tick catches up on missed runs.
-        app.state.arr = ArrHooks(app.state.db, runner)
+        app.state.arr = Arr(app.state.db, runner, app.state.http, app.state.secrets, settings.kometa_config)
+        app.state.arr.start()
         scheduler = Scheduler(app.state.db, runner, also=(tasks, app.state.arr))
         app.state.scheduler = scheduler
         scheduler.start()
@@ -122,6 +123,7 @@ def create_app(
                 await probe
             await scheduler.stop()
             await tasks.stop()
+            await app.state.arr.stop()
             await runner.stop()
             await app.state.http.aclose()
             app.state.db.close()

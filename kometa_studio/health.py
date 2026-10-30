@@ -120,6 +120,17 @@ def _run_checks(db: sqlite3.Connection) -> list[Check]:
     return checks
 
 
+def _arr_checks(db: sqlite3.Connection) -> list[Check]:
+    if not get_setting(db, "arr.settings", {}).get("enabled"):
+        return []
+    checks = []
+    for kind, name in (("radarr", "Radarr"), ("sonarr", "Sonarr")):
+        status = get_setting(db, f"arr.status.{kind}")
+        if isinstance(status, dict) and not status.get("ok"):
+            checks.append(Check(kind, "warning", f"Studio can't read {name}'s imports: {status.get('error')}", "/settings/connect"))
+    return checks
+
+
 def _backup_checks(db: sqlite3.Connection, settings: Settings) -> list[Check]:
     row = db.execute("SELECT enabled, last_status, last_message FROM tasks WHERE name = 'full_backup'").fetchone()
     if row is not None and row["last_status"] == "failed":
@@ -160,6 +171,7 @@ async def health(db: sqlite3.Connection, settings: Settings, http: httpx.AsyncCl
         if plex_result:
             checks.append(plex_result)
     checks += _run_checks(db)
+    checks += _arr_checks(db)
     checks += _backup_checks(db, settings)
     checks += _disk_check(settings)
     if auth_settings(db) is None:

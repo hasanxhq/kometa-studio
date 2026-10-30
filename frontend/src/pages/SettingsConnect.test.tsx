@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { ArrState } from "../api";
@@ -6,8 +6,10 @@ import { mockApi, renderAt } from "../test-utils";
 
 const state: ArrState = {
   settings: { enabled: false, mode: "all", wait_minutes: 10, libraries: { radarr: [], sonarr: [] } },
-  path: "/api/v1/hooks/arr?token=abc",
-  last_event: null,
+  connections: {
+    radarr: { source: "config", url: null, has_key: false, config_url: "http://radarr:7878", status: null },
+    sonarr: { source: "config", url: null, has_key: false, config_url: null, status: null },
+  },
   pending: null,
 };
 
@@ -18,21 +20,26 @@ const overview = {
 };
 
 describe("Settings → Connect", () => {
-  it("gives the webhook URL to paste and saves what imports run", async () => {
+  it("uses Kometa's Radarr, tests it, and saves what imports run", async () => {
     const calls = mockApi({
       "GET /settings/arr": () => state,
       "GET /config": () => overview,
+      "POST /settings/arr/radarr/test": () => ({ ok: true, app: "Radarr", version: "5.14.0" }),
       "PUT /settings/arr": (body) => ({ ...state, settings: body }),
     });
     renderAt("/settings/connect");
 
-    expect(await screen.findByLabelText("Webhook URL")).toHaveValue(`${window.location.origin}/api/v1/hooks/arr?token=abc`);
-    expect(screen.getByText("Nothing received yet.")).toBeInTheDocument();
+    const radarr = await screen.findByRole("form", { name: "Radarr" });
+    expect(within(radarr).getByText("http://radarr:7878")).toBeInTheDocument();
+    fireEvent.click(within(radarr).getByRole("button", { name: "Test" }));
+    expect(await within(radarr).findByText("Radarr 5.14.0 answered.")).toBeInTheDocument();
+    expect(calls.find((c) => c.route === "POST /settings/arr/radarr/test")?.body).toEqual({ source: "config" });
+
     fireEvent.click(screen.getByLabelText("Run Kometa after Radarr or Sonarr imports something"));
     fireEvent.change(screen.getByLabelText("Run"), { target: { value: "overlays" } });
-    const radarr = (await screen.findByText("Libraries to run for Radarr's imports")).closest("fieldset")!;
-    fireEvent.click(radarr.querySelector("input")!); // Movies
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const libraries = (await screen.findByText("Libraries to run for Radarr's imports")).closest("fieldset")!;
+    fireEvent.click(libraries.querySelector("input")!); // Movies
+    fireEvent.click(within(screen.getByRole("form", { name: "Runs after imports" })).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(calls.some((c) => c.route === "PUT /settings/arr")).toBe(true));
     expect(calls.find((c) => c.route === "PUT /settings/arr")?.body).toEqual({
@@ -43,11 +50,36 @@ describe("Settings → Connect", () => {
     });
   });
 
-  it("shows imports waiting for things to go quiet", async () => {
+  it("saves a Sonarr entered by hand, keeping a saved key secret", async () => {
+    const calls = mockApi({
+      "GET /settings/arr": () => state,
+      "GET /config": () => overview,
+      "PUT /settings/arr/sonarr": () => ({
+        ...state,
+        connections: { ...state.connections, sonarr: { source: "studio", url: "http://sonarr:8989", has_key: true, config_url: null, status: null } },
+      }),
+    });
+    renderAt("/settings/connect");
+
+    const sonarr = await screen.findByRole("form", { name: "Sonarr" });
+    expect(within(sonarr).getByText("(config.yml has no url and token)")).toBeInTheDocument();
+    fireEvent.click(within(sonarr).getByLabelText("Enter it here"));
+    fireEvent.change(within(sonarr).getByLabelText("URL"), { target: { value: "http://sonarr:8989" } });
+    fireEvent.change(within(sonarr).getByLabelText("API key"), { target: { value: "abc123" } });
+    fireEvent.click(within(sonarr).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(calls.some((c) => c.route === "PUT /settings/arr/sonarr")).toBe(true));
+    expect(calls.find((c) => c.route === "PUT /settings/arr/sonarr")?.body).toEqual({ source: "studio", url: "http://sonarr:8989", api_key: "abc123" });
+    const saved = await screen.findByRole("form", { name: "Sonarr" });
+    expect(within(saved).getByLabelText("API key")).toHaveValue("");
+    expect(within(saved).getByPlaceholderText("Saved (leave empty to keep it)")).toBeInTheDocument();
+  });
+
+  it("shows imports waiting and a failing check", async () => {
     mockApi({
       "GET /settings/arr": () => ({
         ...state,
-        last_event: { at: new Date().toISOString(), kind: "sonarr", event: "Download", title: "Avatar: The Last Airbender (2024)" },
+        connections: { ...state.connections, radarr: { ...state.connections.radarr, status: { checked_at: new Date().toISOString(), ok: false, error: "The API key was rejected" } } },
         pending: {
           first_at: new Date().toISOString(),
           last_at: new Date().toISOString(),
@@ -61,6 +93,6 @@ describe("Settings → Connect", () => {
     });
     renderAt("/settings/connect");
     expect(await screen.findByText(/3 imports waiting \(Avatar: The Last Airbender \(2024\)\)/)).toBeInTheDocument();
-    expect(screen.getByText(/Last heard from Sonarr .*: Download, Avatar/)).toBeInTheDocument();
+    expect(screen.getByText(/Last check failed .*The API key was rejected/)).toBeInTheDocument();
   });
 });

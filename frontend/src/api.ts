@@ -165,10 +165,23 @@ export type ArrKind = "radarr" | "sonarr";
 
 export type ArrSettings = { enabled: boolean; mode: RunMode; wait_minutes: number; libraries: Record<ArrKind, string[]> };
 
+export type ArrSource = "config" | "studio" | "off";
+
+export type ArrConnection = {
+  source: ArrSource; // Kometa's config.yml, entered in Studio, or off
+  url: string | null; // entered in Studio
+  has_key: boolean; // a key is saved (it's never sent back)
+  config_url: string | null; // what config.yml has, if it has a url and token
+  status: { checked_at: string; ok: boolean; error: string | null } | null;
+};
+
+export type ArrConnectionInput = { source: ArrSource; url?: string | null; api_key?: string | null };
+
+export type ArrTest = { ok: true; app: string; version: string } | { ok: false; error: string };
+
 export type ArrState = {
   settings: ArrSettings;
-  path: string; // the webhook's path, with its token; the page adds its own address
-  last_event: { at: string; kind: ArrKind | null; event: string; title: string | null } | null;
+  connections: Record<ArrKind, ArrConnection>;
   pending: { first_at: string; last_at: string; due_at: string; imports: number; titles: string[]; kinds: ArrKind[] } | null;
 };
 
@@ -435,7 +448,8 @@ export const api = {
   arr: {
     get: () => request<ArrState>("GET", "/settings/arr"),
     save: (settings: ArrSettings) => request<ArrState>("PUT", "/settings/arr", settings),
-    newToken: () => request<ArrState>("POST", "/settings/arr/token"),
+    connect: (kind: ArrKind, body: ArrConnectionInput) => request<ArrState>("PUT", `/settings/arr/${kind}`, body),
+    test: (kind: ArrKind, body: ArrConnectionInput) => request<ArrTest>("POST", `/settings/arr/${kind}/test`, body),
   },
   logs: {
     list: () => request<{ files: LogFile[] }>("GET", "/logs"),
