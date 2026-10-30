@@ -190,6 +190,14 @@ async def kometa_info(request: Request, runner: RunnerDep) -> dict:
         "flags": sorted(runner.flags) if runner.flags is not None else None,
         "flags_error": runner.flags_error,
         "problem": problem,
+        "paths": {
+            "python": str(settings.kometa_python) if settings.kometa_python else None,
+            "entry": str(settings.kometa_entry) if settings.kometa_entry else None,
+            "config": str(settings.kometa_config) if settings.kometa_config else None,
+            "schemas": str(settings.kometa_schemas) if settings.kometa_schemas else None,
+        },
+        "run_timeout": settings.run_timeout,
+        "kill_after": settings.kill_after,
     }
 
 

@@ -18,7 +18,9 @@ import { Placeholder } from "./pages/Placeholder";
 import { RunDetail } from "./pages/RunDetail";
 import { SettingsConnect } from "./pages/SettingsConnect";
 import { SettingsGeneral } from "./pages/SettingsGeneral";
+import { SettingsKometa } from "./pages/SettingsKometa";
 import { SettingsPlex } from "./pages/SettingsPlex";
+import { SettingsUI } from "./pages/SettingsUI";
 import { SystemBackup } from "./pages/SystemBackup";
 import { SystemLogs } from "./pages/SystemLogs";
 import { SystemStatus } from "./pages/SystemStatus";
@@ -38,6 +40,8 @@ const built: Record<string, ComponentType> = {
   "/settings/general": SettingsGeneral,
   "/settings/plex": SettingsPlex,
   "/settings/connect": SettingsConnect,
+  "/settings/kometa": SettingsKometa,
+  "/settings/ui": SettingsUI,
 };
 
 export function App({ queryClient = new QueryClient() }: { queryClient?: QueryClient }) {

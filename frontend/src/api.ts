@@ -339,7 +339,14 @@ export type ItemSave = {
   rename?: string | null;
 };
 
-export type KometaInfo = { flags: string[] | null; flags_error: string | null; problem: string | null };
+export type KometaInfo = {
+  flags: string[] | null;
+  flags_error: string | null;
+  problem: string | null;
+  paths?: { python: string | null; entry: string | null; config: string | null; schemas: string | null };
+  run_timeout?: number; // seconds
+  kill_after?: number;
+};
 
 // FastAPI puts the reason in `detail`: a string from most errors, a list from request validation,
 // and {message, path, validation} from a refused save.
