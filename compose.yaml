@@ -1,0 +1,19 @@
+# docker compose up -d --build
+# Create the config folder first (mkdir -p config), or Docker creates it owned by root and Studio can't write to it.
+services:
+  kometa-studio:
+    build:
+      context: .
+      args:
+        KOMETA_TAG: ${KOMETA_TAG:-v2.5.3}
+    image: kometa-studio:local
+    container_name: kometa-studio
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      TZ: ${TZ:-Asia/Kolkata}
+    ports:
+      - "${STUDIO_PORT:-8484}:8484"
+    volumes:
+      # Kometa's config folder. Keep it on WSL's own disk, not under /mnt/c (handoff v2 §3.2).
+      - ${KOMETA_CONFIG_DIR:-./config}:/config
+    restart: unless-stopped

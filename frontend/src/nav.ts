@@ -1,0 +1,58 @@
+// The app's navigation, arr-style (handoff v2 §8). Routes and the sidebar are both built from this list.
+
+export type Page = {
+  label: string;
+  path: string;
+  summary: string; // what the page will do, shown until it's built
+};
+
+export type Section = {
+  label: string;
+  pages: Page[];
+};
+
+export const sections: Section[] = [
+  {
+    label: "Libraries",
+    pages: [
+      {
+        label: "Libraries",
+        path: "/libraries",
+        summary: "One card per Plex library, with its collections, overlays, defaults and operations.",
+      },
+    ],
+  },
+  {
+    label: "Activity",
+    pages: [
+      { label: "Queue", path: "/activity/queue", summary: "The running and queued Kometa runs, with a live log and cancel." },
+      {
+        label: "History",
+        path: "/activity/history",
+        summary: "What each run changed, collection by collection, from Kometa's webhooks.",
+      },
+    ],
+  },
+  {
+    label: "System",
+    pages: [
+      { label: "Status", path: "/system/status", summary: "Versions, health checks and connection problems." },
+      { label: "Tasks", path: "/system/tasks", summary: "Schedules and built-in tasks, with last run, next run and Run Now." },
+      { label: "Backup", path: "/system/backup", summary: "Config backups taken on every save, scheduled full backups and restore." },
+      { label: "Logs", path: "/system/logs", summary: "Kometa's meta.log and the log of every run." },
+      { label: "Updates", path: "/system/updates", summary: "The installed Kometa version and whether a newer one is out." },
+    ],
+  },
+  {
+    label: "Settings",
+    pages: [
+      { label: "General", path: "/settings/general", summary: "Port, sign-in, API key and timezone." },
+      { label: "Plex", path: "/settings/plex", summary: "Sign in with Plex and pick your server." },
+      { label: "Connect", path: "/settings/connect", summary: "TMDb, Trakt, Radarr, Sonarr and other services, each with a Test button." },
+      { label: "Kometa", path: "/settings/kometa", summary: "Kometa's paths and the flags every run uses." },
+      { label: "UI", path: "/settings/ui", summary: "Show Advanced by default, and other display options." },
+    ],
+  },
+];
+
+export const pages: Page[] = sections.flatMap((section) => section.pages);

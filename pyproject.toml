@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "kometa-studio"
+dynamic = ["version"]
+description = "Unofficial arr-style web GUI for Kometa"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic-settings>=2.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.28",
+]
+
+[project.scripts]
+kometa-studio = "kometa_studio.cli:main"
+
+# The version lives only in VERSION (see AGENTS.md).
+[tool.hatch.version]
+path = "VERSION"
+pattern = "^(?P<version>\\S+)\\s*$"
+
+[tool.hatch.build.targets.wheel]
+packages = ["kometa_studio"]
+# The built frontend is git-ignored, so list it explicitly or Hatch leaves it out.
+artifacts = ["kometa_studio/static/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,13 @@
+.git
+.github
+kometa
+config
+data
+.venv
+**/node_modules
+**/__pycache__
+.pytest_cache
+kometa_studio/static
+frontend/dist
+*.md
+!README.md
