@@ -70,6 +70,7 @@ describe("Activity → Queue", () => {
     renderAt("/activity/queue");
 
     expect(await screen.findByRole("heading", { name: "Running: Collections only · Movies" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Details" })).toHaveAttribute("href", "/activity/queue/3");
     const source = FakeEventSource.latest();
     expect(source.url).toBe("/api/v1/runs/3/stream");
     source.open();

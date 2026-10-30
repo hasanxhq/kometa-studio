@@ -229,25 +229,28 @@ class Runner:
                     active.timed_out = True
                     await self._terminate(active)
                 exit_code = await process.wait()
+                status, error = self._outcome(run_id, active, exit_code)
+                reason = f": {error}" if error and status == "failed" and exit_code == 0 else ""
+                self._emit(active, log, f"Kometa Studio: run {status.replace('_', ' ')} (exit code {exit_code}){reason}")
+                # Record the outcome before ending the streams: their closing event reports it.
+                self._finish(run_id, status, exit_code=exit_code, error=error)
             finally:
                 self._active = None
                 for subscriber in active.subscribers:
                     subscriber.send(None)
 
-            critical = self._first_critical_error(run_id)
-            if active.timed_out:
-                status, error = "timed_out", f"Stopped after the {self.settings.run_timeout // 60} minute time limit"
-            elif active.cancel_requested:
-                status, error = "cancelled", None
-            elif exit_code != 0:
-                status, error = "failed", f"Kometa exited with code {exit_code}"
-            elif critical is not None:
-                # Kometa exits 0 even when a critical error (a config error, say) stopped it doing anything.
-                status, error = "failed", critical
-            else:
-                status, error = "succeeded", None
-            log.write(f"Kometa Studio: run {status.replace('_', ' ')} (exit code {exit_code})\n")
-            self._finish(run_id, status, exit_code=exit_code, error=error)
+    def _outcome(self, run_id: int, active: Active, exit_code: int) -> tuple[str, str | None]:
+        if active.timed_out:
+            return "timed_out", f"Stopped after the {self.settings.run_timeout // 60} minute time limit"
+        if active.cancel_requested:
+            return "cancelled", None
+        if exit_code != 0:
+            return "failed", f"Kometa exited with code {exit_code}"
+        critical = self._first_critical_error(run_id)
+        if critical is not None:
+            # Kometa exits 0 even when a critical error (a config error, say) stopped it doing anything.
+            return "failed", critical
+        return "succeeded", None
 
     def _first_critical_error(self, run_id: int) -> str | None:
         for (payload,) in self.db.execute("SELECT payload FROM run_events WHERE run_id = ? AND event = 'error' ORDER BY id", (run_id,)):
@@ -265,12 +268,15 @@ class Runner:
                 raw = b"[line too long, cut]\n"
             if not raw:
                 return
-            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
-            log.write(line + "\n")
-            for subscriber in list(active.subscribers):
-                subscriber.send(line)
-                if subscriber.dropped:
-                    active.subscribers.discard(subscriber)
+            self._emit(active, log, raw.decode("utf-8", errors="replace").rstrip("\r\n"))
+
+    def _emit(self, active: Active, log, line: str) -> None:
+        """Write a line to the run's log and to everyone following it live."""
+        log.write(line + "\n")
+        for subscriber in list(active.subscribers):
+            subscriber.send(line)
+            if subscriber.dropped:
+                active.subscribers.discard(subscriber)
 
     async def _terminate(self, active: Active) -> None:
         process = active.process

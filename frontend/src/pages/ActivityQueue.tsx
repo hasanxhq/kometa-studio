@@ -186,6 +186,10 @@ export function ActivityQueue() {
           running && (
             <div className="flex items-center gap-3">
               <span className="text-sm text-muted">{formatDuration(running.started_at, null)}</span>
+              {/* The run's own page keeps the log once the run is over. */}
+              <Link to={`/activity/queue/${running.id}`} className="min-h-11 content-center text-sm underline">
+                Details
+              </Link>
               <Button onClick={() => cancel.mutate(running.id)} disabled={cancel.isPending}>
                 Cancel
               </Button>
@@ -193,7 +197,9 @@ export function ActivityQueue() {
           )
         }
       >
-        {runs.isError ? (
+        {runs.isPending ? (
+          <p className="text-muted">Loading…</p>
+        ) : runs.isError ? (
           <p role="alert" className="text-err">
             Can't reach the Studio API: {runs.error.message}
           </p>
@@ -220,7 +226,17 @@ export function ActivityQueue() {
       </Card>
 
       <Card title="Recent runs">
-        {finished.length === 0 ? <p className="text-muted">No runs yet.</p> : <ul>{finished.map((run) => <RunRow key={run.id} run={run} />)}</ul>}
+        {runs.isPending ? (
+          <p className="text-muted">Loading…</p>
+        ) : finished.length === 0 ? (
+          <p className="text-muted">{runs.isError ? "Can't load runs." : "No runs yet."}</p>
+        ) : (
+          <ul>
+            {finished.map((run) => (
+              <RunRow key={run.id} run={run} />
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );

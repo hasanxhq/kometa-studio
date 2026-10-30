@@ -270,6 +270,7 @@ def test_the_log_stream_sends_the_whole_log_once(tmp_path, config):
     lines, end = _parse_sse(body)
     expected = [f"before {i}" for i in range(50)] + [f"after {i}" for i in range(50)]
     assert [line for line in lines if line.startswith(("before", "after"))] == expected
+    assert lines[-1] == "Kometa Studio: run succeeded (exit code 0)"  # Studio's own closing line streams too
     assert end == {"status": "succeeded", "dropped": False}
 
 
