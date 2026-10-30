@@ -19,9 +19,7 @@ function SignIn({ settings }: { settings: GeneralSettings }) {
   const { configured } = settings.auth;
   const [username, setUsername] = useState(settings.auth.username ?? "");
   const [password, setPassword] = useState("");
-  const [required, setRequired] = useState<AuthRequired>(
-    settings.auth.required,
-  );
+  const [required, setRequired] = useState<AuthRequired>(settings.auth.required);
   const [current, setCurrent] = useState("");
   // Once sign-in is set up, the username and password fields stay hidden until asked for.
   const [changing, setChanging] = useState(false);
@@ -58,46 +56,26 @@ function SignIn({ settings }: { settings: GeneralSettings }) {
 
   return (
     <Card title="Sign-in">
-      <form
-        className="flex flex-col gap-4"
-        onSubmit={submit}
-        aria-label="Sign-in"
-      >
+      <form className="flex flex-col gap-4" onSubmit={submit} aria-label="Sign-in">
         <p className="text-sm text-muted">
           {configured
             ? "Studio asks for this username and password on its login page."
             : "Not set up yet: Studio only answers this computer and your local network, without asking who you are. Set a username and password before you reach it from anywhere else."}
         </p>
         <Field label="Authentication required">
-          <select
-            className={inputClass}
-            value={required}
-            onChange={(e) => setRequired(e.target.value as AuthRequired)}
-          >
+          <select className={inputClass} value={required} onChange={(e) => setRequired(e.target.value as AuthRequired)}>
             <option value="enabled">Enabled: everyone signs in</option>
-            <option value="disabled_for_local">
-              Disabled for local addresses: only the internet signs in
-            </option>
+            <option value="disabled_for_local">Disabled for local addresses: only the internet signs in</option>
           </select>
         </Field>
         {editing ? (
           <>
             <Field label="Username">
-              <input
-                className={inputClass}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
-                required
-              />
+              <input className={inputClass} value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" required />
             </Field>
             <Field
               label={configured ? "New password" : "Password"}
-              hint={
-                configured
-                  ? "Leave empty to keep the current one."
-                  : "At least 8 characters."
-              }
+              hint={configured ? "Leave empty to keep the current one." : "At least 8 characters."}
             >
               <input
                 className={inputClass}
@@ -114,20 +92,13 @@ function SignIn({ settings }: { settings: GeneralSettings }) {
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
             <span className="text-muted">Username</span>
             <span className="font-semibold">{settings.auth.username}</span>
-            <button
-              type="button"
-              className="min-h-11 text-accent underline hover:no-underline"
-              onClick={() => setChanging(true)}
-            >
+            <button type="button" className="min-h-11 text-accent underline hover:no-underline" onClick={() => setChanging(true)}>
               Change username or password
             </button>
           </div>
         )}
         {configured && dirty && (
-          <Field
-            label="Current password"
-            hint="Needed to change anything here. Changing the username or password signs out every other browser."
-          >
+          <Field label="Current password" hint="Needed to change anything here. Changing the username or password signs out every other browser.">
             <input
               className={inputClass}
               type="password"
@@ -142,16 +113,8 @@ function SignIn({ settings }: { settings: GeneralSettings }) {
           <div className="flex flex-wrap items-center gap-3">
             {dirty && (
               <>
-                <Button
-                  variant="primary"
-                  type="submit"
-                  disabled={save.isPending}
-                >
-                  {save.isPending
-                    ? "Saving…"
-                    : configured
-                      ? "Save"
-                      : "Set up sign-in"}
+                <Button variant="primary" type="submit" disabled={save.isPending}>
+                  {save.isPending ? "Saving…" : configured ? "Save" : "Set up sign-in"}
                 </Button>
                 {configured && <Button onClick={cancel}>Cancel</Button>}
               </>
@@ -195,26 +158,15 @@ function ApiKey({ settings }: { settings: GeneralSettings }) {
   return (
     <Card title="API key">
       <p className="mb-3 text-sm text-muted">
-        For dashboards and scripts: send it as an{" "}
-        <code className="font-mono">X-Api-Key</code> header, and every endpoint
-        answers, e.g. <code className="font-mono">/api/v1/status</code>.
+        For dashboards and scripts: send it as an <code className="font-mono">X-Api-Key</code> header, and every endpoint answers, e.g.{" "}
+        <code className="font-mono">/api/v1/status</code>.
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <input
-          className={`${inputClass} max-w-md`}
-          value={settings.api_key}
-          readOnly
-          aria-label="API key"
-          onFocus={(e) => e.target.select()}
-        />
+        <input className={`${inputClass} max-w-md`} value={settings.api_key} readOnly aria-label="API key" onFocus={(e) => e.target.select()} />
         <Button onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
         {confirming ? (
           <>
-            <Button
-              className="border-err/60 text-err"
-              onClick={() => renew.mutate()}
-              disabled={renew.isPending}
-            >
+            <Button className="border-err/60 text-err" onClick={() => renew.mutate()} disabled={renew.isPending}>
               Replace it
             </Button>
             <Button onClick={() => setConfirming(false)}>Keep</Button>
@@ -223,12 +175,7 @@ function ApiKey({ settings }: { settings: GeneralSettings }) {
           <Button onClick={() => setConfirming(true)}>New key</Button>
         )}
       </div>
-      {confirming && (
-        <p className="mt-2 text-sm text-warn">
-          Anything using the current key stops working until you give it the new
-          one.
-        </p>
-      )}
+      {confirming && <p className="mt-2 text-sm text-warn">Anything using the current key stops working until you give it the new one.</p>}
     </Card>
   );
 }
@@ -253,16 +200,8 @@ function Timezone({ settings }: { settings: GeneralSettings }) {
         }}
       >
         <div className="min-w-60 flex-1">
-          <Field
-            label="New schedules use"
-            hint="Schedules you already have keep their own timezone."
-          >
-            <input
-              className={inputClass}
-              list="general-timezones"
-              value={timezone}
-              onChange={(e) => setTimezone(e.target.value)}
-            />
+          <Field label="New schedules use" hint="Schedules you already have keep their own timezone.">
+            <input className={inputClass} list="general-timezones" value={timezone} onChange={(e) => setTimezone(e.target.value)} />
           </Field>
         </div>
         <datalist id="general-timezones">
@@ -270,10 +209,7 @@ function Timezone({ settings }: { settings: GeneralSettings }) {
             <option key={zone} value={zone} />
           ))}
         </datalist>
-        <Button
-          type="submit"
-          disabled={save.isPending || timezone === settings.timezone}
-        >
+        <Button type="submit" disabled={save.isPending || timezone === settings.timezone}>
           Save
         </Button>
       </form>
@@ -303,10 +239,8 @@ export function SettingsGeneral() {
       <Timezone settings={settings} />
       <Card title="Address">
         <p className="text-sm text-muted">
-          Studio listens on port{" "}
-          <span className="font-mono text-text">{settings.port}</span>. In
-          Docker, choose the port people use in the container's port mapping;
-          outside Docker, set <code className="font-mono">STUDIO_HOST</code> and{" "}
+          Studio listens on port <span className="font-mono text-text">{settings.port}</span>. In Docker, choose the port people use in the
+          container's port mapping; outside Docker, set <code className="font-mono">STUDIO_HOST</code> and{" "}
           <code className="font-mono">STUDIO_PORT</code>.
         </p>
       </Card>
