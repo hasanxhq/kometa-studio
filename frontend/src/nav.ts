@@ -20,6 +20,7 @@ export const sections: Section[] = [
         path: "/libraries",
         summary: "One card per Plex library, with its collections, overlays, defaults and operations.",
       },
+      { label: "Overlays", path: "/overlays", summary: "Kometa's overlays per library: what draws them, when, and turning them off and on." },
     ],
   },
   {

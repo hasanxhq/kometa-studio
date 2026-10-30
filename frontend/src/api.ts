@@ -222,6 +222,17 @@ export type ArrState = {
   libraries: LibraryRelevance[];
 };
 
+// The Overlays page: per library, what draws overlays and Kometa's Original Posters backup.
+export type OverlayLibrary = {
+  library: string; // the name in config.yml
+  plex_name: string;
+  off: boolean; // remove_overlays is set: Kometa keeps the original posters and draws none
+  files: { kind: string; value: string; error: string | null; files: { path: string; title: string | null; docs_url: string | null; overlays: string[] }[] }[];
+  backup: { posters: number; bytes: number } | null;
+  last_pass: { run_id: number; status: RunStatus; started_at: string | null; finished_at: string | null } | null;
+  maintainerr: { collections: string[]; on_top: boolean } | null; // Maintainerr collections with overlays in this library
+};
+
 // Kometa's calls per service today (from --timings), and MDBList's daily allowance (System → Status).
 export type Usage = {
   today: Record<string, number>;
@@ -604,6 +615,12 @@ export const api = {
   },
   jobs: () => request<{ jobs: Job[]; at: string }>("GET", "/jobs"),
   usage: () => request<Usage>("GET", "/usage"),
+  overlays: {
+    list: () => request<{ libraries: OverlayLibrary[] }>("GET", "/overlays"),
+    apply: (library: string) => request<{ run_id: number }>("POST", `/overlays/${encodeURIComponent(library)}/apply`),
+    off: (library: string) => request<{ run_id: number }>("POST", `/overlays/${encodeURIComponent(library)}/off`),
+    on: (library: string) => request<{ run_id: number }>("POST", `/overlays/${encodeURIComponent(library)}/on`),
+  },
   tasks: {
     list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),
     update: (name: TaskName, body: BuiltinTaskInput) => request<BuiltinTask>("PUT", `/tasks/${name}`, body),

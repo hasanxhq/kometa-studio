@@ -26,16 +26,25 @@ def read_section(config: Path | None, key: str) -> dict | None:
     return section if isinstance(section, dict) else None
 
 
-def with_section(text: str | None, key: str, values: dict[str, object] | None) -> str:
-    """``text`` with one section's keys set (a None value removes that key), or the whole section removed (``values`` None)."""
+def with_section(text: str | None, key: str | tuple[str, ...], values: dict[str, object] | None) -> str:
+    """``text`` with one section's keys set (a None value removes that key), or the whole section removed (``values`` None).
+
+    ``key`` may be a path to a nested section, such as ``("libraries", "Movies")``; the sections on the way must exist.
+    """
     document, indent = _parse(text) if text else (CommentedMap(), (2, 4, 2))
+    *parents, last = (key,) if isinstance(key, str) else key
+    container = document
+    for name in parents:
+        container = container.get(name)
+        if not isinstance(container, CommentedMap):
+            raise ValueError(f"config.yml has no {'.'.join(parents)} section")
     if values is None:
-        document.pop(key, None)
+        container.pop(last, None)
     else:
-        section = document.get(key)
+        section = container.get(last)
         if not isinstance(section, CommentedMap):
             section = CommentedMap()
-            document[key] = section
+            container[last] = section
         for name, value in values.items():
             if value is None:
                 section.pop(name, None)
@@ -44,7 +53,7 @@ def with_section(text: str | None, key: str, values: dict[str, object] | None) -
     return render(text, document, indent)
 
 
-async def save_section(writer: ConfigWriter, key: str, values: dict[str, object] | None, reason: str) -> dict:
+async def save_section(writer: ConfigWriter, key: str | tuple[str, ...], values: dict[str, object] | None, reason: str) -> dict:
     path = writer.config_path
     current = path.read_bytes() if path.exists() else None
     try:

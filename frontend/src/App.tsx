@@ -13,6 +13,7 @@ import { FileEditor } from "./pages/FileEditor";
 // The form editor brings Kometa's schema checking; load it when it's opened.
 const ItemEditor = lazy(() => import("./pages/ItemEditor"));
 import { Libraries } from "./pages/Libraries";
+import { Overlays } from "./pages/Overlays";
 import { LibraryDetail } from "./pages/LibraryDetail";
 import { Placeholder } from "./pages/Placeholder";
 import { RunDetail } from "./pages/RunDetail";
@@ -31,6 +32,7 @@ import { SystemUpdates } from "./pages/SystemUpdates";
 // Pages that exist so far; every other nav entry shows a placeholder.
 const built: Record<string, ComponentType> = {
   "/libraries": Libraries,
+  "/overlays": Overlays,
   "/activity/queue": ActivityQueue,
   "/activity/history": ActivityHistory,
   "/system/status": SystemStatus,

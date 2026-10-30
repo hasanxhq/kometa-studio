@@ -16,6 +16,7 @@ from . import __version__
 from .arr import Arr
 from .maintainerr import Maintainerr
 from .arr_routes import router as arr_router
+from .overlays_routes import router as overlays_router
 from .usage import ApiCalls
 from .usage import router as usage_router
 from .wanted import WantedRecorder
@@ -167,6 +168,7 @@ def create_app(
     app.include_router(arr_router)
     app.include_router(services_router)
     app.include_router(usage_router)
+    app.include_router(overlays_router)
     app.include_router(logs_router)
     app.include_router(jobs_router)
     app.include_router(maintainerr_router)

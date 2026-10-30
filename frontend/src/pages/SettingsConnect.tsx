@@ -18,7 +18,7 @@ import {
   type RunMode,
   type ServiceName,
 } from "../api";
-import { Button, Card, Field, inputClass } from "../components/ui";
+import { Button, Card, ConfirmButton, Field, inputClass } from "../components/ui";
 import { formatRelative, formatTime, modes } from "../runs";
 
 const apps: { kind: ArrKind; label: string }[] = [
@@ -100,21 +100,6 @@ function ProxyLogin({
         </div>
       )}
     </div>
-  );
-}
-
-/** A button that asks once more before doing something hard to undo. */
-function ConfirmButton({ label, confirm, warning, onConfirm, busy }: { label: string; confirm: string; warning: string; onConfirm: () => void; busy: boolean }) {
-  const [asking, setAsking] = useState(false);
-  if (!asking) return <Button onClick={() => setAsking(true)}>{label}</Button>;
-  return (
-    <span className="flex flex-wrap items-center gap-2">
-      <span className="text-sm text-warn">{warning}</span>
-      <Button className="border-err/60 text-err" onClick={onConfirm} disabled={busy}>
-        {confirm}
-      </Button>
-      <Button onClick={() => setAsking(false)}>Keep</Button>
-    </span>
   );
 }
 

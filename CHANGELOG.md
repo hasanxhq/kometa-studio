@@ -83,3 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Maintainerr's overlays are no longer switched off around runs.
 - Every run now records how many calls Kometa made to each service (TMDb, MDBList, IMDb, …), using Kometa's `--timings`. System → Status shows today's totals and how much of MDBList's daily allowance is used.
 - Runs after imports wait once MDBList reaches 80% of its daily allowance, until it resets at midnight UTC. Scheduled and manual runs always go. The jobs drawer and Health say when a run is waiting for this.
+- Overlays page, next to Libraries. For each library it shows:
+  - the overlay files it uses;
+  - when overlays are drawn: schedules, and imports from Radarr or Sonarr;
+  - the last overlay pass;
+  - Kometa's Original Posters backup (how many posters, how big);
+  - whether Maintainerr's overlays go on top.
+
+  Actions:
+  - **Apply now** runs overlays for that library.
+  - **Add** sets up a daily overlay pass.
+  - **Turn overlays off** has Kometa put the original posters back (with "Leave Maintainerr overlays alone" on, Maintainerr puts its posters back first and draws again over the originals), and Kometa draws none until they're turned on again. It's refused without an Original Posters backup.
