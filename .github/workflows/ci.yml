@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [dev, "release/**", "hotfix/**"]
+  pull_request:
+    branches: [main, dev, "release/**", "hotfix/**"]
+
+jobs:
+  # Branch protection requires this job by name, so keep it called "test".
+  # Each step runs only once its part of the project exists.
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: hashFiles('pyproject.toml') != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Backend tests
+        if: hashFiles('pyproject.toml') != ''
+        run: |
+          python -m pip install -e ".[dev]"
+          python -m pytest
+
+      - name: Set up Node
+        if: hashFiles('frontend/package.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Frontend tests
+        if: hashFiles('frontend/package.json') != ''
+        working-directory: frontend
+        run: |
+          npm ci
+          npm test
+
+      - name: Nothing to test yet
+        if: hashFiles('pyproject.toml') == '' && hashFiles('frontend/package.json') == ''
+        run: echo "::notice::No pyproject.toml or frontend/package.json yet, so there are no tests to run."
