@@ -80,7 +80,7 @@ async def put_webhooks(body: WebhooksIn, writer: Writer) -> dict:
     except NotificationProblem as problem:
         raise _refuse(problem.status, problem.message) from None
     if new == text:
-        return state(writer)
+        return state(writer) | {"saved": None}  # config.yml already says this
     return await _save(writer, new, body.base_hash, "Changed the webhook events in Settings → Notifications")
 
 
@@ -123,7 +123,7 @@ async def save_service(name: str, body: SaveServiceIn, request: Request, writer:
     text, _ = _current(writer)
     new = notifications.apply_service(text, name, values)
     if new == text:
-        return state(writer)
+        return state(writer) | {"saved": None}  # config.yml already says this
     label = notifications.SERVICES[name].label
     return await _save(writer, new, body.base_hash, f"Set up {label} in Settings → Notifications")
 

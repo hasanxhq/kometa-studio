@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings → Kometa shows where Kometa is, the run time limits and the flags the installed Kometa has (all set by the environment). Settings → UI has the Show Advanced switch. Every page in the menu is now built.
 - Phone-width pass: every page checked at 375 px with no sideways scrolling. Logs show the time and message, without Kometa's fixed-width columns, and wrap. Sign out sits in the menu on phones.
 - System → Updates: the installed Kometa and whether a newer one is out, with its release notes, from the check Kometa makes at the start of each run.
+- Settings → Notifications: set up Notifiarr, Gotify, ntfy and Apprise for Kometa's notifications, each with Test. Save stays off until Test passes for what you entered, and Studio tests again before it saves. Gotify and ntfy get one message titled "Kometa Studio test notification"; Notifiarr's API key is checked the way Kometa checks it; an Apprise configuration must list at least one service. Saved keys and tokens are never shown, only their last four characters; leave a field empty to keep the saved one. Remove takes a service out of config.yml. A grid of Kometa's webhook events (error, version, run start and end, changes, delete) against your services and webhook URLs sets where each event goes; Studio's own entries are shown locked and are never changed. Every save is checked by Kometa and backs up config.yml first, as any edit does.
 
 ### Changed
 

@@ -222,6 +222,33 @@ export type MaintainerrState = {
 
 export type MaintainerrInput = { url: string | null; username: string | null; password: string | null; leave_overlays_alone: boolean };
 
+// --- Settings → Notifications ---
+
+export type NotificationServiceName = "notifiarr" | "gotify" | "ntfy" | "apprise";
+
+// One config.yml key. A secret's value never comes back: `masked` says one is saved (e.g. "…ab12").
+export type NotificationKey = { name: string; label: string; secret: boolean; value: string | null; masked: string | null };
+
+export type NotificationService = { name: NotificationServiceName; label: string; configured: boolean; keys: NotificationKey[] };
+
+export type WebhookEvent = "error" | "version" | "run_start" | "run_end" | "changes" | "delete";
+
+// A column of the webhook grid. A URL's id hides it ("url:…"); "studio" is Studio's own receiver, which only Studio changes.
+export type WebhookTarget = { id: string; label: string; kind: "service" | "url" | "studio"; configured: boolean };
+
+export type NotificationsState = {
+  path: string;
+  hash: string | null; // config.yml's, which a save must match
+  error: string | null;
+  services: NotificationService[];
+  webhooks: { targets: WebhookTarget[]; events: Record<WebhookEvent, string[]> };
+  saved?: SaveResult;
+};
+
+export type NotificationValues = Record<string, string | null>; // a secret left null keeps the saved one
+
+export type NotificationTest = { ok: true; message: string } | { ok: false; error: string };
+
 // The jobs drawer (Bazarr-style): everything running, waiting, or recently finished.
 export type JobStatus = "running" | "pending" | "failed" | "completed";
 
@@ -519,6 +546,17 @@ export const api = {
         username,
         password,
       }),
+  },
+  notifications: {
+    get: () => request<NotificationsState>("GET", "/settings/notifications"),
+    test: (name: NotificationServiceName, values: NotificationValues) =>
+      request<NotificationTest>("POST", `/settings/notifications/${name}/test`, { values }),
+    save: (name: NotificationServiceName, values: NotificationValues, baseHash: string | null) =>
+      request<NotificationsState>("PUT", `/settings/notifications/${name}`, { values, base_hash: baseHash }),
+    remove: (name: NotificationServiceName, baseHash: string) =>
+      request<NotificationsState>("DELETE", `/settings/notifications/${name}?base_hash=${encodeURIComponent(baseHash)}`),
+    saveWebhooks: (events: Record<WebhookEvent, string[]>, baseHash: string | null) =>
+      request<NotificationsState>("PUT", "/settings/notifications/webhooks", { events, base_hash: baseHash }),
   },
   jobs: () => request<{ jobs: Job[]; at: string }>("GET", "/jobs"),
   tasks: {

@@ -338,3 +338,14 @@ def test_mask_url_hides_tokens_and_passwords():
     assert notifications.mask_url("https://hooks.slack.com/services/T0/B0/x") == "https://hooks.slack.com/services/••••"
     assert notifications.mask_url("http://me:pw@example.com/hook?token=abc&x=1") == "http://me:••••@example.com/hook?token=••••&x=1"
     assert notifications.mask_url("https://example.com/kometa") == "https://example.com/kometa"
+
+
+def test_saving_what_config_yml_already_says_writes_nothing(tmp_path, kometa, fake):
+    with make_client(tmp_path, kometa, fake) as client:
+        state = client.get("/api/v1/settings/notifications").json()
+        response = client.put("/api/v1/settings/notifications/gotify", json={"values": {"url": GOTIFY_URL, "token": None}, "base_hash": state["hash"]})
+    assert response.status_code == 200
+    assert response.json()["saved"] is None
+    assert [m["service"] for m in fake.messages] == ["gotify"]  # it was still tested
+    assert config_text(kometa) == CONFIG
+    assert backups(kometa) == []
