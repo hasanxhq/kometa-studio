@@ -11,7 +11,7 @@ import { RunRequestFields, draftFromRequest, emptyDraft, requestFromDraft, type 
 import { Button, Card, Field, Tag, inputClass } from "../components/ui";
 import { dayNames, describeDays, describeRequest, formatRelative, formatTime, statusLabels, statusTones, triggerLabels } from "../runs";
 
-type Draft = { name: string; run: RunDraft; days: number[]; time: string; timezone: string; catch_up: Schedule["catch_up"]; enabled: boolean };
+type Draft = { name: string; run: RunDraft; days: number[]; time: string; catch_up: Schedule["catch_up"]; enabled: boolean };
 
 const presets: { label: string; days: number[] }[] = [
   { label: "Every day", days: [0, 1, 2, 3, 4, 5, 6] },
@@ -19,24 +19,15 @@ const presets: { label: string; days: number[] }[] = [
   { label: "Weekends", days: [5, 6] },
 ];
 
-const timezones: string[] = (() => {
-  try {
-    return Intl.supportedValuesOf("timeZone");
-  } catch {
-    return [];
-  }
-})();
-
-function draftFrom(schedule: Schedule | null, defaultTimezone: string): Draft {
+function draftFrom(schedule: Schedule | null): Draft {
   if (!schedule) {
-    return { name: "", run: emptyDraft, days: presets[0].days, time: "03:00", timezone: defaultTimezone, catch_up: "run_once", enabled: true };
+    return { name: "", run: emptyDraft, days: presets[0].days, time: "03:00", catch_up: "run_once", enabled: true };
   }
   return {
     name: schedule.name,
     run: draftFromRequest(schedule.request),
     days: schedule.days,
     time: schedule.time,
-    timezone: schedule.timezone,
     catch_up: schedule.catch_up,
     enabled: schedule.enabled,
   };
@@ -44,18 +35,18 @@ function draftFrom(schedule: Schedule | null, defaultTimezone: string): Draft {
 
 function ScheduleForm({
   schedule,
-  defaultTimezone,
+  timezone,
   kometa,
   onDone,
 }: {
   schedule: Schedule | null; // null: a new one
-  defaultTimezone: string;
+  timezone: string; // Settings → General; the form has no picker of its own
   kometa: KometaInfo | undefined;
   onDone: () => void;
 }) {
   const { showAdvanced } = useAdvanced();
   const queryClient = useQueryClient();
-  const [draft, setDraft] = useState<Draft>(() => draftFrom(schedule, defaultTimezone));
+  const [draft, setDraft] = useState<Draft>(() => draftFrom(schedule));
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
   const save = useMutation({
     mutationFn: (body: ScheduleInput) => (schedule ? api.schedules.update(schedule.id, body) : api.schedules.create(body)),
@@ -73,7 +64,7 @@ function ScheduleForm({
       request: requestFromDraft(draft.run, true),
       days: draft.days,
       time: draft.time,
-      timezone: draft.timezone,
+      timezone: null, // Studio's Settings → General timezone
       catch_up: draft.catch_up,
       enabled: draft.enabled,
     });
@@ -115,25 +106,15 @@ function ScheduleForm({
         <input type="time" className={`${inputClass} w-40`} value={draft.time} onChange={(e) => set({ time: e.target.value })} required />
       </Field>
       {showAdvanced ? (
-        <>
-          <Field label="Timezone" hint="The time above is in this timezone. Daylight saving changes are handled.">
-            <input className={inputClass} list="studio-timezones" value={draft.timezone} onChange={(e) => set({ timezone: e.target.value })} />
-          </Field>
-          <datalist id="studio-timezones">
-            {timezones.map((zone) => (
-              <option key={zone} value={zone} />
-            ))}
-          </datalist>
-          <Field label="If Studio was off when this was due">
-            <select className={inputClass} value={draft.catch_up} onChange={(e) => set({ catch_up: e.target.value as Draft["catch_up"] })}>
-              <option value="run_once">Run it once when Studio starts again (within 24 hours)</option>
-              <option value="skip">Skip it and wait for the next time</option>
-            </select>
-          </Field>
-        </>
+        <Field label="If Studio was off when this was due">
+          <select className={inputClass} value={draft.catch_up} onChange={(e) => set({ catch_up: e.target.value as Draft["catch_up"] })}>
+            <option value="run_once">Run it once when Studio starts again (within 24 hours)</option>
+            <option value="skip">Skip it and wait for the next time</option>
+          </select>
+        </Field>
       ) : (
         <p className="text-sm text-muted">
-          At {draft.time} {draft.timezone}. {draft.catch_up === "run_once" ? "Missed runs are made up once when Studio starts again." : "Missed runs are skipped."}
+          At {draft.time} {timezone}. {draft.catch_up === "run_once" ? "Missed runs are made up once when Studio starts again." : "Missed runs are skipped."}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">
@@ -273,7 +254,7 @@ export function SystemTasks() {
       >
         {editing === "new" && (
           <div className="mb-4">
-            <ScheduleForm schedule={null} defaultTimezone={timezone} kometa={kometa.data} onDone={() => setEditing(null)} />
+            <ScheduleForm schedule={null} timezone={timezone} kometa={kometa.data} onDone={() => setEditing(null)} />
           </div>
         )}
         {list.length === 0 && editing !== "new" ? (
@@ -283,7 +264,7 @@ export function SystemTasks() {
             {list.map((schedule) =>
               editing === schedule.id ? (
                 <li key={schedule.id} className="py-4">
-                  <ScheduleForm schedule={schedule} defaultTimezone={timezone} kometa={kometa.data} onDone={() => setEditing(null)} />
+                  <ScheduleForm schedule={schedule} timezone={timezone} kometa={kometa.data} onDone={() => setEditing(null)} />
                 </li>
               ) : (
                 <ScheduleRow key={schedule.id} schedule={schedule} onEdit={() => setEditing(schedule.id)} />

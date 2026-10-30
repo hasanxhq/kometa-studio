@@ -1,6 +1,7 @@
 """/api/v1/auth and /api/v1/settings/general: signing in, and Settings → General (handoff v2 §8)."""
 
 import sqlite3
+from datetime import UTC, datetime
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 from . import auth
 from .auth import Caller
 from .db import set_setting
+from .scheduler import utc_text
 from .settings import Settings
 
 TIMEZONE = "general.timezone"
@@ -165,4 +167,9 @@ class TimezoneIn(BaseModel):
 async def put_timezone(body: TimezoneIn, request: Request, db: Db) -> dict:
     set_setting(db, TIMEZONE, body.timezone)
     request.app.state.timezone = body.timezone
+    # Schedules and Studio's tasks share this setting; rewriting them avoids a stale per-row zone.
+    now = utc_text(datetime.now(UTC))
+    with db:
+        db.execute("UPDATE schedules SET timezone = ?, last_fired_at = ?", (body.timezone, now))
+        db.execute("UPDATE tasks SET timezone = ?, last_fired_at = ?", (body.timezone, now))
     return general(request, db)
