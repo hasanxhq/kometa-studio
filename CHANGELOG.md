@@ -17,3 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Each run has its own page with Kometa's numbers (collections created, modified and deleted; items added and removed), the errors and changed collections Kometa reported, and the full log.
 - Studio adds its own webhook to every Kometa webhook event in `config.yml` (next to your existing targets, marked "managed by Kometa Studio"), so it learns what each run did.
 - A run that hits a critical error, such as a config error, counts as failed even though Kometa exits normally.
+- System → Tasks: schedule Kometa runs on chosen days at a set time, in your timezone (daylight saving handled). Each schedule shows its next and last run and has Run now, Edit, Pause and Delete.
+- Runs missed while Studio was off are made up once when it starts again (within 24 hours), or skipped if you choose. Tasks shows a notice when this happens, and the run is marked "Catch-up".
+- Schedules due at the same moment run in Kometa's order (operations, metadata, collections, overlays, playlists), and an "everything" run replaces the narrower runs it covers.
+- `STUDIO_TIMEZONE` sets the timezone for new schedules (default: the container's `TZ`).

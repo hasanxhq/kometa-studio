@@ -4,7 +4,7 @@ An arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kometa): it sch
 
 > **Unofficial.** Kometa Studio is an independent project. It is not made by, endorsed by, or affiliated with the Kometa team. It runs an unmodified Kometa install and never changes Kometa's code.
 
-**Status:** early development. Settings → Plex connects Kometa to your Plex server, and Activity → Queue runs Kometa with a live log and a summary of what changed. Scheduling comes next.
+**Status:** early development. Settings → Plex connects Kometa to your Plex server, Activity → Queue runs Kometa with a live log and a summary of what changed, and System → Tasks schedules runs. Browsing and editing your Kometa config comes next.
 
 ## Run it with Docker (WSL2 or Linux)
 
@@ -15,7 +15,7 @@ docker compose up -d --build
 
 Then open http://localhost:8484. `config/` becomes Kometa's config folder inside the container. Keep the repo and `config/` on WSL's own disk rather than under `/mnt/c`.
 
-Settings in `compose.yaml` can be overridden with environment variables: `PUID`, `PGID`, `TZ`, `STUDIO_PORT`, `KOMETA_CONFIG_DIR`, `KOMETA_TAG`.
+Settings in `compose.yaml` can be overridden with environment variables: `PUID`, `PGID`, `TZ`, `STUDIO_PORT`, `KOMETA_CONFIG_DIR`, `KOMETA_TAG`. Schedules use `TZ` unless `STUDIO_TIMEZONE` is set.
 
 ## Develop
 
