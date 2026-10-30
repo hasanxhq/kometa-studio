@@ -8,6 +8,32 @@ export type Status = {
   database: { schema_version: number };
 };
 
+// --- Sign-in and Settings → General ---
+
+export type AuthStatus = {
+  allowed: boolean;
+  reason: "login" | "setup" | "cross_site" | null; // why not, when not allowed
+  message: string | null;
+  configured: boolean; // a username and password are set
+  signed_in: boolean; // through a session cookie (so Sign out means something)
+  local: boolean;
+};
+
+export type AuthRequired = "enabled" | "disabled_for_local";
+
+export type GeneralSettings = {
+  auth: { configured: boolean; username: string | null; required: AuthRequired };
+  api_key: string;
+  timezone: string;
+  host: string;
+  port: number;
+};
+
+export type AuthInput = { username: string; password: string | null; required: AuthRequired; current_password: string | null };
+
+// Any 401 means the session ended (or sign-in was switched on): the app shows the login page.
+export const SIGNED_OUT_EVENT = "studio:signed-out";
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -295,6 +321,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
+    if (response.status === 401 && !path.startsWith("/auth")) window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
     throw await errorFrom(response);
   }
   return response.status === 204 ? (undefined as T) : ((await response.json()) as T);
@@ -302,6 +329,17 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   status: () => request<Status>("GET", "/status"),
+  auth: {
+    status: () => request<AuthStatus>("GET", "/auth"),
+    login: (username: string, password: string) => request<{ ok: true }>("POST", "/auth/login", { username, password }),
+    logout: () => request<{ ok: true }>("POST", "/auth/logout"),
+  },
+  general: {
+    get: () => request<GeneralSettings>("GET", "/settings/general"),
+    setAuth: (body: AuthInput) => request<GeneralSettings>("PUT", "/settings/auth", body),
+    newApiKey: () => request<GeneralSettings>("POST", "/settings/api-key"),
+    setTimezone: (timezone: string) => request<GeneralSettings>("PUT", "/settings/timezone", { timezone }),
+  },
   plex: {
     state: () => request<PlexState>("GET", "/plex"),
     startSignIn: () => request<PlexPin>("POST", "/plex/pin"),

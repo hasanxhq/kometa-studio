@@ -129,7 +129,7 @@ def make_client(tmp_path, kometa):
         kometa_python=Path(sys.executable),
         kometa_schemas=kometa / "json-schema",
     )
-    return TestClient(create_app(settings, static_dir=tmp_path / "no-static"))
+    return TestClient(create_app(settings, static_dir=tmp_path / "no-static"), client=("127.0.0.1", 50000))
 
 
 def test_editing_an_item_through_the_api(tmp_path, kometa):

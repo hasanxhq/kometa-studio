@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The YAML editor checks Kometa's schema as you type (the schema of the Kometa version installed), marking each problem where it is, and completes keys with their descriptions.
 - Forms for collections and overlays: sources, common settings (summary, sort title, sync mode, order, visibility, schedule) and, for overlays, position and colours with a poster preview. Show Advanced has every other setting Kometa knows, and settings it doesn't know (usually template variables) are kept as written. Saving a form changes only that collection or overlay, and Kometa checks it like any save.
 - Run just one collection from its form, in its library, without changing any files.
+- Sign-in, arr-style (Settings → General): a username and password, required for everyone or "disabled for local addresses". Until it's set up, Studio only answers this computer and your local network, and says so on every page. Requests through a reverse proxy never count as local. Repeated wrong passwords have to wait.
+- An API key for dashboards and scripts (`X-Api-Key` header or `apikey` parameter), shown in Settings → General with Copy and New key.
+- Settings → General sets the timezone new schedules use.
+- Studio refuses changes sent by other websites (cross-site requests), whatever the sign-in setting.
 
 ### Changed
 

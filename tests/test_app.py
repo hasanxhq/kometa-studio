@@ -8,7 +8,7 @@ from kometa_studio.settings import Settings
 
 def make_client(tmp_path, static_dir=None, **settings):
     app = create_app(Settings(data_dir=tmp_path / "data", **settings), static_dir=static_dir or tmp_path / "no-static")
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))  # a local address, so no sign-in is needed
 
 
 def test_status_reports_versions(tmp_path):

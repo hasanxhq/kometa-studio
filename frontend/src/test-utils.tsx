@@ -9,8 +9,11 @@ import { App } from "./App";
 
 type Handler = (body: unknown) => unknown;
 
-// Routes "METHOD /path" to a handler; records each call's body.
+export const signedIn = { allowed: true, reason: null, message: null, configured: true, signed_in: true, local: true };
+
+// Routes "METHOD /path" to a handler; records each call's body. Sign-in is set up and this browser is in, unless a test says otherwise.
 export function mockApi(routes: Record<string, Handler>) {
+  routes = { "GET /auth": () => signedIn, ...routes };
   const calls: { route: string; body: unknown }[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const route = `${init?.method ?? "GET"} ${String(input).replace("/api/v1", "")}`;

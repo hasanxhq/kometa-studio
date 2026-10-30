@@ -13,10 +13,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .auth import AuthMiddleware, LoginThrottle
+from .auth_routes import TIMEZONE
+from .auth_routes import router as auth_router
 from .config_routes import router as config_router
 from .config_write import ConfigWriter
 from .crypto import SecretBox
-from .db import open_database, schema_version
+from .db import get_setting, open_database, schema_version
 from .plex_routes import router as plex_router
 from .runner import Runner
 from .runs_routes import router as runs_router
@@ -90,6 +93,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         app.state.db = open_database(settings.db_path)
+        app.state.timezone = get_setting(app.state.db, TIMEZONE) or app.state.timezone
         app.state.secrets = SecretBox.load_or_create(settings.data_dir)
         app.state.http = httpx.AsyncClient(transport=http_transport)
         runner = Runner(app.state.db, settings, webhook_url(settings, webhook_token(app.state.db)))
@@ -114,10 +118,13 @@ def create_app(
 
     app = FastAPI(title="Kometa Studio", version=__version__, lifespan=lifespan)
     app.state.settings = settings
-    app.state.timezone = default_timezone(settings.timezone)
+    app.state.timezone = default_timezone(settings.timezone)  # Settings → General can change it
+    app.state.login_throttle = LoginThrottle()
     # One writer, so its lock keeps saves one at a time.
     app.state.writer = ConfigWriter(settings) if settings.kometa_config else None
+    app.add_middleware(AuthMiddleware)
     app.include_router(api)
+    app.include_router(auth_router)
     app.include_router(plex_router)
     app.include_router(runs_router)
     app.include_router(schedules_router)

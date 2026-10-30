@@ -37,7 +37,7 @@ def make_client(tmp_path, **settings):
         "kill_after": 0.5,
     }
     app = create_app(Settings(**(defaults | settings)), static_dir=tmp_path / "no-static")
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 def wait_for(client, run_id, statuses=FINISHED, timeout=15):
