@@ -26,6 +26,7 @@ An unofficial, arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kom
 | `kometa_studio/health.py` | Health checks for System → Status and `/api/v1/status`, and Kometa updates from its `version` webhook. Keep checks cheap; anything that calls out (Plex) is remembered for a few minutes |
 | `kometa_studio/tasks.py`, `tasks_routes.py`, `full_backup.py` | Studio's built-in tasks (full backup, full check) with their own schedules, ticked by the scheduler; `/api/v1/tasks` and `/api/v1/backups/full`. Full backups live in `<data dir>/full-backups/`, never inside `backups/` (that folder is the YAML backups, one subfolder each) |
 | `kometa_studio/arr_hooks.py`, `arr_routes.py` | Radarr/Sonarr's webhook (`/api/v1/hooks/arr?token=`, open to the internet but token-checked) and its debounce: the pending run is a setting in SQLite, queued by the scheduler's tick |
+| `kometa_studio/logs_routes.py` | Kometa's own log files under `<config>/logs` for System → Logs; only `*.log` / `*.log.N` inside that folder are served |
 | `kometa_studio/crypto.py` | Encrypts secrets kept in SQLite with the key in `<data dir>/secret.key`. Never send stored tokens to the browser |
 | `kometa_studio/migrations/` | Numbered schema migrations (`0001_initial.sql`, ...). Never edit one that has been merged; add the next number |
 | `kometa_studio/static/` | Built frontend (git-ignored; `npm run build` writes it) |

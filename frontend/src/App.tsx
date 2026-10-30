@@ -20,6 +20,7 @@ import { SettingsConnect } from "./pages/SettingsConnect";
 import { SettingsGeneral } from "./pages/SettingsGeneral";
 import { SettingsPlex } from "./pages/SettingsPlex";
 import { SystemBackup } from "./pages/SystemBackup";
+import { SystemLogs } from "./pages/SystemLogs";
 import { SystemStatus } from "./pages/SystemStatus";
 import { SystemTasks } from "./pages/SystemTasks";
 import { SystemUpdates } from "./pages/SystemUpdates";
@@ -32,6 +33,7 @@ const built: Record<string, ComponentType> = {
   "/system/status": SystemStatus,
   "/system/tasks": SystemTasks,
   "/system/backup": SystemBackup,
+  "/system/logs": SystemLogs,
   "/system/updates": SystemUpdates,
   "/settings/general": SettingsGeneral,
   "/settings/plex": SettingsPlex,

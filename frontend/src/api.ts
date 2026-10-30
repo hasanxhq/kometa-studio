@@ -172,6 +172,11 @@ export type ArrState = {
   pending: { first_at: string; last_at: string; due_at: string; imports: number; titles: string[]; kinds: ArrKind[] } | null;
 };
 
+// Kometa's own log files (System → Logs).
+export type LogLevel = "TRACE" | "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
+export type LogFile = { path: string; size: number; modified: number };
+export type LogView = { path: string; lines: { level: LogLevel; text: string }[]; truncated: boolean; size: number };
+
 // Studio's own tasks on System → Tasks.
 export type TaskName = "full_backup" | "full_check";
 
@@ -424,6 +429,12 @@ export const api = {
     get: () => request<ArrState>("GET", "/settings/arr"),
     save: (settings: ArrSettings) => request<ArrState>("PUT", "/settings/arr", settings),
     newToken: () => request<ArrState>("POST", "/settings/arr/token"),
+  },
+  logs: {
+    list: () => request<{ files: LogFile[] }>("GET", "/logs"),
+    read: (path: string, level: LogLevel, q: string) =>
+      request<LogView>("GET", `/logs/file?${new URLSearchParams({ path, level, q }).toString()}`),
+    downloadUrl: (path: string) => `/api/v1/logs/download?path=${encodeURIComponent(path)}`,
   },
   tasks: {
     list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),
