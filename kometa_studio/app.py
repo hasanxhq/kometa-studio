@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
+from .config_routes import router as config_router
 from .crypto import SecretBox
 from .db import open_database, schema_version
 from .plex_routes import router as plex_router
@@ -117,5 +118,6 @@ def create_app(
     app.include_router(plex_router)
     app.include_router(runs_router)
     app.include_router(schedules_router)
+    app.include_router(config_router)
     mount_frontend(app, static_dir)
     return app
