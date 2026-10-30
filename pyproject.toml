@@ -17,6 +17,7 @@ dependencies = [
     "httpx>=0.28",
     "ruamel.yaml>=0.18",
     "cryptography>=43",
+    "tzdata>=2024.1",  # timezone data for zoneinfo where the system has none
 ]
 
 [project.optional-dependencies]

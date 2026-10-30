@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
 
@@ -18,6 +19,9 @@ from .plex_routes import router as plex_router
 from .runner import Runner
 from .runs_routes import router as runs_router
 from .runs_routes import webhook_token, webhook_url
+from .scheduler import Scheduler, default_timezone
+from .schedules_routes import next_scheduled
+from .schedules_routes import router as schedules_router
 from .settings import Settings
 
 STATIC_DIR = Path(str(files("kometa_studio") / "static"))
@@ -50,6 +54,7 @@ async def status(request: Request) -> dict:
         "runs": {
             "current": request.app.state.runner.current_run_id,
             "queued": request.app.state.db.execute("SELECT count(*) FROM runs WHERE status = 'queued'").fetchone()[0],
+            "next_scheduled": next_scheduled(request.app.state.db, datetime.now(UTC)),
         },
     }
 
@@ -88,6 +93,10 @@ def create_app(
         runner = Runner(app.state.db, settings, webhook_url(settings, webhook_token(app.state.db)))
         app.state.runner = runner
         runner.start()
+        # Started after the runner has marked cut-off runs interrupted; its first tick catches up on missed runs.
+        scheduler = Scheduler(app.state.db, runner)
+        app.state.scheduler = scheduler
+        scheduler.start()
         # Learn which flags this Kometa has, in the background: importing Kometa takes a few seconds.
         probe = asyncio.create_task(runner.probe_flags())
         try:
@@ -96,14 +105,17 @@ def create_app(
             probe.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await probe
+            await scheduler.stop()
             await runner.stop()
             await app.state.http.aclose()
             app.state.db.close()
 
     app = FastAPI(title="Kometa Studio", version=__version__, lifespan=lifespan)
     app.state.settings = settings
+    app.state.timezone = default_timezone(settings.timezone)
     app.include_router(api)
     app.include_router(plex_router)
     app.include_router(runs_router)
+    app.include_router(schedules_router)
     mount_frontend(app, static_dir)
     return app
