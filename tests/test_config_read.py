@@ -201,6 +201,7 @@ def test_library_cards(tmp_path, kometa):
     movies, tv = body["libraries"]
     assert movies | {"problems": None} == {
         "name": "Movies",
+        "plex_name": "Movies",
         "collection_files": 3,
         "overlay_files": 2,
         "metadata_files": 0,
@@ -212,6 +213,14 @@ def test_library_cards(tmp_path, kometa):
     }
     assert movies["problems"] == []
     assert len(tv["problems"]) == 2
+
+
+def test_library_name_maps_a_config_entry_to_another_plex_library(tmp_path, kometa):
+    config = kometa / "config" / "config.yml"
+    config.write_text(config.read_text().replace("  TV Shows:\n", "  TV Shows:\n    library_name: Series\n"))
+    with make_client(tmp_path, kometa) as client:
+        tv = client.get("/api/v1/config").json()["libraries"][1]
+    assert (tv["name"], tv["plex_name"]) == ("TV Shows", "Series")
 
 
 def test_one_library(tmp_path, kometa):

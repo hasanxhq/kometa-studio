@@ -43,6 +43,8 @@ def _counts(library: Library) -> dict:
     problems += [f.error for refs in (library.collection_files, library.overlay_files) for f in files(refs) if f.error]
     return {
         "name": library.name,
+        # Kometa's library_name points a config entry at a Plex library with another title.
+        "plex_name": str(library.settings.get("library_name") or library.name),
         "collection_files": len(library.collection_files),
         "overlay_files": len(library.overlay_files),
         "metadata_files": len(library.metadata_files),
