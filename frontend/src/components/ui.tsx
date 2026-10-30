@@ -30,8 +30,10 @@ export function Button({ variant = "secondary", className = "", type = "button",
   );
 }
 
-export function Tag({ tone = "muted", children }: { tone?: "muted" | "ok" | "warn" | "err"; children: ReactNode }) {
-  const colour = { muted: "text-muted", ok: "text-ok", warn: "text-warn", err: "text-err" }[tone];
+export type Tone = "muted" | "ok" | "warn" | "err" | "info";
+
+export function Tag({ tone = "muted", children }: { tone?: Tone; children: ReactNode }) {
+  const colour = { muted: "text-muted", ok: "text-ok", warn: "text-warn", err: "text-err", info: "text-info" }[tone];
   return <span className={`rounded border border-border px-1.5 py-0.5 text-xs ${colour}`}>{children}</span>;
 }
 

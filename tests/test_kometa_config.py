@@ -1,6 +1,9 @@
 import stat
 
-from kometa_studio.kometa_config import read_plex, write_plex
+import pytest
+from ruamel.yaml import YAML
+
+from kometa_studio.kometa_config import ensure_studio_webhooks, read_plex, write_plex
 
 CONFIG = """\
 ## Kometa config, managed by hand until now
@@ -66,3 +69,66 @@ def test_file_permissions_are_kept(tmp_path):
     write_plex(path, "http://server:32400", "tok", tmp_path / "backups")
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".")] == []  # no temp files left behind
+
+
+STUDIO = "http://127.0.0.1:8484/api/v1/kometa/events?token=abc"
+HOOKS = """\
+libraries:
+  Movies:
+    webhooks:
+      changes: https://discord.com/api/webhooks/x
+  TV Shows:
+    collection_files:
+      - default: basic
+webhooks:
+  error: notifiarr         # tell me
+  run_end:
+    - ntfy
+    - http://127.0.0.1:9999/api/v1/kometa/events?token=old
+  run_start:
+plex:
+  url: http://plex:32400
+"""
+
+
+def test_studio_joins_every_webhook_event(tmp_path):
+    path = tmp_path / "config.yml"
+    path.write_text(HOOKS)
+
+    assert ensure_studio_webhooks(path, STUDIO, tmp_path / "backups") is True
+
+    document = YAML().load(path.read_text())
+    hooks = document["webhooks"]
+    assert list(hooks["error"]) == ["notifiarr", STUDIO]
+    assert list(hooks["run_end"]) == ["ntfy", STUDIO]  # the old port and token are replaced
+    for event in ("run_start", "version", "changes", "delete"):
+        assert list(hooks[event]) == [STUDIO]
+    # A library's own `changes` replaces the global one in Kometa, so Studio joins it too.
+    assert list(document["libraries"]["Movies"]["webhooks"]["changes"]) == ["https://discord.com/api/webhooks/x", STUDIO]
+    assert "webhooks" not in document["libraries"]["TV Shows"]
+    assert "# tell me" in path.read_text()
+    assert path.read_text().count("# managed by Kometa Studio") == 7
+    assert document["plex"]["url"] == "http://plex:32400"
+
+
+def test_studio_webhooks_are_only_written_once(tmp_path):
+    path = tmp_path / "config.yml"
+    path.write_text(HOOKS)
+    ensure_studio_webhooks(path, STUDIO, tmp_path / "backups")
+    written = path.read_text()
+
+    assert ensure_studio_webhooks(path, STUDIO, tmp_path / "backups") is False
+    assert path.read_text() == written
+    assert len(list((tmp_path / "backups").iterdir())) == 1
+
+
+def test_a_config_without_lists_gets_the_templates_list_style(tmp_path):
+    path = tmp_path / "config.yml"
+    path.write_text("plex:\n  url: http://plex:32400\n")
+    ensure_studio_webhooks(path, STUDIO, tmp_path / "backups")
+    assert f"  run_end:\n    - {STUDIO}  # managed by Kometa Studio\n" in path.read_text()
+
+
+def test_webhooks_need_an_existing_config(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        ensure_studio_webhooks(tmp_path / "config.yml", STUDIO, tmp_path / "backups")

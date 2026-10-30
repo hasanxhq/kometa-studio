@@ -1,5 +1,7 @@
 """FastAPI application: the JSON API under /api/v1 plus the built React app."""
 
+import asyncio
+import contextlib
 from contextlib import asynccontextmanager
 from importlib.resources import files
 from pathlib import Path
@@ -13,6 +15,9 @@ from . import __version__
 from .crypto import SecretBox
 from .db import open_database, schema_version
 from .plex_routes import router as plex_router
+from .runner import Runner
+from .runs_routes import router as runs_router
+from .runs_routes import webhook_token, webhook_url
 from .settings import Settings
 
 STATIC_DIR = Path(str(files("kometa_studio") / "static"))
@@ -33,7 +38,7 @@ api = APIRouter(prefix="/api/v1")
 
 
 @api.get("/status")
-def status(request: Request) -> dict:
+async def status(request: Request) -> dict:
     settings: Settings = request.app.state.settings
     return {
         "version": __version__,
@@ -42,6 +47,10 @@ def status(request: Request) -> dict:
             "config": str(settings.kometa_config) if settings.kometa_config else None,
         },
         "database": {"schema_version": schema_version(request.app.state.db)},
+        "runs": {
+            "current": request.app.state.runner.current_run_id,
+            "queued": request.app.state.db.execute("SELECT count(*) FROM runs WHERE status = 'queued'").fetchone()[0],
+        },
     }
 
 
@@ -76,9 +85,18 @@ def create_app(
         app.state.db = open_database(settings.db_path)
         app.state.secrets = SecretBox.load_or_create(settings.data_dir)
         app.state.http = httpx.AsyncClient(transport=http_transport)
+        runner = Runner(app.state.db, settings, webhook_url(settings, webhook_token(app.state.db)))
+        app.state.runner = runner
+        runner.start()
+        # Learn which flags this Kometa has, in the background: importing Kometa takes a few seconds.
+        probe = asyncio.create_task(runner.probe_flags())
         try:
             yield
         finally:
+            probe.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await probe
+            await runner.stop()
             await app.state.http.aclose()
             app.state.db.close()
 
@@ -86,5 +104,6 @@ def create_app(
     app.state.settings = settings
     app.include_router(api)
     app.include_router(plex_router)
+    app.include_router(runs_router)
     mount_frontend(app, static_dir)
     return app

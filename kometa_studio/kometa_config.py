@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ruamel.yaml import YAML
-from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.util import load_yaml_guess_indent
 
 
@@ -43,9 +43,14 @@ def _load(path: Path) -> tuple[CommentedMap, tuple[int, int, int]]:
     if not path.exists():
         return CommentedMap(), TEMPLATE_INDENT
     text = path.read_text(encoding="utf-8")
-    # ruamel guesses list indentation (where items start, where the dash sits) but not mapping indentation.
+    # ruamel guesses list indentation (where items start, where the dash sits) but not mapping indentation,
+    # and its guess only means something if the file has a block list.
     _, sequence, offset = load_yaml_guess_indent(text)
-    indent = (_mapping_indent(text), sequence or TEMPLATE_INDENT[1], offset if sequence else TEMPLATE_INDENT[2])
+    has_list = any(line.lstrip(" ").startswith("- ") for line in text.splitlines())
+    if has_list and sequence:
+        indent = (_mapping_indent(text), sequence, offset or 0)
+    else:
+        indent = (_mapping_indent(text), *TEMPLATE_INDENT[1:])
     document = _yaml(indent).load(text)
     if document is None:
         return CommentedMap(), TEMPLATE_INDENT
@@ -84,7 +89,68 @@ def write_plex(path: Path, url: str, token: str, backup_root: Path) -> Path | No
         document["plex"] = plex
     plex["url"] = url
     plex["token"] = token
+    return _save(path, document, indent, backup_root)
 
+
+# --- Studio's webhook receiver (handoff v2 §5.2) ----------------------------------
+
+WEBHOOK_EVENTS = ("error", "version", "run_start", "run_end", "changes", "delete")
+EVENTS_PATH = "/api/v1/kometa/events"
+STUDIO_MARK = "managed by Kometa Studio"
+
+
+def is_studio_webhook(value: object) -> bool:
+    return isinstance(value, str) and EVENTS_PATH in value and "token=" in value
+
+
+def _add_studio_webhook(container: CommentedMap, key: str, url: str) -> bool:
+    """Make Studio's URL the last target of one webhook attribute, keeping the user's own. Returns whether anything changed."""
+    current = container.get(key)
+    if isinstance(current, CommentedSeq):
+        targets = current
+    else:
+        targets = CommentedSeq([] if current is None or current == "" else [current])
+    studio = [index for index, value in enumerate(targets) if is_studio_webhook(value)]
+    if targets is current and studio == [len(targets) - 1] and targets[-1] == url:
+        return False
+    for index in reversed(studio):  # an old port or token
+        del targets[index]
+    targets.append(url)
+    targets.yaml_add_eol_comment(STUDIO_MARK, len(targets) - 1)
+    container[key] = targets
+    return True
+
+
+def ensure_studio_webhooks(path: Path, url: str, backup_root: Path) -> bool:
+    """Send every Kometa webhook event to Studio as well. Returns whether config.yml had to change.
+
+    A library's own ``webhooks.changes`` replaces the global one in Kometa, so Studio adds itself there too.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"{path} doesn't exist yet")
+    document, indent = _load(path)
+    changed = False
+    hooks = document.get("webhooks")
+    if not isinstance(hooks, CommentedMap):
+        hooks = CommentedMap()
+        document["webhooks"] = hooks
+        changed = True
+    for event in WEBHOOK_EVENTS:
+        changed |= _add_studio_webhook(hooks, event, url)
+
+    libraries = document.get("libraries")
+    if isinstance(libraries, CommentedMap):
+        for library in libraries.values():
+            library_hooks = library.get("webhooks") if isinstance(library, CommentedMap) else None
+            if isinstance(library_hooks, CommentedMap) and library_hooks.get("changes") not in (None, "", []):
+                changed |= _add_studio_webhook(library_hooks, "changes", url)
+
+    if changed:
+        _save(path, document, indent, backup_root)
+    return changed
+
+
+def _save(path: Path, document: CommentedMap, indent: tuple[int, int, int], backup_root: Path) -> Path | None:
     buffer = io.StringIO()
     _yaml(indent).dump(document, buffer)
     backup = backup_file(path, backup_root)

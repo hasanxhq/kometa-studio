@@ -1,10 +1,8 @@
-import { QueryClient } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { App } from "../App";
 import type { PlexServer, PlexState } from "../api";
+import { mockApi, renderAt } from "../test-utils";
 import { signInTiming } from "./SettingsPlex";
 
 const REMOTE = "https://203-0-113-7.abc123.plex.direct:32400";
@@ -28,31 +26,8 @@ const seedbox: PlexServer = {
   ],
 };
 
-type Handler = (body: unknown) => unknown;
-
-// Routes "METHOD /path" to a handler; records each call's body.
-function mockApi(routes: Record<string, Handler>) {
-  const calls: { route: string; body: unknown }[] = [];
-  vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-    const route = `${init?.method ?? "GET"} ${String(input).replace("/api/v1", "")}`;
-    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
-    calls.push({ route, body });
-    const handler = routes[route];
-    if (!handler) return new Response(JSON.stringify({ detail: `no mock for ${route}` }), { status: 404 });
-    const result = handler(body);
-    if (result instanceof Response) return result;
-    return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
-  });
-  return calls;
-}
-
 function renderPage() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <MemoryRouter initialEntries={["/settings/plex"]}>
-      <App queryClient={queryClient} />
-    </MemoryRouter>,
-  );
+  return renderAt("/settings/plex");
 }
 
 beforeEach(() => {

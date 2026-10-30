@@ -4,7 +4,7 @@ An arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kometa): it sch
 
 > **Unofficial.** Kometa Studio is an independent project. It is not made by, endorsed by, or affiliated with the Kometa team. It runs an unmodified Kometa install and never changes Kometa's code.
 
-**Status:** early development. The app shell runs, and Settings → Plex connects Kometa to your Plex server. Running Kometa comes next.
+**Status:** early development. Settings → Plex connects Kometa to your Plex server, and Activity → Queue runs Kometa with a live log and a summary of what changed. Scheduling comes next.
 
 ## Run it with Docker (WSL2 or Linux)
 
