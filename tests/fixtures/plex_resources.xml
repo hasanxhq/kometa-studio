@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Shaped like https://plex.tv/api/resources?includeHttps=1&includeRelay=1; addresses and tokens are made up. -->
+<MediaContainer size="3">
+  <Device name="Seedbox" product="Plex Media Server" productVersion="1.41.2.9200" platform="Linux" platformVersion="22.04" device="PC"
+          clientIdentifier="srv1" createdAt="1700000000" lastSeenAt="1761780000" provides="server" owned="1" accessToken="srv-token"
+          publicAddress="203.0.113.7" httpsRequired="0" synced="0" relay="1" dnsRebindingProtection="0" natLoopbackSupported="1"
+          publicAddressMatches="0" presence="1">
+    <Connection protocol="https" address="172.17.0.2" port="32400" uri="https://172-17-0-2.abc123.plex.direct:32400" local="1"/>
+    <Connection protocol="https" address="203.0.113.7" port="32400" uri="https://203-0-113-7.abc123.plex.direct:32400" local="0"/>
+    <Connection protocol="https" address="198.51.100.9" port="8443" uri="https://198-51-100-9.abc123.plex.direct:8443" local="0" relay="1"/>
+  </Device>
+  <Device name="Friend's server" product="Plex Media Server" productVersion="1.40.0.7998" platform="Linux" clientIdentifier="shared1"
+          provides="server" owned="0" accessToken="shared-token" presence="1">
+    <Connection protocol="https" address="192.0.2.10" port="32400" uri="https://192-0-2-10.def456.plex.direct:32400" local="0"/>
+  </Device>
+  <Device name="Living room TV" product="Plex for Android (TV)" clientIdentifier="tv1" provides="client,player" owned="1" accessToken="tv-token">
+    <Connection protocol="http" address="192.168.1.20" port="32500" uri="http://192.168.1.20:32500" local="1"/>
+  </Device>
+</MediaContainer>
