@@ -363,7 +363,7 @@ export type BuiltinTask = {
   last: { started_at: string; finished_at: string | null; status: "running" | "succeeded" | "failed" | "interrupted"; message: string | null } | null;
 };
 
-export type BuiltinTaskInput = Pick<BuiltinTask, "enabled" | "days" | "time" | "timezone" | "options">;
+export type BuiltinTaskInput = Pick<BuiltinTask, "enabled" | "days" | "time" | "options"> & { timezone?: string | null };
 
 export type FullBackup = { name: string; size: number; created: string };
 

@@ -182,10 +182,12 @@ def test_the_full_check_task_keeps_kometas_verdict(tmp_path, config):
 
 def test_changing_a_tasks_schedule(tmp_path, config):
     with make_client(tmp_path, config) as client:
-        bad = client.put("/api/v1/tasks/full_backup", json={"enabled": True, "days": [], "time": "04:30", "timezone": "UTC"})
+        bad = client.put("/api/v1/tasks/full_backup", json={"enabled": True, "days": [], "time": "04:30"})
         changed = client.put(
             "/api/v1/tasks/full_backup", json={"enabled": True, "days": [0, 3], "time": "02:15", "timezone": "Asia/Kolkata", "options": {"keep": 10}}
         )
+        # No timezone: Settings → General (UTC unless STUDIO_TIMEZONE / TZ is set).
+        defaulted = client.put("/api/v1/tasks/full_check", json={"enabled": True, "days": [1], "time": "05:00", "options": {}})
         missing = client.put("/api/v1/tasks/nothing", json={"enabled": True, "days": [0], "time": "02:15", "timezone": "UTC"})
     assert bad.status_code == 422
     assert missing.status_code == 404
@@ -193,3 +195,4 @@ def test_changing_a_tasks_schedule(tmp_path, config):
     assert (body["days"], body["time"], body["timezone"], body["options"]) == ([0, 3], "02:15", "Asia/Kolkata", {"keep": 10})
     assert body["next_run"] is not None
     assert json.loads(json.dumps(body))["running"] is False
+    assert defaulted.json()["timezone"] == "UTC"

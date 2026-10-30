@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Settings → General: the timezone list is labelled `UTC +05:30 (Asia/Kolkata)` (offset then IANA name). Schedules and Studio's built-in tasks always use this setting; their forms no longer have a timezone picker. Changing it updates every schedule and task.
 - A library's Collections tab says when Plex can't be reached, instead of saying Plex has no library by that name.
 
 - When Studio edits config.yml itself (Plex connection, webhook entries), it keeps the file's own formatting instead of restyling it.

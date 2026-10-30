@@ -180,3 +180,21 @@ def test_the_timezone_setting_survives_a_restart(tmp_path):
         client.put("/api/v1/settings/timezone", json={"timezone": "Asia/Kolkata"})
     with make_client(tmp_path) as client:
         assert client.get("/api/v1/schedules").json()["timezone"] == "Asia/Kolkata"
+
+
+def test_changing_the_timezone_updates_schedules_and_tasks(tmp_path):
+    with make_client(tmp_path) as client:
+        client.post(
+            "/api/v1/schedules",
+            json={"name": "Nightly", "days": list(range(7)), "time": "03:00", "timezone": "UTC"},
+        )
+        client.put(
+            "/api/v1/tasks/full_backup",
+            json={"enabled": True, "days": [6], "time": "04:30", "timezone": "UTC", "options": {"keep": 4}},
+        )
+        client.put("/api/v1/settings/timezone", json={"timezone": "Asia/Kolkata"})
+        schedules = client.get("/api/v1/schedules").json()
+        tasks = {row["name"]: row for row in client.get("/api/v1/tasks").json()["tasks"]}
+    assert schedules["timezone"] == "Asia/Kolkata"
+    assert schedules["schedules"][0]["timezone"] == "Asia/Kolkata"
+    assert tasks["full_backup"]["timezone"] == "Asia/Kolkata"

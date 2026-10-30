@@ -137,4 +137,19 @@ describe("Settings → General", () => {
     fireEvent.click(screen.getByRole("button", { name: "Replace it" }));
     await waitFor(() => expect(screen.getByLabelText("API key")).toHaveValue("fedcba9876543210fedcba9876543210"));
   });
+
+  it("saves a timezone chosen from the UTC-offset list", async () => {
+    const calls = mockApi({
+      "GET /settings/general": () => general,
+      "PUT /settings/timezone": () => ({ ...general, timezone: "UTC" }),
+    });
+    renderAt("/settings/general");
+
+    const select = await screen.findByLabelText("Schedules and tasks use");
+    expect(within(select).getByRole("option", { name: /UTC \+05:30 \(Asia\/Kolkata\)/ })).toBeInTheDocument();
+    fireEvent.change(select, { target: { value: "UTC" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/timezone")?.body).toEqual({ timezone: "UTC" }));
+  });
 });

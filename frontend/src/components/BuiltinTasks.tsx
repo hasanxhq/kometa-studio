@@ -41,7 +41,7 @@ function TaskForm({ task, onDone }: { task: BuiltinTask; onDone: () => void }) {
     enabled: task.enabled,
     days: task.days,
     time: task.time,
-    timezone: task.timezone,
+    timezone: null, // Settings → General
     options: task.options,
   });
   const save = useMutation({
@@ -81,11 +81,8 @@ function TaskForm({ task, onDone }: { task: BuiltinTask; onDone: () => void }) {
         </div>
       </fieldset>
       <div className="flex flex-wrap gap-4">
-        <Field label="Time">
+        <Field label="Time" hint={`In ${task.timezone} (Settings → General).`}>
           <input type="time" className={`${inputClass} w-40`} value={draft.time} onChange={(e) => setDraft({ ...draft, time: e.target.value })} required />
-        </Field>
-        <Field label="Timezone">
-          <input className={`${inputClass} w-56`} value={draft.timezone} onChange={(e) => setDraft({ ...draft, timezone: e.target.value })} required />
         </Field>
         {task.name === "full_backup" && (
           <Field label="Backups to keep">

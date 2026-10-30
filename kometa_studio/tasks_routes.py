@@ -44,7 +44,7 @@ class TaskIn(BaseModel):
     enabled: bool
     days: list[int] = Field(min_length=1)
     time: str
-    timezone: str
+    timezone: str | None = None  # None: Settings → General
     options: TaskOptions = Field(default_factory=TaskOptions)
 
     @field_validator("days")
@@ -63,11 +63,12 @@ class TaskIn(BaseModel):
 
     @field_validator("timezone")
     @classmethod
-    def check_timezone(cls, value: str) -> str:
-        try:
-            ZoneInfo(value)
-        except (ZoneInfoNotFoundError, ValueError):
-            raise ValueError(f"Unknown timezone: {value}") from None
+    def check_timezone(cls, value: str | None) -> str | None:
+        if value is not None:
+            try:
+                ZoneInfo(value)
+            except (ZoneInfoNotFoundError, ValueError):
+                raise ValueError(f"Unknown timezone: {value}") from None
         return value
 
 
@@ -80,13 +81,14 @@ async def list_tasks(db: Db, tasks: TasksDep) -> dict:
 
 
 @router.put("/tasks/{name}")
-async def update_task(name: str, body: TaskIn, db: Db, tasks: TasksDep) -> dict:
+async def update_task(name: str, body: TaskIn, request: Request, db: Db, tasks: TasksDep) -> dict:
     _row(db, name)
     options = {"keep": body.options.keep or 4} if name == "full_backup" else {}
+    timezone = body.timezone or request.app.state.timezone
     with db:
         db.execute(
             "UPDATE tasks SET enabled = ?, days = ?, time = ?, timezone = ?, options = ? WHERE name = ?",
-            (int(body.enabled), days_to_mask(body.days), body.time, body.timezone, json.dumps(options), name),
+            (int(body.enabled), days_to_mask(body.days), body.time, timezone, json.dumps(options), name),
         )
     last_fired_reset(db, name)
     return task_json(_row(db, name), tasks.running(name), datetime.now(UTC))
