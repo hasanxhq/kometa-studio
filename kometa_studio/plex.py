@@ -5,6 +5,7 @@ so tests can swap in a mock transport.
 """
 
 import asyncio
+import socket
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -227,6 +228,10 @@ async def probe(client: httpx.AsyncClient, uri: str, token: str, expected_id: st
     except httpx.TimeoutException:
         raise PlexError(f"No answer within {PROBE_TIMEOUT:g} s") from None
     except httpx.ConnectError as error:
+        if isinstance(_root_cause(error), socket.gaierror):
+            host = urlsplit(uri).hostname or uri
+            hint = " Some routers block plex.direct names (DNS rebinding protection); try the plain IP address." if host.endswith(".plex.direct") else ""
+            raise PlexError(f"Can't look up {host}.{hint}") from None
         raise PlexError(f"Can't connect: {_reason(error)}") from None
     except httpx.HTTPError as error:
         raise PlexError(f"Request failed: {_reason(error)}") from None
@@ -302,10 +307,13 @@ async def _plex_tv(
     return response
 
 
+def _root_cause(error: BaseException) -> BaseException:
+    while error.__cause__ is not None or error.__context__ is not None:
+        error = error.__cause__ or error.__context__  # type: ignore[assignment]
+    return error
+
+
 def _reason(error: Exception) -> str:
-    """The most useful line of an httpx error, e.g. a TLS or DNS failure."""
-    cause: BaseException | None = error
-    while cause.__cause__ is not None or cause.__context__ is not None:
-        cause = cause.__cause__ or cause.__context__
-    return str(cause) or str(error) or type(error).__name__
+    """The most useful line of an httpx error, e.g. a TLS failure."""
+    return str(_root_cause(error)) or str(error) or type(error).__name__
 

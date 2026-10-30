@@ -6,11 +6,13 @@ import { AdvancedProvider } from "./advanced";
 import { Layout } from "./components/Layout";
 import { pages } from "./nav";
 import { Placeholder } from "./pages/Placeholder";
+import { SettingsPlex } from "./pages/SettingsPlex";
 import { SystemStatus } from "./pages/SystemStatus";
 
 // Pages that exist so far; every other nav entry shows a placeholder.
 const built: Record<string, ComponentType> = {
   "/system/status": SystemStatus,
+  "/settings/plex": SettingsPlex,
 };
 
 export function App({ queryClient = new QueryClient() }: { queryClient?: QueryClient }) {

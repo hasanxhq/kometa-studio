@@ -1,4 +1,5 @@
 import asyncio
+import socket
 
 import httpx
 import pytest
@@ -98,6 +99,18 @@ def test_probe_timeout_is_explained():
 
     with pytest.raises(plex.PlexError, match="No answer within 5 s"):
         run(_with_transport(httpx.MockTransport(slow), lambda c: plex.probe(c, "http://server:32400", "t")))
+
+
+def test_unresolvable_plex_direct_names_get_a_hint():
+    def no_dns(request):
+        try:
+            raise socket.gaierror(-5, "No address associated with hostname")
+        except socket.gaierror as error:
+            raise httpx.ConnectError(str(error), request=request) from error
+
+    uri = "https://10-0-0-5.abc123.plex.direct:32400"
+    with pytest.raises(plex.PlexError, match=r"Can't look up 10-0-0-5\.abc123\.plex\.direct\. Some routers block plex\.direct"):
+        run(_with_transport(httpx.MockTransport(no_dns), lambda c: plex.probe(c, uri, "t")))
 
 
 async def _with_transport(transport, call):
