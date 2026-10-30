@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -132,3 +133,22 @@ def test_an_update_shows_as_info(db, kometa):
     event(db, run, "version", current="2.5.3", latest="2.6.0")
     update = next(c for c in check(db, kometa) if c["source"] == "updates")
     assert update == {"source": "updates", "level": "info", "message": "Kometa 2.6.0 is out (you have 2.5.3).", "link": "/system/updates"}
+
+
+def test_original_posters_need_a_recent_full_backup(db, kometa):
+    posters = kometa.kometa_config.parent / "overlays" / "Movies Original Posters"
+    posters.mkdir(parents=True)
+    warning = next(c for c in check(db, kometa) if c["source"] == "full_backup")
+    assert "Original Posters" in warning["message"] and warning["link"] == "/system/backup"
+
+    backups = kometa.data_dir / "full-backups"
+    backups.mkdir(parents=True)
+    (backups / f"kometa-studio-{datetime.now(UTC):%Y%m%d-%H%M%S}.zip").write_bytes(b"zip")
+    assert "full_backup" not in sources(check(db, kometa))
+
+    with db:
+        db.execute(
+            "INSERT INTO tasks (name, enabled, days, time, timezone, last_fired_at, last_status, last_message) "
+            "VALUES ('full_backup', 1, 64, '04:30', 'UTC', '2026-10-30T00:00:00Z', 'failed', 'Not enough disk space')"
+        )
+    assert "Not enough disk space" in next(c for c in check(db, kometa) if c["source"] == "full_backup")["message"]

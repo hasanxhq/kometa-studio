@@ -6,6 +6,7 @@ import { Link } from "react-router";
 
 import { useAdvanced } from "../advanced";
 import { api, type KometaInfo, type Schedule, type ScheduleInput } from "../api";
+import { BuiltinTaskRow, useBuiltinTasks } from "../components/BuiltinTasks";
 import { RunRequestFields, draftFromRequest, emptyDraft, requestFromDraft, type RunDraft } from "../components/RunRequestFields";
 import { Button, Card, Field, Tag, inputClass } from "../components/ui";
 import { dayNames, describeDays, describeRequest, formatRelative, formatTime, statusLabels, statusTones, triggerLabels } from "../runs";
@@ -229,6 +230,7 @@ function ScheduleRow({ schedule, onEdit }: { schedule: Schedule; onEdit: () => v
 export function SystemTasks() {
   const schedules = useQuery({ queryKey: ["schedules"], queryFn: api.schedules.list, refetchInterval: 30_000 });
   const kometa = useQuery({ queryKey: ["kometa"], queryFn: api.kometa });
+  const builtin = useBuiltinTasks();
   const [editing, setEditing] = useState<number | "new" | null>(null);
 
   if (schedules.isPending) return <p className="text-muted">Loading…</p>;
@@ -287,6 +289,21 @@ export function SystemTasks() {
                 <ScheduleRow key={schedule.id} schedule={schedule} onEdit={() => setEditing(schedule.id)} />
               ),
             )}
+          </ul>
+        )}
+      </Card>
+      <Card title="Studio's tasks">
+        {builtin.isPending ? (
+          <p className="text-muted">Loading…</p>
+        ) : builtin.isError ? (
+          <p role="alert" className="text-err">
+            {builtin.error.message}
+          </p>
+        ) : (
+          <ul>
+            {builtin.data.tasks.map((task) => (
+              <BuiltinTaskRow key={task.name} task={task} />
+            ))}
           </ul>
         )}
       </Card>

@@ -124,9 +124,10 @@ def coalesce(due: list[Due]) -> list[Due]:
 
 
 class Scheduler:
-    def __init__(self, db: sqlite3.Connection, runner: Runner):
+    def __init__(self, db: sqlite3.Connection, runner: Runner, tasks=None):
         self.db = db
         self.runner = runner
+        self.tasks = tasks  # Studio's built-in tasks (tasks.Tasks), ticked alongside
         self._task: asyncio.Task | None = None
 
     def start(self) -> None:
@@ -142,10 +143,16 @@ class Scheduler:
 
     async def _loop(self) -> None:
         while True:
+            now = datetime.now(UTC)
             try:
-                self.tick(datetime.now(UTC))
+                self.tick(now)
             except Exception:  # a bad row must not stop every other schedule for good
                 log.exception("Scheduler tick failed")
+            if self.tasks is not None:
+                try:
+                    self.tasks.tick(now)
+                except Exception:
+                    log.exception("Built-in task tick failed")
             await asyncio.sleep(TICK)
 
     def tick(self, now: datetime) -> list[int]:

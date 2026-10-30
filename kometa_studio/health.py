@@ -9,12 +9,13 @@ import shutil
 import sqlite3
 import time
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 from ruamel.yaml import YAMLError
 
-from . import plex
+from . import full_backup, plex
 from .auth import auth_settings
 from .config_routes import FULL_CHECK
 from .db import get_setting
@@ -24,6 +25,7 @@ from .settings import Settings
 PLEX_CHECK_TTL = 300
 LOW_DISK = 1024**3  # warn below 1 GiB free
 VERY_LOW_DISK = 200 * 1024**2
+BACKUP_AGE = timedelta(days=14)  # Original Posters older than this in the newest full backup: warn
 
 
 @dataclass
@@ -118,6 +120,27 @@ def _run_checks(db: sqlite3.Connection) -> list[Check]:
     return checks
 
 
+def _backup_checks(db: sqlite3.Connection, settings: Settings) -> list[Check]:
+    row = db.execute("SELECT enabled, last_status, last_message FROM tasks WHERE name = 'full_backup'").fetchone()
+    if row is not None and row["last_status"] == "failed":
+        return [Check("full_backup", "warning", f"The last full backup failed: {row['last_message']}", "/system/backup")]
+    if settings.kometa_config is None:
+        return []
+    posters = list((settings.kometa_config.parent / "overlays").glob("* Original Posters"))
+    newest = full_backup.list_full(settings.data_dir)[:1]
+    stale = not newest or datetime.now(UTC) - datetime.fromisoformat(newest[0]["created"]) > BACKUP_AGE
+    if posters and stale:
+        return [
+            Check(
+                "full_backup",
+                "warning",
+                f"Kometa's Original Posters aren't in a full backup from the last {BACKUP_AGE.days} days. Without them, Kometa can't cleanly remove its overlays.",
+                "/system/backup",
+            )
+        ]
+    return []
+
+
 def _disk_check(settings: Settings) -> list[Check]:
     folder = settings.kometa_config.parent if settings.kometa_config else settings.data_dir
     try:
@@ -137,6 +160,7 @@ async def health(db: sqlite3.Connection, settings: Settings, http: httpx.AsyncCl
         if plex_result:
             checks.append(plex_result)
     checks += _run_checks(db)
+    checks += _backup_checks(db, settings)
     checks += _disk_check(settings)
     if auth_settings(db) is None:
         checks.append(Check("sign_in", "warning", "Sign-in isn't set up, so anyone on your local network can use Studio.", "/settings/general"))

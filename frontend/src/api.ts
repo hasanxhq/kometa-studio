@@ -160,6 +160,26 @@ export type Schedules = {
   catch_ups: { id: number; status: RunStatus; queued_at: string; name: string }[];
 };
 
+// Studio's own tasks on System → Tasks.
+export type TaskName = "full_backup" | "full_check";
+
+export type BuiltinTask = {
+  name: TaskName;
+  label: string;
+  enabled: boolean;
+  days: number[]; // 0 = Monday ... 6 = Sunday
+  time: string;
+  timezone: string;
+  options: { keep?: number };
+  next_run: string | null;
+  running: boolean;
+  last: { started_at: string; finished_at: string | null; status: "running" | "succeeded" | "failed" | "interrupted"; message: string | null } | null;
+};
+
+export type BuiltinTaskInput = Pick<BuiltinTask, "enabled" | "days" | "time" | "timezone" | "options">;
+
+export type FullBackup = { name: string; size: number; created: string };
+
 // --- Kometa's config (read-only) ---
 
 export type ConfigCollection = {
@@ -387,6 +407,16 @@ export const api = {
       request<{ path: string; backup: string; current: string | null }>("GET", `/backups/${encodeURIComponent(id)}/file?path=${encodeURIComponent(path)}`),
     restore: (id: string) =>
       request<{ backup: string; restored: string[]; removed: string[]; validation: Validation }>("POST", `/backups/${encodeURIComponent(id)}/restore`),
+  },
+  tasks: {
+    list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),
+    update: (name: TaskName, body: BuiltinTaskInput) => request<BuiltinTask>("PUT", `/tasks/${name}`, body),
+    run: (name: TaskName) => request<BuiltinTask>("POST", `/tasks/${name}/run`),
+  },
+  fullBackups: {
+    list: () => request<{ backups: FullBackup[] }>("GET", "/backups/full"),
+    remove: (name: string) => request<void>("DELETE", `/backups/full/${encodeURIComponent(name)}`),
+    url: (name: string) => `/api/v1/backups/full/${encodeURIComponent(name)}`,
   },
   fullCheck: {
     last: () => request<{ last: FullCheck | null }>("GET", "/kometa/full-check"),

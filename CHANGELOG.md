@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings → General sets the timezone new schedules use.
 - Studio refuses changes sent by other websites (cross-site requests), whatever the sign-in setting.
 - System → Status has health checks: Kometa's install, config.yml, Plex answering with its token, the last run, the last full check, free disk space, sign-in and Kometa updates, each with a link to where it's fixed. A dot on Status in the sidebar shows while something is wrong. `/api/v1/status` includes them for dashboards.
+- Full backups (System → Backup): a zip of Kometa's config folder, including the Original Posters Kometa needs to remove its overlays, plus Studio's database and key. Kometa's logs and cache are left out. Weekly on Sundays at 04:30 by default, keeping 4; Back up now, Download and Delete. A backup waits while Kometa runs, checks there's room first, and never leaves a half-written zip. Health warns when the Original Posters aren't in a backup from the last 14 days, or the last backup failed.
+- System → Tasks lists Studio's own tasks (full backup, full check), each with its own schedule, last outcome and Run now. A time missed while Studio was off runs once on start, as schedules do.
 - System → Updates: the installed Kometa and whether a newer one is out, with its release notes, from the check Kometa makes at the start of each run.
 
 ### Changed

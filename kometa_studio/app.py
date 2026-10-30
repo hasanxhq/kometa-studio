@@ -29,6 +29,8 @@ from .scheduler import Scheduler, default_timezone
 from .schedules_routes import next_scheduled
 from .schedules_routes import router as schedules_router
 from .settings import Settings
+from .tasks import Tasks
+from .tasks_routes import router as tasks_router
 
 STATIC_DIR = Path(str(files("kometa_studio") / "static"))
 
@@ -93,8 +95,11 @@ def create_app(
         runner = Runner(app.state.db, settings, webhook_url(settings, webhook_token(app.state.db)))
         app.state.runner = runner
         runner.start()
+        tasks = Tasks(app.state.db, settings, runner, app.state.writer)
+        tasks.setup(app.state.timezone)
+        app.state.tasks = tasks
         # Started after the runner has marked cut-off runs interrupted; its first tick catches up on missed runs.
-        scheduler = Scheduler(app.state.db, runner)
+        scheduler = Scheduler(app.state.db, runner, tasks)
         app.state.scheduler = scheduler
         scheduler.start()
         # Learn which flags this Kometa has, in the background: importing Kometa takes a few seconds.
@@ -106,6 +111,7 @@ def create_app(
             with contextlib.suppress(asyncio.CancelledError):
                 await probe
             await scheduler.stop()
+            await tasks.stop()
             await runner.stop()
             await app.state.http.aclose()
             app.state.db.close()
@@ -124,5 +130,6 @@ def create_app(
     app.include_router(runs_router)
     app.include_router(schedules_router)
     app.include_router(config_router)
+    app.include_router(tasks_router)
     mount_frontend(app, static_dir)
     return app
