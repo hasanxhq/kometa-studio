@@ -109,7 +109,10 @@ function Sources({
   const available = [...new Set([...COMMON_BUILDERS, ...[...keys.keys()].filter(isBuilder).sort()])].filter((key) => keys.has(key) && !present.includes(key));
   return (
     <Card title="Where the items come from">
-      <p className="mb-3 text-sm text-muted">Kometa combines every source: anything any of them finds goes in.</p>
+      <p className="mb-3 text-sm text-muted">
+        Kometa combines every source: anything any of them finds goes in. Comments in your file stay as they are for every setting you don't change
+        here; to keep comments inside a setting you're changing, use the YAML editor.
+      </p>
       <div className="flex flex-col gap-4">
         {present.map((key) => (
           <div key={key} className="flex items-start gap-2">

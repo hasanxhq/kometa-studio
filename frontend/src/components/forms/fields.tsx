@@ -140,7 +140,15 @@ export function SettingField({
     return (
       <div className="flex flex-col gap-1.5 text-sm">
         <span className="text-muted">
-          {label ?? name} <span className="font-mono text-xs">({name}, YAML)</span>
+          {label ? (
+            <>
+              {label} <span className="font-mono text-xs">({name}, YAML)</span>
+            </>
+          ) : (
+            <>
+              <span className="font-mono">{name}</span> <span className="text-xs">(YAML)</span>
+            </>
+          )}
         </span>
         <YamlBox label={label ?? name} value={value} onChange={onChange} onValidity={onValidity} />
         {hint && <span className="text-xs text-muted">{hint}</span>}
