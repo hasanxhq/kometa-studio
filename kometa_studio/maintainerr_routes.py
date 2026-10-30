@@ -40,6 +40,7 @@ def state(db: sqlite3.Connection, service: Maintainerr) -> dict:
         "error": snapshot.error,
         "checked_seconds_ago": round(time.monotonic() - snapshot.at) if snapshot.at else None,
         "risks": [risk.message for risk in service.risks()],
+        "schedule": service.schedule(),
     }
 
 
@@ -78,12 +79,24 @@ async def put_maintainerr(body: MaintainerrIn, db: Db, service: Service) -> dict
             raise HTTPException(422, f"Not saved: {problem}") from None
         except Exception as error:  # an address that isn't a URL, say
             raise HTTPException(422, f"Can't use that address: {error}") from None
+    if saved.url and (not url or url != saved.url or not body.leave_overlays_alone):
+        # Studio stops deciding when this Maintainerr draws: it gets its own overlay schedule back. If it can't
+        # be reached now, the loop gives it back later; after a disconnect, the page says what to set.
+        try:
+            await service.hand_back()
+        except MaintainerrProblem:
+            pass
     set_setting(
         db,
         maintainerr.SETTINGS,
         {"url": url, "username": username, "password": _password(db, service, username, body.password), "leave_overlays_alone": body.leave_overlays_alone},
     )
     await service.refresh()
+    if service.controls():
+        try:
+            await service.take_over()
+        except MaintainerrProblem:
+            pass  # the loop and the next run try again
     return state(db, service)
 
 

@@ -487,9 +487,10 @@ function MaintainerrForm({ current }: { current: MaintainerrState }) {
       <Checkbox checked={leaveOverlays} onChange={setLeaveOverlays}>
         Leave Maintainerr overlays alone
         <span className="block text-xs text-muted">
-          Maintainerr's overlays take precedence over Kometa's. Before a Kometa run that can change posters, Maintainerr puts back the posters under its overlays;
-          afterwards it draws them again, on top of Kometa's. Kometa never sees a countdown, so it can't keep one as an item's original poster. If Maintainerr
-          doesn't answer, those runs wait.
+          Maintainerr's overlays always go on last, over Kometa's, so putting them back gives Kometa's poster. Studio decides when Maintainerr draws: after
+          every Kometa run that changes posters (Maintainerr puts its posters back first), and once a day for its countdowns. If something is new since
+          Kometa last drew overlays, Kometa's go on first. Maintainerr's own overlay schedule is kept off meanwhile, and given back when you turn this off.
+          If Maintainerr doesn't answer, poster runs wait.
         </span>
       </Checkbox>
       <div className="flex flex-wrap items-center gap-3">
@@ -519,9 +520,25 @@ function MaintainerrForm({ current }: { current: MaintainerrState }) {
         {test.isError && <Outcome ok={false}>{test.error.message}</Outcome>}
         {save.isError && <Outcome ok={false}>{save.error.message}</Outcome>}
       </div>
+      {!current.url && current.schedule.taken_over && (
+        <p role="alert" className="text-sm text-warn">
+          Maintainerr's own overlay schedule couldn't be given back when it was disconnected. Set it again in Maintainerr → Overlays
+          {current.schedule.own_cron ? ` (it was ${current.schedule.own_cron})` : ""}.
+        </p>
+      )}
       {current.url && (
         <div className="flex flex-col gap-2 text-sm">
           {current.error && <p className="text-warn">Can't read Maintainerr: {current.error}</p>}
+          {current.schedule.taken_over && (
+            <p className="text-muted">
+              Studio holds Maintainerr's overlay schedule{current.schedule.own_cron ? ` (its own: ${current.schedule.own_cron})` : ""}.
+              {current.schedule.last_redraw && <> Last drew {formatRelative(current.schedule.last_redraw)}</>}
+              {current.schedule.next_redraw && <>; next daily redraw {formatRelative(current.schedule.next_redraw)}</>}.
+            </p>
+          )}
+          {!current.leave_overlays_alone && current.schedule.taken_over && (
+            <p className="text-warn">Giving Maintainerr its own overlay schedule back once it answers.</p>
+          )}
           {current.risks.length > 0 && (
             <div role="alert" className="rounded-control border border-err/40 p-3">
               <p className="font-semibold text-err">Kometa's config would touch Maintainerr's collections</p>

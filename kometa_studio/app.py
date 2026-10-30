@@ -121,6 +121,7 @@ def create_app(
         app.state.arr.start()
         maintainerr = Maintainerr(app.state.db, app.state.http, app.state.secrets, settings.kometa_config, settings.kometa_entry.parent if settings.kometa_entry else None)
         app.state.maintainerr = maintainerr
+        maintainerr.runner = runner
         runner.hooks.append(maintainerr)
         runner.hooks.append(WantedRecorder(app.state.db, runner, settings.kometa_config, kometa_root))
         if app.state.writer is not None:

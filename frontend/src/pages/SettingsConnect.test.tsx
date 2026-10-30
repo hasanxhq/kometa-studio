@@ -33,6 +33,7 @@ const notConnected: MaintainerrState = {
   error: null,
   checked_seconds_ago: null,
   risks: [],
+  schedule: { taken_over: false, own_cron: null, last_redraw: null, next_redraw: null },
 };
 
 const keys: ServicesState = { tmdb: { apikey: "…9f3c" }, mdblist: { apikey: null } };
@@ -142,6 +143,7 @@ describe("Maintainerr", () => {
       collections: [{ title: "Leaving Soon", library: "Movies", overlays: true }],
       overlays_enabled: true,
       risks: ["Movies: delete_collections would delete Maintainerr's collections (“Leaving Soon”): Kometa sees them as unmanaged. Limit it with managed: true."],
+      schedule: { taken_over: true, own_cron: "0 * * * *", last_redraw: new Date().toISOString(), next_redraw: new Date(Date.now() + 86_400_000).toISOString() },
     };
     const calls = routes({
       "POST /settings/maintainerr/test": () => ({ ok: true, collections: 1, overlays_enabled: true }),
@@ -162,6 +164,7 @@ describe("Maintainerr", () => {
 
     expect(await within(form).findByText("Kometa's config would touch Maintainerr's collections")).toBeInTheDocument();
     expect(within(form).getByText("Protecting 1 collection:")).toBeInTheDocument();
+    expect(within(form).getByText(/Studio holds Maintainerr's overlay schedule \(its own: 0 \* \* \* \*\)/)).toBeInTheDocument();
     expect(calls.find((c) => c.route === "PUT /settings/maintainerr")?.body).toEqual({
       url: "http://maintainerr:6246",
       username: "hasan",

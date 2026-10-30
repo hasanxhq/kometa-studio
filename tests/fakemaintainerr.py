@@ -20,6 +20,8 @@ class FakeMaintainerr:
              "manualCollection": False, "manualCollectionName": "", "deleteAfterDays": 14, "arrAction": 0},
         ]
         self.overlays_enabled = True
+        self.cron = "0 * * * *"  # its overlay job's schedule: hourly, as on the maintainer's seedbox
+        self.processed = 0  # overlay passes asked for
         self.status = "idle"
         self.down = False
         self.media_server = True  # Maintainerr 403s its overlay endpoints without a working media server
@@ -44,10 +46,12 @@ class FakeMaintainerr:
         if request.method == "GET" and path == "/api/collections":
             return httpx.Response(200, json=self.collections)
         if request.method == "GET" and path == "/api/overlays/settings":
-            return httpx.Response(200, json={"enabled": self.overlays_enabled, "cronSchedule": "0 3 * * *"})
+            return httpx.Response(200, json={"enabled": self.overlays_enabled, "cronSchedule": self.cron})
         if request.method == "PUT" and path == "/api/overlays/settings":
-            self.overlays_enabled = json.loads(request.content).get("enabled", self.overlays_enabled)
-            return httpx.Response(200, json={"enabled": self.overlays_enabled, "cronSchedule": "0 * * * *"})
+            body = json.loads(request.content)  # a partial update, like the real one
+            self.overlays_enabled = body.get("enabled", self.overlays_enabled)
+            self.cron = body.get("cronSchedule", self.cron)
+            return httpx.Response(200, json={"enabled": self.overlays_enabled, "cronSchedule": self.cron})
         if request.method == "GET" and path == "/api/overlays/status":
             status = self.status
             if self._running_polls > 0:
@@ -63,5 +67,6 @@ class FakeMaintainerr:
             if self.busy_process_polls:
                 self._running_polls, self.busy_process_polls = self.busy_process_polls, 0
                 return httpx.Response(409, json={"message": "An overlay run is already in progress", "statusCode": 409})
+            self.processed += 1
             return httpx.Response(202)
         return httpx.Response(404)

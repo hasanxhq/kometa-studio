@@ -112,7 +112,7 @@ export type RunSummary = {
   added_to_sonarr?: number;
 };
 
-export type RunTrigger = "manual" | "schedule" | "catch_up" | "arr";
+export type RunTrigger = "manual" | "schedule" | "catch_up" | "arr" | "maintainerr";
 
 export type Run = {
   id: number;
@@ -243,6 +243,8 @@ export type MaintainerrState = {
   error: string | null;
   checked_seconds_ago: number | null;
   risks: string[]; // ways Kometa's config would touch Maintainerr's collections
+  // With "Leave Maintainerr overlays alone", Studio holds Maintainerr's own overlay schedule and has it draw daily, after Kometa.
+  schedule: { taken_over: boolean; own_cron: string | null; last_redraw: string | null; next_redraw: string | null };
 };
 
 export type MaintainerrInput = { url: string | null; username: string | null; password: string | null; leave_overlays_alone: boolean };

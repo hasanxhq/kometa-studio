@@ -74,3 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - When only collections want it, just those collections run. Other imports are skipped and listed.
   - What collections want comes from the collection files (IDs written in them) and from Kometa's missing report (`save_report`), which Studio keeps its own copy of after each completed run. Settings → Connect can turn the report on.
   - Per library, the page says what Studio can tell and why every import still counts where it does.
+- "Leave Maintainerr overlays alone" now puts Maintainerr's overlay on last, over Kometa's.
+  - Studio decides when Maintainerr draws:
+    - after every Kometa run that changes posters (Maintainerr still puts its posters back first);
+    - once a day, for its countdowns.
+  - Kometa's overlays go on first when something is new since Kometa last drew overlays, so a new item never gets Maintainerr's overlay before Kometa's. Putting Maintainerr's overlays back then gives Kometa's poster, not the bare one.
+  - Maintainerr's own overlay schedule is kept off while this is on, and given back when it's turned off or Maintainerr is disconnected. Settings → Connect shows the schedule Studio holds and the next daily redraw.
+  - Maintainerr's overlays are no longer switched off around runs.

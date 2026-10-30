@@ -26,6 +26,7 @@ class FakePlex:
         self.account_token = ACCOUNT_TOKEN
         self.reachable = {REMOTE_URI, RELAY_URI}
         self.requests: list[httpx.Request] = []
+        self.added: dict[str, list[int]] = {}  # section key -> when each movie or episode was added (Unix time)
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
@@ -72,6 +73,10 @@ class FakePlex:
                 return httpx.Response(200, json={"MediaContainer": {"Metadata": self.COLLECTIONS[key]}})
             if what == "label":
                 return httpx.Response(200, json={"MediaContainer": {"Directory": self.LABELS[key]}})
+            if what == "all" and request.url.params.get("type") in ("1", "4"):  # how many were added since, as Plex's addedAt>>= filter
+                since = int(request.url.params.get("addedAt>>", "0"))
+                count = len([at for at in self.added.get(key, []) if at >= since])
+                return httpx.Response(200, json={"MediaContainer": {"size": 0, "totalSize": count, "Metadata": []}})
             if what == "all" and request.url.params.get("type") == "18":
                 keys = self.LABELLED.get(request.url.params.get("label", ""), [])
                 return httpx.Response(200, json={"MediaContainer": {"Metadata": [{"ratingKey": k} for k in keys]}})
