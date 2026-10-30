@@ -40,6 +40,69 @@ export type PlexTestResult = { ok: true; name: string; version: string; url: str
 
 export type PlexConnectRequest = { server_id: string; uri: string } | { url: string; token: string };
 
+export type RunMode = "all" | "collections" | "overlays" | "operations" | "metadata" | "playlists";
+
+export type RunRequest = {
+  mode: RunMode;
+  libraries: string[];
+  collections: string[];
+  files: string[];
+  ignore_schedules: boolean;
+  no_missing: boolean;
+  tests: boolean;
+  timings: boolean;
+  low_priority: boolean;
+};
+
+export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled" | "interrupted" | "timed_out";
+
+// Kometa's run_end webhook payload.
+export type RunSummary = {
+  run_time?: string;
+  collections_created?: number;
+  collections_modified?: number;
+  collections_deleted?: number;
+  items_added?: number;
+  items_removed?: number;
+  added_to_radarr?: number;
+  added_to_sonarr?: number;
+};
+
+export type Run = {
+  id: number;
+  status: RunStatus;
+  trigger: string;
+  request: RunRequest;
+  command: string | null;
+  queued_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  exit_code: number | null;
+  error: string | null;
+  summary: RunSummary | null;
+  error_events: number;
+};
+
+export type RunEvent = {
+  event: "error" | "changes" | "delete" | "version";
+  received_at: string;
+  error?: string;
+  critical?: boolean;
+  library_name?: string;
+  collection?: string;
+  playlist?: string;
+  created?: boolean;
+  message?: string;
+  current?: string;
+  latest?: string;
+  additions?: number;
+  removals?: number;
+};
+
+export type RunDetail = Run & { events: RunEvent[] };
+
+export type KometaInfo = { flags: string[] | null; flags_error: string | null; problem: string | null };
+
 // FastAPI puts the reason in `detail`: a string from our own errors, a list from request validation.
 async function errorMessage(response: Response): Promise<string> {
   try {
@@ -74,5 +137,14 @@ export const api = {
     servers: () => request<{ servers: PlexServer[] }>("GET", "/plex/servers"),
     test: (url: string, token: string) => request<PlexTestResult>("POST", "/plex/test", { url, token }),
     connect: (body: PlexConnectRequest) => request<PlexState>("POST", "/plex/connect", body),
+  },
+  kometa: () => request<KometaInfo>("GET", "/kometa"),
+  runs: {
+    list: () => request<{ runs: Run[]; current: number | null }>("GET", "/runs"),
+    get: (id: number) => request<RunDetail>("GET", `/runs/${id}`),
+    create: (body: RunRequest) => request<Run>("POST", "/runs", body),
+    cancel: (id: number) => request<Run>("POST", `/runs/${id}/cancel`),
+    logUrl: (id: number) => `/api/v1/runs/${id}/log`,
+    streamUrl: (id: number) => `/api/v1/runs/${id}/stream`,
   },
 };
