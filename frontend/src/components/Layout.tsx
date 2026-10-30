@@ -71,11 +71,11 @@ function AdvancedToggle() {
   );
 }
 
-function SignOut() {
+function SignOut({ className = "" }: { className?: string }) {
   const queryClient = useQueryClient();
   const signOut = useMutation({ mutationFn: api.auth.logout, onSuccess: () => queryClient.resetQueries() });
   return (
-    <button type="button" className="min-h-11 px-2 text-sm text-muted hover:text-text" onClick={() => signOut.mutate()}>
+    <button type="button" className={`min-h-11 px-3 text-left text-sm text-muted hover:text-text ${className}`} onClick={() => signOut.mutate()}>
       Sign out
     </button>
   );
@@ -112,6 +112,8 @@ export function Layout() {
           Kometa <span className="ml-1 text-accent">Studio</span>
         </div>
         <Sidebar onNavigate={() => setMenuOpen(false)} />
+        {/* On phones the header has no room for it. */}
+        {auth.data?.signed_in && <SignOut className="mx-3 mb-3 sm:hidden" />}
       </aside>
       {menuOpen && <div className="fixed inset-0 z-10 bg-black/50 md:hidden" onClick={() => setMenuOpen(false)} />}
 
@@ -128,7 +130,7 @@ export function Layout() {
           </button>
           <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{current?.label ?? "Kometa Studio"}</h1>
           <AdvancedToggle />
-          {auth.data?.signed_in && <SignOut />}
+          {auth.data?.signed_in && <SignOut className="hidden sm:block" />}
         </header>
         {auth.data && !auth.data.configured && <SignInNotice />}
         <main className="flex-1 overflow-y-auto p-4 md:p-6">

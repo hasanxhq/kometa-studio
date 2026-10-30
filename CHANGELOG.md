@@ -42,8 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - System → Tasks lists Studio's own tasks (full backup, full check), each with its own schedule, last outcome and Run now. A time missed while Studio was off runs once on start, as schedules do.
 - Settings → Connect: Radarr and Sonarr's webhook. Paste Studio's URL into their Connect → Webhook (On Import, On Upgrade), and Kometa runs after imports, for the libraries you choose per app. A burst of imports (a season pack) becomes one run, once they stop for 10 minutes (adjustable) or an hour after the first. The waiting run survives a restart, and isn't added if an equal one is already queued. The page shows the last event received and any imports waiting.
 - System → Logs: Kometa's meta.log and its library and collection logs, filtered by level (lines that continue an entry keep its level) and searchable, with Download. Big logs show their end.
+- Phone-width pass: every page checked at 375 px with no sideways scrolling. Logs show the time and message, without Kometa's fixed-width columns, and wrap. Sign out sits in the menu on phones.
 - System → Updates: the installed Kometa and whether a newer one is out, with its release notes, from the check Kometa makes at the start of each run.
 
 ### Changed
+
+- A library's Collections tab says when Plex can't be reached, instead of saying Plex has no library by that name.
 
 - When Studio edits config.yml itself (Plex connection, webhook entries), it keeps the file's own formatting instead of restyling it.

@@ -34,7 +34,7 @@ describe("Signing in", () => {
 
     expect(await screen.findByText("2.5.3")).toBeInTheDocument();
     expect(calls.find((c) => c.route === "POST /auth/login")?.body).toEqual({ username: "hasan", password: "correct horse" });
-    expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Sign out" }).length).toBeGreaterThan(0); // header, and the phone menu
   });
 
   it("says why when sign-in isn't set up and this address isn't local", async () => {

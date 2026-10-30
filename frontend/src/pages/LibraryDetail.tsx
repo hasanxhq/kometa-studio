@@ -88,7 +88,7 @@ function ReferenceHeader({ reference }: { reference: FileReference }) {
             .join(" · ")}
         </span>
       )}
-      {reference.error && <span className="text-sm text-warn">{reference.error}</span>}
+      {reference.error && <span className="break-all text-sm text-warn">{reference.error}</span>}
       {["url", "git", "repo"].includes(reference.kind) && <span className="text-sm text-muted">Remote; Kometa downloads it when it runs.</span>}
     </div>
   );
@@ -140,7 +140,7 @@ function newItemLink(path: string, section: string, library: string): string {
   return `/items?${new URLSearchParams({ path, section, new: "1", library })}`;
 }
 
-function CollectionsTab({ plexKey, config }: { plexKey: string | null; config: ConfigLibrary | undefined }) {
+function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null; plexError: string | null; config: ConfigLibrary | undefined }) {
   const [filter, setFilter] = useState<Filter>("all");
   const plex = useQuery({
     queryKey: ["plex", "collections", plexKey],
@@ -162,7 +162,11 @@ function CollectionsTab({ plexKey, config }: { plexKey: string | null; config: C
   return (
     <div className="flex flex-col gap-4">
       <Card title="In Plex">
-        {plexKey === null ? (
+        {plexError ? (
+          <p role="alert" className="text-warn">
+            Can't read Plex: {plexError}
+          </p>
+        ) : plexKey === null ? (
           <p className="text-warn">Plex has no library with this name, so there's nothing to show from Plex.</p>
         ) : plex.isPending ? (
           <p className="text-muted">Asking Plex…</p>
@@ -245,7 +249,7 @@ function CollectionsTab({ plexKey, config }: { plexKey: string | null; config: C
                   <ReferenceHeader reference={reference} />
                   {reference.files.map((file) => (
                     <div key={file.path} className="flex flex-col gap-1 pl-2">
-                      {file.error && <p className="text-sm text-warn">{file.error}</p>}
+                      {file.error && <p className="break-all text-sm text-warn">{file.error}</p>}
                       <ul className="flex flex-col gap-1 text-sm">
                         {file.collections.map((c) => (
                           <li key={c.name} className="flex flex-wrap items-center gap-2">
@@ -414,11 +418,15 @@ export function LibraryDetail() {
 
   let body: ReactNode;
   if (tab === "collections") {
-    body = <CollectionsTab plexKey={entry.plex?.key ?? null} config={config.data} />;
+    body = <CollectionsTab plexKey={entry.plex?.key ?? null} plexError={plexList.isError ? plexList.error.message : null} config={config.data} />;
   } else if (!entry.config) {
     body = (
       <p className="text-muted">
-        {entry.name} isn't in Kometa's config.yml, so Kometa doesn't touch it yet. Adding it comes with config editing.
+        {entry.name} isn't in Kometa's config.yml, so Kometa doesn't touch it yet. Add it under libraries in{" "}
+        <Link className="underline" to="/files?path=config.yml">
+          config.yml
+        </Link>
+        .
       </p>
     );
   } else if (config.isPending) {

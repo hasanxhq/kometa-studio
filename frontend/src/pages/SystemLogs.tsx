@@ -16,6 +16,18 @@ const levels: { value: LogLevel; label: string }[] = [
   { value: "ERROR", label: "Errors only" },
 ];
 
+// Kometa's lines: "[2026-10-30 04:00:02,200] builder.py   WARNING    | message   |". Continuations: spaces, then "| message |".
+const ENTRY = /^\[\d{4}-\d\d-\d\d (\d\d:\d\d:\d\d)[,.]\d+\] \S+\s+\[?[A-Z]+\]?\s+\| ?(.*?)\s*\|?$/;
+const CONTINUED = /^\s+\| ?(.*?)\s*\|?$/;
+
+/** The time and message of a line, without Kometa's fixed-width columns, so it fits a phone. */
+export function splitLine(text: string): { time: string | null; message: string } {
+  const entry = ENTRY.exec(text);
+  if (entry) return { time: entry[1], message: entry[2] };
+  const continued = CONTINUED.exec(text);
+  return { time: null, message: continued ? continued[1] : text };
+}
+
 const lineColours: Partial<Record<LogLevel, string>> = { WARNING: "text-warn", ERROR: "text-err", CRITICAL: "text-err", DEBUG: "text-muted", TRACE: "text-muted" };
 
 export function SystemLogs() {
@@ -94,18 +106,22 @@ export function SystemLogs() {
         </p>
       )}
       {log.data && (
-        <section aria-label="Log lines" className="overflow-x-auto rounded-card border border-border bg-bg p-3">
+        <section aria-label="Log lines" className="rounded-card border border-border bg-bg p-3">
           {log.data.truncated && <p className="mb-2 text-xs text-muted">Showing the end of the log. Download it for all of it.</p>}
           {log.data.lines.length === 0 ? (
             <p className="text-sm text-muted">Nothing matches.</p>
           ) : (
-            <pre className="font-mono text-xs leading-5">
-              {log.data.lines.map((line, index) => (
-                <div key={index} className={lineColours[line.level] ?? ""}>
-                  {line.text}
-                </div>
-              ))}
-            </pre>
+            <div className="font-mono text-xs leading-5">
+              {log.data.lines.map((line, index) => {
+                const { time, message } = splitLine(line.text);
+                return (
+                  <div key={index} className={`flex gap-3 ${lineColours[line.level] ?? ""}`} title={line.text}>
+                    <span className="w-16 shrink-0 text-muted">{time ?? ""}</span>
+                    <span className="min-w-0 whitespace-pre-wrap break-words">{message}</span>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </section>
       )}
