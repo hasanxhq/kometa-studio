@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ComponentType } from "react";
+import { Suspense, lazy, type ComponentType } from "react";
 import { Navigate, Route, Routes } from "react-router";
 
 import { AdvancedProvider } from "./advanced";
@@ -8,6 +8,9 @@ import { pages } from "./nav";
 import { ActivityHistory } from "./pages/ActivityHistory";
 import { ActivityQueue } from "./pages/ActivityQueue";
 import { FileEditor } from "./pages/FileEditor";
+
+// The form editor brings Kometa's schema checking; load it when it's opened.
+const ItemEditor = lazy(() => import("./pages/ItemEditor"));
 import { Libraries } from "./pages/Libraries";
 import { LibraryDetail } from "./pages/LibraryDetail";
 import { Placeholder } from "./pages/Placeholder";
@@ -42,6 +45,14 @@ export function App({ queryClient = new QueryClient() }: { queryClient?: QueryCl
             <Route path="/activity/queue/:id" element={<RunDetail />} />
             <Route path="/libraries/:name" element={<LibraryDetail />} />
             <Route path="/files" element={<FileEditor />} />
+            <Route
+              path="/items"
+              element={
+                <Suspense fallback={<p className="text-muted">Loading…</p>}>
+                  <ItemEditor />
+                </Suspense>
+              }
+            />
             <Route path="*" element={<p className="text-muted">Page not found.</p>} />
           </Route>
         </Routes>

@@ -1,5 +1,7 @@
 // Typed calls to the Studio API (/api/v1).
 
+import type { SchemaKind } from "./yaml/schema";
+
 export type Status = {
   version: string;
   kometa: { version: string | null; config: string | null };
@@ -242,7 +244,7 @@ export type Validation = {
   output: string;
 };
 
-export type EditableFile = { path: string; text: string; hash: string; hidden: number };
+export type EditableFile = { path: string; text: string; hash: string; hidden: number; kind: SchemaKind };
 
 export type FileEdit = { path: string; text: string; base_hash: string | null };
 
@@ -253,6 +255,20 @@ export type SaveRefusal = { message: string; path: string | null; validation: Va
 export type Backup = { id: string; created: string | null; reason: string; files: string[]; new_files: string[] };
 
 export type FullCheck = Validation & { at: string };
+
+export type ItemSection = "collections" | "dynamic_collections" | "overlays" | "templates" | "metadata" | "playlists";
+
+export type Item = { path: string; hash: string; section: ItemSection; name: string; value: Record<string, unknown>; kind: SchemaKind };
+
+export type ItemSave = {
+  path: string;
+  base_hash: string;
+  section: ItemSection;
+  name: string;
+  value: Record<string, unknown> | null; // null removes it
+  create?: boolean;
+  rename?: string | null;
+};
 
 export type KometaInfo = { flags: string[] | null; flags_error: string | null; problem: string | null };
 
@@ -315,6 +331,11 @@ export const api = {
     open: (path: string) => request<EditableFile>("GET", `/config/edit?path=${encodeURIComponent(path)}`),
     check: (files: FileEdit[]) => request<Validation>("POST", "/config/check", { files }),
     save: (files: FileEdit[], reason: string) => request<SaveResult>("PUT", "/config/files", { files, reason }),
+  },
+  items: {
+    get: (path: string, section: ItemSection, name: string) =>
+      request<Item>("GET", `/config/item?path=${encodeURIComponent(path)}&section=${section}&name=${encodeURIComponent(name)}`),
+    save: (body: ItemSave) => request<SaveResult>("POST", "/config/item", body),
   },
   backups: {
     list: () => request<{ backups: Backup[]; keep: number }>("GET", "/backups"),

@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - System → Status: Full check, where Kometa connects to Plex and every service in your config and changes nothing.
 - Checks never send notifications: Kometa validates a sandboxed copy with the webhooks removed. The Docker image now includes Kometa's JSON schemas (left out of Kometa's own image), so Kometa's schema check runs too.
 
+- The YAML editor checks Kometa's schema as you type (the schema of the Kometa version installed), marking each problem where it is, and completes keys with their descriptions.
+- Forms for collections and overlays: sources, common settings (summary, sort title, sync mode, order, visibility, schedule) and, for overlays, position and colours with a poster preview. Show Advanced has every other setting Kometa knows, and settings it doesn't know (usually template variables) are kept as written. Saving a form changes only that collection or overlay, and Kometa checks it like any save.
+- Run just one collection from its form, in its library, without changing any files.
+
 ### Changed
 
 - When Studio edits config.yml itself (Plex connection, webhook entries), it keeps the file's own formatting instead of restyling it.

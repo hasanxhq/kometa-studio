@@ -7,9 +7,11 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, StringConstraints
 
 from . import backups
+from .config_items import ItemProblem, read_item, schema_kind
 from .config_write import ConfigWriter, Edit, SaveRefused
 from .db import get_setting, set_setting
 from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets
@@ -217,11 +219,9 @@ def _edits(files: list[EditIn]) -> list[Edit]:
 
 @router.get("/config/edit")
 async def edit_file(path: str, writer: Writer) -> dict:
-    """A file to edit, with secrets as ••••(n) placeholders and the hash a save must match."""
-    try:
-        return writer.read(path)
-    except SaveRefused as refused:
-        raise HTTPException(refused.status, refused.detail()) from None
+    """A file to edit, with secrets as ••••(n) placeholders, the hash a save must match, and which schema it follows."""
+    opened = edit_file_or_raise(writer, path)
+    return opened | {"kind": schema_kind(writer.resolve(path).read_text(encoding="utf-8"), path)}
 
 
 @router.post("/config/check")
@@ -274,3 +274,71 @@ async def full_check(db: Db, writer: Writer) -> dict:
 @router.get("/kometa/full-check")
 async def last_full_check(db: Db) -> dict:
     return {"last": get_setting(db, FULL_CHECK)}
+
+
+# --- Designed forms: one item at a time, and Kometa's schemas -------------------------
+
+SCHEMA_FILES = {
+    "config": "config-schema.json",
+    "collection": "collection-schema.json",
+    "overlay": "overlay-schema.json",
+    "metadata": "metadata-schema.json",
+    "playlist": "playlist-schema.json",
+    "template": "template-schema.json",
+}
+
+
+class ItemIn(BaseModel):
+    path: str
+    base_hash: str
+    section: str
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    value: dict | None  # None removes the item
+    create: bool = False
+    rename: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)] | None = None
+
+
+@router.get("/config/schemas/{kind}")
+async def kometa_schema(kind: str, request: Request) -> FileResponse:
+    """The JSON schema the installed Kometa validates this kind of file with (handoff v2 §7.2)."""
+    settings: Settings = request.app.state.settings
+    folder = settings.kometa_schemas or (settings.kometa_entry.parent / "json-schema" if settings.kometa_entry else None)
+    if kind not in SCHEMA_FILES or folder is None or not (folder / SCHEMA_FILES[kind]).is_file():
+        raise HTTPException(404, f"No Kometa schema for {kind!r}")
+    return FileResponse(folder / SCHEMA_FILES[kind], media_type="application/json", headers={"Cache-Control": "no-cache"})
+
+
+@router.get("/config/item")
+async def config_item(path: str, section: str, name: str, writer: Writer) -> dict:
+    opened = edit_file_or_raise(writer, path)
+    file_path = writer.resolve(path)
+    text = file_path.read_text(encoding="utf-8")
+    try:
+        value = read_item(text, section, name)
+    except ItemProblem as problem:
+        raise HTTPException(problem.status, problem.message) from None
+    return {"path": opened["path"], "hash": opened["hash"], "section": section, "name": name, "value": value, "kind": schema_kind(text, path)}
+
+
+@router.post("/config/item")
+async def save_config_item(body: ItemIn, writer: Writer) -> dict:
+    action = "Removed" if body.value is None else "Added" if body.create else "Edited"
+    return await _write_call(
+        writer.edit_item(
+            body.path,
+            body.base_hash,
+            body.section,
+            body.name,
+            body.value,
+            create=body.create,
+            rename=body.rename,
+            reason=f"{action} {body.name!r} in {body.path}",
+        )
+    )
+
+
+def edit_file_or_raise(writer: ConfigWriter, path: str) -> dict:
+    try:
+        return writer.read(path)
+    except SaveRefused as refused:
+        raise HTTPException(refused.status, refused.detail()) from None
