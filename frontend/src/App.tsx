@@ -8,6 +8,7 @@ import { Layout } from "./components/Layout";
 import { pages } from "./nav";
 import { ActivityHistory } from "./pages/ActivityHistory";
 import { ActivityQueue } from "./pages/ActivityQueue";
+import { CollectionDetail } from "./pages/CollectionDetail";
 import { FileEditor } from "./pages/FileEditor";
 
 // The form editor brings Kometa's schema checking; load it when it's opened.
@@ -64,6 +65,7 @@ export function App({ queryClient = new QueryClient() }: { queryClient?: QueryCl
               })}
               <Route path="/activity/queue/:id" element={<RunDetail />} />
               <Route path="/libraries/:name" element={<LibraryDetail />} />
+              <Route path="/libraries/:name/collections/:key" element={<CollectionDetail />} />
               <Route path="/files" element={<FileEditor />} />
               <Route
                 path="/items"

@@ -449,6 +449,21 @@ export type PlexCollection = {
   maintainerr?: boolean; // Maintainerr made it: Kometa leaves it alone
 };
 
+export type PlexItem = {
+  rating_key: string;
+  title: string;
+  type: string; // movie, show, …
+  year: number | null;
+  thumb: string | null;
+  ids: { tmdb?: string; imdb?: string; tvdb?: string };
+  content_rating: string | null;
+  audience_rating: number | null;
+  episodes: number | null; // shows only
+  added_at: number | null;
+};
+
+export type PlexCollectionPage = { collection: PlexCollection; items: PlexItem[]; start: number; total: number };
+
 // --- History ---
 
 export type HistoryItem = { title: string | null; tmdb_id: number | null; tvdb_id: number | null };
@@ -586,6 +601,8 @@ export const api = {
         "GET",
         `/plex/libraries/${encodeURIComponent(key)}/collections`,
       ),
+    collection: (key: string, ratingKey: string, start = 0, size = 100) =>
+      request<PlexCollectionPage>("GET", `/plex/libraries/${encodeURIComponent(key)}/collections/${encodeURIComponent(ratingKey)}?start=${start}&size=${size}`),
     imageUrl: (path: string, width = 240, height = 360) =>
       `/api/v1/plex/image?path=${encodeURIComponent(path)}&width=${width}&height=${height}`,
   },

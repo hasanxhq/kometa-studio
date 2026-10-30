@@ -6,8 +6,9 @@ import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError, api, type ConfigLibrary, type FileReference, type PlexCollection } from "../api";
 import { AddLibrary } from "../components/AddLibrary";
+import { PlexPoster } from "../components/PlexPoster";
 import { Button, Card, Tag } from "../components/ui";
-import { libraryTypeLabels, mergeLibraries } from "../libraries";
+import { collectionPath, libraryTypeLabels, mergeLibraries } from "../libraries";
 
 const tabs = [
   { id: "collections", label: "Collections" },
@@ -112,25 +113,6 @@ function KeyValues({ values, empty = "None." }: { values: Record<string, unknown
 
 // --- Collections ----------------------------------------------------------------
 
-function Poster({ collection }: { collection: PlexCollection }) {
-  const [failed, setFailed] = useState(false);
-  return (
-    <div className="aspect-[2/3] overflow-hidden rounded-control border border-border bg-surface-2">
-      {collection.thumb && !failed ? (
-        <img
-          src={api.plexLibraries.imageUrl(collection.thumb)}
-          alt=""
-          loading="lazy"
-          className="size-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <div className="flex size-full items-center justify-center p-2 text-center font-display text-sm text-muted">{collection.title}</div>
-      )}
-    </div>
-  );
-}
-
 type Filter = "all" | "managed" | "maintainerr" | "unmanaged";
 
 function itemLink(path: string, section: string, name: string, library: string): string {
@@ -162,7 +144,17 @@ function Nothing({ name }: { name: string }) {
   );
 }
 
-function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null; plexError: string | null; config: ConfigLibrary | undefined }) {
+function CollectionsTab({
+  library,
+  plexKey,
+  plexError,
+  config,
+}: {
+  library: string;
+  plexKey: string | null;
+  plexError: string | null;
+  config: ConfigLibrary | undefined;
+}) {
   const [filter, setFilter] = useState<Filter>("all");
   const plex = useQuery({
     queryKey: ["plex", "collections", plexKey],
@@ -226,8 +218,12 @@ function CollectionsTab({ plexKey, plexError, config }: { plexKey: string | null
                 const file = fileFor.get(collection.title.toLowerCase());
                 return (
                   <li key={collection.rating_key} className="flex flex-col gap-1.5">
-                    <Poster collection={collection} />
-                    <span className="break-words text-sm font-semibold">{collection.title}</span>
+                    <Link to={collectionPath(library, collection.rating_key)} className="group flex flex-col gap-1.5" aria-label={`${collection.title}: its titles`}>
+                      <div className="transition group-hover:brightness-110">
+                        <PlexPoster thumb={collection.thumb} title={collection.title} />
+                      </div>
+                      <span className="break-words text-sm font-semibold group-hover:underline">{collection.title}</span>
+                    </Link>
                     <span className="flex flex-wrap items-center gap-1 text-xs text-muted">
                       {collection.items} item{collection.items === 1 ? "" : "s"}
                       {collection.managed ? (
@@ -454,7 +450,7 @@ export function LibraryDetail() {
 
   let body: ReactNode;
   if (tab === "collections") {
-    body = <CollectionsTab plexKey={entry.plex?.key ?? null} plexError={plexList.isError ? plexList.error.message : null} config={config.data} />;
+    body = <CollectionsTab library={entry.name} plexKey={entry.plex?.key ?? null} plexError={plexList.isError ? plexList.error.message : null} config={config.data} />;
   } else if (!entry.config) {
     body = <p className="text-muted">{entry.name} isn't in Kometa's config.yml, so Kometa doesn't touch it yet.</p>;
   } else if (config.isPending) {

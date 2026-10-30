@@ -21,7 +21,7 @@ from . import plex
 from .crypto import SecretBox
 from .db import delete_setting, get_setting, set_setting
 from .kometa_config import read_plex, write_plex
-from .plex_library import PlexServer, PlexUnavailable
+from .plex_library import PlexNotFound, PlexServer, PlexUnavailable
 from .settings import Settings
 
 CLIENT_ID = "plex.client_id"
@@ -312,6 +312,8 @@ def kometa_plex(settings: Settings, http: httpx.AsyncClient) -> PlexServer:
 async def _plex_read(awaitable):
     try:
         return await awaitable
+    except PlexNotFound as error:
+        raise HTTPException(404, str(error)) from None
     except PlexUnavailable as error:
         raise HTTPException(502, str(error)) from None
 
@@ -357,6 +359,32 @@ async def plex_collections(key: str, request: Request, http: Http, settings: App
     return {
         "library": {"key": library.key, "title": library.title, "type": library.type},
         "collections": [asdict(c) | {"maintainerr": c.rating_key in theirs} for c in sorted(collections, key=lambda c: c.title.casefold())],
+    }
+
+
+@router.get("/libraries/{key}/collections/{rating_key}")
+async def plex_collection(
+    key: str,
+    rating_key: str,
+    request: Request,
+    http: Http,
+    settings: AppSettings,
+    start: Annotated[int, Query(ge=0)] = 0,
+    size: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict:
+    """One collection with a page of its movies or shows, for exploring it from Libraries."""
+    if not rating_key.isdigit():
+        raise HTTPException(404, "Plex has no collection with that key")
+    server = kometa_plex(settings, http)
+    library_key, collection = await _plex_read(server.collection(rating_key))
+    if library_key != key:
+        raise HTTPException(404, "That collection isn't in this library")
+    items, total = await _plex_read(server.collection_items(rating_key, start, size))
+    return {
+        "collection": asdict(collection) | {"maintainerr": rating_key in maintainerr_keys(request)},
+        "items": [asdict(item) for item in items],
+        "start": start,
+        "total": total,
     }
 
 
