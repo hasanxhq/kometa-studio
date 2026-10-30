@@ -240,11 +240,12 @@ def test_waits_for_maintainerrs_own_overlay_run(tmp_path, setup, monkeypatch):
 
     _, _, fake = setup
     monkeypatch.setattr(maintainerr, "BUSY_WAIT", 0.3)
+    monkeypatch.setattr(maintainerr, "POLL", 0.05)
     fake.status = "running"
     with make_client(tmp_path, setup) as client:
         connect(client)
         run = finished(client, client.post("/api/v1/runs", json={"mode": "overlays"}).json()["id"])
-    assert run["status"] == "failed" and "still going" in run["error"]
+    assert run["status"] == "failed" and "still busy" in run["error"]
     assert not any("revert" in call for call in fake.calls)
 
 
@@ -327,3 +328,24 @@ def test_a_seedbox_proxy_login(tmp_path, setup):
     assert (state["username"], state["has_password"], len(state["collections"])) == ("hasan", True, 2)
     assert again["has_password"] is True and again["error"] is None
     assert tested_with_saved["ok"] is True
+
+
+def test_a_revert_slower_than_the_request_is_waited_for(tmp_path, setup, monkeypatch):
+    """As on the real seedbox: the revert walks ~230 shows, seasons and episodes and answers only when done."""
+    from kometa_studio import maintainerr
+
+    _, _, fake = setup
+    monkeypatch.setattr(maintainerr, "POLL", 0.05)
+    fake.slow_revert_polls = 5  # the revert outlasts the request, and status says "running" meanwhile
+    fake.busy_process_polls = 3  # then a redraw asked too soon gets 409
+    with make_client(tmp_path, setup) as client:
+        connect(client)
+        fake.calls.clear()
+        run = finished(client, client.post("/api/v1/runs", json={"mode": "overlays"}).json()["id"])
+        log = log_of(client, run["id"])
+        pending = client.app.state.maintainerr.db.execute("SELECT value FROM settings WHERE key = 'maintainerr.pending_process'").fetchone()[0]
+    assert run["status"] == "succeeded", log
+    assert "still putting posters back" in log and "Kometa ran" in log
+    assert log.index("still putting posters back") < log.index("Kometa ran") < log.index("drawing them again")
+    assert [c for c in fake.calls if c.startswith("POST")] == ["POST /api/overlays/revert/7", "POST /api/overlays/process", "POST /api/overlays/process"]
+    assert fake.overlays_enabled is True and pending == "false"
