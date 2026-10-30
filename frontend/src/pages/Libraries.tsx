@@ -1,10 +1,12 @@
 // Libraries: one card per library, from Plex and Kometa's config together (handoff v2 §8).
 
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link } from "react-router";
 
 import { ApiError, api } from "../api";
-import { Tag } from "../components/ui";
+import { Button, Tag } from "../components/ui";
+import { UploadFiles } from "../components/UploadFiles";
 import { libraryPath, libraryTypeLabels, mergeLibraries, type LibraryEntry } from "../libraries";
 
 function plural(count: number, word: string): string {
@@ -52,6 +54,7 @@ function LibraryCard({ entry }: { entry: LibraryEntry }) {
 }
 
 export function Libraries() {
+  const [uploading, setUploading] = useState(false);
   const plex = useQuery({ queryKey: ["plex", "libraries"], queryFn: api.plexLibraries.list, retry: false, staleTime: 60_000 });
   const config = useQuery({ queryKey: ["config"], queryFn: api.config.overview, retry: false });
 
@@ -60,9 +63,22 @@ export function Libraries() {
   // No config yet (404) is normal on first run; Plex's libraries still show.
   const configMissing = config.isError && config.error instanceof ApiError && config.error.status === 404;
   const entries = mergeLibraries(plex.data?.libraries, config.data?.libraries);
+  const configName = config.data?.path.split("/").pop() ?? "config.yml";
 
   return (
     <div className="flex max-w-6xl flex-col gap-4">
+      <div className="flex flex-wrap gap-2">
+        {!configMissing && (
+          <Link
+            to={`/files?path=${encodeURIComponent(configName)}`}
+            className="inline-flex min-h-11 items-center rounded-control border border-border-strong bg-surface-2 px-4 text-sm font-medium hover:border-muted"
+          >
+            Edit {configName}
+          </Link>
+        )}
+        {!uploading && <Button onClick={() => setUploading(true)}>Add files…</Button>}
+      </div>
+      {uploading && <UploadFiles onDone={() => setUploading(false)} />}
       {plex.isError && (
         <p role="alert" className="text-warn">
           Can't list Plex's libraries: {plex.error.message}

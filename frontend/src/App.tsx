@@ -7,11 +7,13 @@ import { Layout } from "./components/Layout";
 import { pages } from "./nav";
 import { ActivityHistory } from "./pages/ActivityHistory";
 import { ActivityQueue } from "./pages/ActivityQueue";
+import { FileEditor } from "./pages/FileEditor";
 import { Libraries } from "./pages/Libraries";
 import { LibraryDetail } from "./pages/LibraryDetail";
 import { Placeholder } from "./pages/Placeholder";
 import { RunDetail } from "./pages/RunDetail";
 import { SettingsPlex } from "./pages/SettingsPlex";
+import { SystemBackup } from "./pages/SystemBackup";
 import { SystemStatus } from "./pages/SystemStatus";
 import { SystemTasks } from "./pages/SystemTasks";
 
@@ -22,6 +24,7 @@ const built: Record<string, ComponentType> = {
   "/activity/history": ActivityHistory,
   "/system/status": SystemStatus,
   "/system/tasks": SystemTasks,
+  "/system/backup": SystemBackup,
   "/settings/plex": SettingsPlex,
 };
 
@@ -38,6 +41,7 @@ export function App({ queryClient = new QueryClient() }: { queryClient?: QueryCl
             })}
             <Route path="/activity/queue/:id" element={<RunDetail />} />
             <Route path="/libraries/:name" element={<LibraryDetail />} />
+            <Route path="/files" element={<FileEditor />} />
             <Route path="*" element={<p className="text-muted">Page not found.</p>} />
           </Route>
         </Routes>
