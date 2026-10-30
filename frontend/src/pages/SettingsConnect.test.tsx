@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ArrState, MaintainerrState, ServicesState } from "../api";
 import { mockApi, renderAt } from "../test-utils";
 
-const off = { enabled: false, mode: "all" as const, wait_minutes: 10, libraries: [] };
+const off = { enabled: false, trigger: "any" as const, mode: "all" as const, wait_minutes: 10, libraries: [] };
 
 const state: ArrState = {
   settings: { radarr: off, sonarr: off },
@@ -13,6 +13,8 @@ const state: ArrState = {
     sonarr: { url: null, token: null, root_folder_path: null, quality_profile: null, username: null, has_password: false, status: null },
   },
   pending: {},
+  skipped: { radarr: [], sonarr: [] },
+  libraries: [],
 };
 
 const overview = {
@@ -109,7 +111,7 @@ describe("Radarr and Sonarr", () => {
     fireEvent.click(within(sonarr).getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(calls.find((c) => c.route === "PUT /settings/arr/sonarr/runs")?.body).toEqual({ enabled: true, mode: "overlays", wait_minutes: 10, libraries: ["TV Shows"] }),
+      expect(calls.find((c) => c.route === "PUT /settings/arr/sonarr/runs")?.body).toEqual({ enabled: true, trigger: "any", mode: "overlays", wait_minutes: 10, libraries: ["TV Shows"] }),
     );
   });
 
@@ -205,5 +207,42 @@ describe("TMDb and MDBList", () => {
 
     await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/services/mdblist")?.body).toEqual({ apikey: "new-k3y9" }));
     await waitFor(() => expect(screen.getByLabelText("MDBList API key")).toHaveAttribute("placeholder", "Saved (…k3y9), leave empty to keep it"));
+  });
+});
+
+describe("Only imports that matter", () => {
+  it("says per library what Studio can tell, offers to turn on Kometa's report, and lists skipped imports", async () => {
+    const relevance = (library: string, extra: object) => ({
+      library,
+      reports: true,
+      reported_at: "2026-10-30T18:00:00Z",
+      changed: false,
+      wanted: 12,
+      ids: 2,
+      lists: 4,
+      rule: [],
+      unreadable: [],
+      overlays: false,
+      ...extra,
+    });
+    const known: ArrState = {
+      ...state,
+      settings: { ...state.settings, radarr: { ...off, enabled: true, mode: "collections" } },
+      skipped: { radarr: [{ at: new Date().toISOString(), title: "Paddington 2 (2017)", libraries: "Movies" }], sonarr: [] },
+      libraries: [relevance("Movies", {}), relevance("Kids", { reports: false, reported_at: null }), relevance("4K", { rule: ["Recently Added"] })],
+    };
+    const calls = routes({ "GET /settings/arr": () => known, "POST /settings/arr/reports": () => known, "PUT /settings/arr/radarr/runs": () => known });
+    renderAt("/settings/connect");
+
+    const form = await screen.findByRole("form", { name: "Radarr imports" });
+    expect(within(form).getByText(/Skipped lately: Paddington 2 \(2017\)/)).toBeInTheDocument();
+    fireEvent.click(within(form).getByLabelText(/Only imports that matter to Kometa/));
+    expect(within(form).getByText(/only imports its collections want: 14 known/)).toBeInTheDocument();
+    expect(within(form).getByText("every import counts until Kometa's missing report is on")).toBeInTheDocument();
+    expect(within(form).getByText("every import counts: “Recently Added” search Plex")).toBeInTheDocument();
+    fireEvent.click(within(form).getByRole("button", { name: "Turn on Kometa's missing report" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /settings/arr/reports")).toBe(true));
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/arr/radarr/runs")?.body).toMatchObject({ trigger: "relevant" }));
   });
 });

@@ -167,6 +167,28 @@ def collect(db: sqlite3.Connection, runner, tasks, arr, maintainerr) -> list[dic
             }
         )
 
+    for kind in ("radarr", "sonarr"):
+        skipped = get_setting(db, f"arr.skipped.{kind}") or []
+        if arr and skipped:
+            last = skipped[-1]
+            name = "Radarr" if kind == "radarr" else "Sonarr"
+            found.append(
+                {
+                    "id": f"arr-skipped-{kind}",
+                    "kind": "arr",
+                    "title": f"Kometa after {name} imports",
+                    "status": "completed",
+                    "label": "Skipped",
+                    "message": f"{last['title']}: no collection in {last['libraries']} wants it",
+                    "progress": None,
+                    "started_at": last["at"],
+                    "finished_at": last["at"],
+                    "link": "/settings/connect",
+                    "run_id": None,
+                    "cancellable": False,
+                }
+            )
+
     if maintainerr is not None and maintainerr.connected():
         paused = get_setting(db, maintainerr_module.PAUSED)
         redraw = get_setting(db, maintainerr_module.PENDING_PROCESS)

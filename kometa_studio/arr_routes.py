@@ -11,7 +11,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from . import arr
+from . import arr, wanted
 from .arr import AppRuns, Arr, ArrProblem, Connection, Kind
 from .config_routes import Writer, _write_call
 from .config_sections import save_section
@@ -46,11 +46,21 @@ def _connection_json(db: sqlite3.Connection, service: Arr, kind: Kind) -> dict:
     }
 
 
+def _libraries(db: sqlite3.Connection, service: Arr) -> list[dict]:
+    """What Studio can tell about each library, for "only imports that matter"."""
+    try:
+        return wanted.summary(db, wanted.plan(service.config, service.kometa_root)) if service.config else []
+    except (FileNotFoundError, ValueError):
+        return []
+
+
 def state(db: sqlite3.Connection, service: Arr) -> dict:
     return {
         "settings": arr.load_settings(db).model_dump(),
         "connections": {kind: _connection_json(db, service, kind) for kind in arr.KINDS},
         "pending": service.pending(),
+        "skipped": {kind: get_setting(db, arr.skipped_key(kind)) or [] for kind in arr.KINDS},
+        "libraries": _libraries(db, service),
     }
 
 
@@ -63,6 +73,13 @@ def _kind(kind: str) -> Kind:
     if kind not in arr.KINDS:
         raise HTTPException(404, "Radarr or Sonarr only")
     return kind  # type: ignore[return-value]
+
+
+@router.post("/reports")
+async def turn_on_reports(db: Db, service: ArrDep, writer: Writer) -> dict:
+    """Turn on Kometa's missing report (settings.save_report), which tells Studio what each collection wants."""
+    await _write_call(save_section(writer, "settings", {"save_report": True}, "Turned on Kometa's missing report in Settings → Connect"))
+    return state(db, service)
 
 
 @router.put("/{kind}/runs")

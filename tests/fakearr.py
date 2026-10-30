@@ -22,9 +22,10 @@ class FakeArr:
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
 
-    def imported(self, kind: str, title: str, year: int, at: datetime) -> None:
+    def imported(self, kind: str, title: str, year: int, at: datetime, **ids: int) -> None:
+        """An import in the app's history; ``ids`` are the item's tmdbId / tvdbId."""
         self._next_id += 1
-        item = {"title": title, "year": year}
+        item = {"title": title, "year": year} | ids
         record = {"id": self._next_id, "eventType": "downloadFolderImported", "date": at.strftime("%Y-%m-%dT%H:%M:%S.%fZ"), "sourceTitle": f"{title}.{year}.mkv"}
         record["movie" if kind == "radarr" else "series"] = item
         self.history[kind].append(record)

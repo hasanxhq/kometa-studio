@@ -12,6 +12,8 @@ import {
   type ArrConnectionInput,
   type ArrKind,
   type ArrPending,
+  type ArrState,
+  type LibraryRelevance,
   type MaintainerrState,
   type RunMode,
   type ServiceName,
@@ -253,7 +255,74 @@ function ArrConnectionForm({ kind, label, connection }: { kind: ArrKind; label: 
   );
 }
 
-function AppRunsForm({ kind, label, runs, libraries, pending }: { kind: ArrKind; label: string; runs: AppRuns; libraries: string[]; pending?: ArrPending }) {
+// What Studio can tell about each library, so "only imports that matter" isn't a black box.
+function Relevance({ libraries, mode }: { libraries: LibraryRelevance[]; mode: RunMode }) {
+  const queryClient = useQueryClient();
+  const turnOn = useMutation({ mutationFn: api.arr.turnOnReports, onSuccess: (data) => queryClient.setQueryData(["arr"], data) });
+  const overlays = mode === "all" || mode === "overlays";
+  const collections = mode === "all" || mode === "collections";
+  const line = (library: LibraryRelevance): { every: boolean; text: string } => {
+    if (overlays && library.overlays) return { every: true, text: "every import counts: its overlays need drawing" };
+    if (!collections) return { every: false, text: "nothing in this kind of run depends on what's imported" };
+    if (library.unreadable.length) return { every: true, text: `every import counts: Studio can't read ${library.unreadable[0]}` };
+    if (library.rule.length)
+      return { every: true, text: `every import counts: ${library.rule.slice(0, 3).map((name) => `“${name}”`).join(", ")}${library.rule.length > 3 ? " and more" : ""} search Plex` };
+    if (library.lists && !library.reports) return { every: true, text: "every import counts until Kometa's missing report is on" };
+    if (library.lists && !library.reported_at) return { every: true, text: "every import counts until Kometa has reported on its collections (after its next full run)" };
+    if (library.changed) return { every: true, text: "every import counts until the next full run: its collection files changed" };
+    if (!library.lists && !library.ids) return { every: false, text: "no collection here wants anything specific" };
+    return {
+      every: false,
+      text: `only imports its collections want: ${library.wanted + library.ids} known${library.reported_at ? `, from Kometa's report ${formatRelative(library.reported_at)}` : ""}`,
+    };
+  };
+  const reportsOff = libraries.some((library) => library.lists > 0 && !library.reports);
+  return (
+    <div className="flex flex-col gap-2 rounded-control border border-border p-3 text-sm">
+      {libraries.length === 0 ? (
+        <p className="text-muted">No libraries in config.yml yet, so every import counts.</p>
+      ) : (
+        <ul className="flex flex-col gap-1">
+          {libraries.map((library) => {
+            const { every, text } = line(library);
+            return (
+              <li key={library.library}>
+                <span className="font-semibold">{library.library}</span>: <span className={every ? "text-warn" : "text-muted"}>{text}</span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {reportsOff && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button onClick={() => turnOn.mutate()} disabled={turnOn.isPending}>
+            Turn on Kometa's missing report
+          </Button>
+          <span className="text-xs text-muted">Sets save_report in config.yml. Kometa then notes, every run, what each collection wants that Plex doesn't have.</span>
+          {turnOn.isError && <Outcome ok={false}>{turnOn.error.message}</Outcome>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AppRunsForm({
+  kind,
+  label,
+  runs,
+  libraries,
+  pending,
+  relevance,
+  skipped,
+}: {
+  kind: ArrKind;
+  label: string;
+  runs: AppRuns;
+  libraries: string[];
+  pending?: ArrPending;
+  relevance: LibraryRelevance[];
+  skipped: ArrState["skipped"][ArrKind];
+}) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<AppRuns>(runs);
   const save = useMutation({ mutationFn: () => api.arr.saveRuns(kind, draft), onSuccess: (data) => queryClient.setQueryData(["arr"], data) });
@@ -292,6 +361,26 @@ function AppRunsForm({ kind, label, runs, libraries, pending }: { kind: ArrKind;
               />
             </Field>
           </div>
+          <fieldset className="flex flex-col">
+            <legend className="mb-1 text-sm text-muted">Which imports</legend>
+            <label className="flex min-h-11 items-center gap-2 text-sm">
+              <input type="radio" className="accent-accent" checked={draft.trigger === "any"} onChange={() => setDraft({ ...draft, trigger: "any" })} />
+              Every import
+            </label>
+            <label className="flex min-h-11 items-start gap-2 pt-2.5 text-sm">
+              <input type="radio" className="mt-1 accent-accent" checked={draft.trigger === "relevant"} onChange={() => setDraft({ ...draft, trigger: "relevant" })} />
+              <span>
+                Only imports that matter to Kometa
+                <span className="block text-xs text-muted">
+                  A collection wants it, a collection that searches Plex could take it, or overlays need drawing. When only collections want it, just those
+                  collections run. The others are skipped.
+                </span>
+              </span>
+            </label>
+          </fieldset>
+          {draft.trigger === "relevant" && (
+            <Relevance libraries={relevance.filter((library) => draft.libraries.length === 0 || draft.libraries.includes(library.library))} mode={draft.mode} />
+          )}
           <fieldset>
             <legend className="mb-1.5 text-sm text-muted">Libraries to run for</legend>
             {libraries.length === 0 ? (
@@ -317,6 +406,16 @@ function AppRunsForm({ kind, label, runs, libraries, pending }: { kind: ArrKind;
         {save.isError && <Outcome ok={false}>{save.error.message}</Outcome>}
         {save.isSuccess && <Outcome ok>Saved.</Outcome>}
       </div>
+      {skipped.length > 0 && (
+        <p className="text-xs text-muted">
+          Skipped lately:{" "}
+          {skipped
+            .slice(-3)
+            .reverse()
+            .map((entry) => `${entry.title} (${formatRelative(entry.at)})`)
+            .join(", ")}
+        </p>
+      )}
       {pending && (
         <p role="status" className="text-sm text-info">
           {pending.imports} import{pending.imports === 1 ? "" : "s"} waiting ({pending.titles.join(", ")}). Kometa runs{" "}
@@ -572,6 +671,8 @@ export function SettingsConnect() {
                   runs={arr.data.settings[kind]}
                   libraries={libraries}
                   pending={arr.data.pending[kind]}
+                  relevance={arr.data.libraries}
+                  skipped={arr.data.skipped[kind]}
                 />
               </Section>
             ))

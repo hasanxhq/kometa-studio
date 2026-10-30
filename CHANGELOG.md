@@ -65,3 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Every connection is saved only after a passing test, and Studio tests it again when saving. Changing only Maintainerr's overlay choice needs no test.
   - Radarr and Sonarr each have their own "run Kometa when it imports" settings: on or off, what to run, how long to wait and which libraries. Settings from before carry over to both.
   - TMDb and MDBList keys are tested with the same call Kometa makes, and saved to config.yml only after the test passes. MDBList's test shows how much of today's allowance is used. Trakt and the other trackers aren't offered: Kometa 2.5.3 removed Trakt.
+- Runs after imports can be limited to imports that matter to Kometa (per app, "Only imports that matter to Kometa").
+  - An import counts when one of these holds:
+    - a collection wants it;
+    - a collection that searches Plex could take it;
+    - the run draws overlays, runs operations or applies metadata files in that library;
+    - Studio can't tell.
+  - When only collections want it, just those collections run. Other imports are skipped and listed.
+  - What collections want comes from the collection files (IDs written in them) and from Kometa's missing report (`save_report`), which Studio keeps its own copy of after each completed run. Settings → Connect can turn the report on.
+  - Per library, the page says what Studio can tell and why every import still counts where it does.

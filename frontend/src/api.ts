@@ -173,7 +173,7 @@ export type Schedules = {
 export type ArrKind = "radarr" | "sonarr";
 
 /** When to run Kometa after one app's imports. */
-export type AppRuns = { enabled: boolean; mode: RunMode; wait_minutes: number; libraries: string[] };
+export type AppRuns = { enabled: boolean; trigger: "any" | "relevant"; mode: RunMode; wait_minutes: number; libraries: string[] };
 
 export type ArrSettings = Record<ArrKind, AppRuns>;
 
@@ -200,10 +200,26 @@ export type ArrTest = { ok: true; app: string; version: string; root_folders: st
 
 export type ArrPending = { first_at: string; last_at: string; due_at: string; imports: number; titles: string[] };
 
+/** What Studio can tell about a library, for "only imports that matter". */
+export type LibraryRelevance = {
+  library: string;
+  reports: boolean; // Kometa's missing report (save_report) is on
+  reported_at: string | null; // when Kometa last reported on all its collections
+  changed: boolean; // the collection files changed since
+  wanted: number; // items its collections want that Plex doesn't have
+  ids: number; // items named by ID in its collections
+  lists: number; // list-based collections
+  rule: string[]; // collections that search Plex: every import counts
+  unreadable: string[];
+  overlays: boolean;
+};
+
 export type ArrState = {
   settings: ArrSettings;
   connections: Record<ArrKind, ArrConnection>;
   pending: Partial<Record<ArrKind, ArrPending>>;
+  skipped: Record<ArrKind, { at: string; title: string; libraries: string }[]>;
+  libraries: LibraryRelevance[];
 };
 
 // TMDb and MDBList (Settings → Connect): Kometa's keys, in config.yml.
@@ -540,6 +556,7 @@ export const api = {
     connect: (kind: ArrKind, body: ArrConnectionInput) => request<ArrState>("PUT", `/settings/arr/${kind}`, body),
     test: (kind: ArrKind, body: ArrConnectionInput) => request<ArrTest>("POST", `/settings/arr/${kind}/test`, body),
     remove: (kind: ArrKind) => request<ArrState>("DELETE", `/settings/arr/${kind}`),
+    turnOnReports: () => request<ArrState>("POST", "/settings/arr/reports"),
   },
   services: {
     get: () => request<ServicesState>("GET", "/settings/services"),

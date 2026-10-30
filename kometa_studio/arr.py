@@ -8,16 +8,19 @@ The connection is Kometa's own: ``radarr:``/``sonarr:`` in config.yml, which Set
 A seedbox's proxy login in front of an app (HTTP Basic) is Studio's alone, kept encrypted, since
 Kometa can't send one.
 
-Each app has its own settings (``AppRuns``). A season pack or a big search imports dozens of files,
-so each import only pushes back that app's pending run: it's queued once no import has arrived for
-``wait_minutes``, or ``MAX_WAIT`` after the first, whichever is sooner. Pending runs live in SQLite
-and the scheduler's tick queues them.
+Each app has its own settings (``AppRuns``). With ``trigger: relevant``, an import only counts if it
+matters to one of the app's libraries (see ``wanted``); the others are noted as skipped, and the run
+can be narrowed to the collections that want what arrived. A season pack or a big search imports
+dozens of files, so each import only pushes back that app's pending run: it's queued once no import
+has arrived for ``wait_minutes``, or ``MAX_WAIT`` after the first, whichever is sooner. Pending runs
+live in SQLite and the scheduler's tick queues them.
 """
 
 import asyncio
 import contextlib
 import logging
 import sqlite3
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -27,9 +30,12 @@ import httpx
 from pydantic import BaseModel, Field
 from ruamel.yaml import YAML, YAMLError
 
+from . import wanted
 from .crypto import SecretBox
 from .db import delete_setting, get_setting, set_setting
 from .kometa_command import Mode, RunRequest
+from .kometa_config import read_plex
+from .plex_library import PlexServer, PlexUnavailable
 from .runner import Runner
 from .scheduler import parse_utc, utc_text
 
@@ -54,6 +60,7 @@ class AppRuns(BaseModel):
     """When to run Kometa after one app's imports."""
 
     enabled: bool = False
+    trigger: Literal["any", "relevant"] = "any"  # every import, or only those that matter to a library (see wanted)
     mode: Mode = "all"
     wait_minutes: int = Field(default=10, ge=1, le=240)
     # Kometa library names (config.yml) to run for; empty means every library.
@@ -79,6 +86,14 @@ def load_settings(db: sqlite3.Connection) -> ArrSettings:
 
 def pending_key(kind: "Kind") -> str:
     return f"arr.pending.{kind}"
+
+
+def skipped_key(kind: "Kind") -> str:
+    return f"arr.skipped.{kind}"
+
+
+TYPES = {"radarr": "movie", "sonarr": "show"}  # the Plex library type each app imports into
+LIBRARY_TYPES_TTL = 600.0
 
 
 class ArrProblem(Exception):
@@ -174,6 +189,20 @@ async def imports_since(http: httpx.AsyncClient, conn: Connection, kind: Kind, s
     return sorted((r for r in records if isinstance(r, dict) and isinstance(r.get("id"), int)), key=lambda r: r["id"])
 
 
+def item_keys(kind: Kind, record: dict) -> list[str]:
+    """How ``wanted`` names the imported item: a movie by its TMDb ID, a show by its TVDb (and TMDb) ID."""
+    item = record.get("movie") if kind == "radarr" else record.get("series")
+    item = item if isinstance(item, dict) else {}
+    keys = []
+    if kind == "radarr" and item.get("tmdbId"):
+        keys.append(f"tmdb-movie:{item['tmdbId']}")
+    if kind == "sonarr" and item.get("tvdbId"):
+        keys.append(f"tvdb:{item['tvdbId']}")
+    if kind == "sonarr" and item.get("tmdbId"):
+        keys.append(f"tmdb-show:{item['tmdbId']}")
+    return keys
+
+
 def _title(record: dict) -> str | None:
     item = record.get("movie") or record.get("series") or {}
     title = item.get("title") if isinstance(item, dict) else None
@@ -186,13 +215,15 @@ def _title(record: dict) -> str | None:
 class Arr:
     """The polling, the pending run, and queueing it."""
 
-    def __init__(self, db: sqlite3.Connection, runner: Runner, http: httpx.AsyncClient, box: SecretBox, config: Path | None):
+    def __init__(self, db: sqlite3.Connection, runner: Runner, http: httpx.AsyncClient, box: SecretBox, config: Path | None, kometa_root: Path | None = None):
         self.db = db
         self.runner = runner
         self.http = http
         self.box = box
         self.config = config
+        self.kometa_root = kometa_root
         self._task: asyncio.Task | None = None
+        self._types: tuple[float, dict[str, str]] | None = None  # Plex library title -> type, and when it was read
         shared = get_setting(db, PENDING)
         if shared:  # one pending run for both apps, from before each app had its own
             for kind in shared.get("kinds", []):
@@ -235,7 +266,7 @@ class Arr:
                 continue
             set_setting(self.db, f"arr.status.{kind}", {"checked_at": utc_text(now), "ok": True, "error": None})
             if records:
-                self.record(kind, [_title(r) for r in records], now)
+                await self._count(kind, settings.app(kind), records, now)
                 last = records[-1]
                 cursor = {"date": str(last.get("date") or utc_text(now))[:19] + "Z", "id": last["id"]}
             elif cursor["id"] == 0:
@@ -244,6 +275,56 @@ class Arr:
             found[kind] = len(records)
         return found
 
+    async def _count(self, kind: Kind, runs: AppRuns, records: list[dict], now: datetime) -> None:
+        """Add imports to the app's pending run: all of them, or only those that matter to one of its libraries."""
+        if runs.trigger == "any":
+            self.record(kind, [_title(r) for r in records], now)
+            return
+        try:
+            plans = wanted.plan(self.config, self.kometa_root) if self.config else None
+        except (FileNotFoundError, ValueError):
+            plans = None
+        if not plans:  # nothing to go on: every import counts
+            self.record(kind, [_title(r) for r in records], now)
+            return
+        targets = [name for name in runs.libraries if name in plans] or await self._libraries_for(kind, plans)
+        skipped = []
+        for record in records:
+            items = item_keys(kind, record)
+            decisions = [d for name in targets if (d := wanted.decide(self.db, plans[name], runs.mode, items))]
+            if decisions:
+                self.record(kind, [_title(record)], now, decisions)
+            else:
+                skipped.append(_title(record))
+        if skipped:
+            self.skip(kind, skipped, targets, now)
+
+    async def _libraries_for(self, kind: Kind, plans: dict[str, "wanted.LibraryPlan"]) -> list[str]:
+        """config.yml's libraries of the type this app imports, as Plex says; all of them if Plex can't say."""
+        types = await self._library_types()
+        matching = [name for name, plan in plans.items() if types.get(plan.plex_name) == TYPES[kind]]
+        return matching or list(plans)
+
+    async def _library_types(self) -> dict[str, str]:
+        if self._types and time.monotonic() - self._types[0] < LIBRARY_TYPES_TTL:
+            return self._types[1]
+        try:
+            current = read_plex(self.config) if self.config else None
+            if current is None or not current.url or not current.token:
+                return {}
+            libraries = await PlexServer(self.http, current.url, current.token).libraries()
+        except (OSError, ValueError, YAMLError, PlexUnavailable):
+            return {}
+        self._types = (time.monotonic(), {library.title: library.type for library in libraries})
+        return self._types[1]
+
+    def skip(self, kind: Kind, titles: list[str | None], libraries: list[str], now: datetime) -> None:
+        """Note imports that didn't matter to any library, for the page and the jobs drawer."""
+        recent = get_setting(self.db, skipped_key(kind)) or []
+        where = ", ".join(libraries) or "any library"
+        recent += [{"at": utc_text(now), "title": title, "libraries": where} for title in titles if title]
+        set_setting(self.db, skipped_key(kind), recent[-KEEP_TITLES:])
+
     def reset_cursor(self, kind: Kind) -> None:
         """Start from now: a newly connected app's history isn't news."""
         delete_setting(self.db, f"arr.cursor.{kind}")
@@ -251,13 +332,23 @@ class Arr:
 
     # --- The pending runs --------------------------------------------------------------
 
-    def record(self, kind: Kind, titles: list[str | None], now: datetime) -> None:
-        pending = get_setting(self.db, pending_key(kind)) or {"first_at": utc_text(now), "imports": 0, "titles": []}
+    def record(self, kind: Kind, titles: list[str | None], now: datetime, decisions: list["wanted.Decision"] | None = None) -> None:
+        """Add imports to the app's pending run. ``decisions`` (relevant imports only) narrow what it runs; None runs the app's libraries."""
+        pending = get_setting(self.db, pending_key(kind)) or {"first_at": utc_text(now), "imports": 0, "titles": [], "libraries": {}}
         pending["last_at"] = utc_text(now)
         pending["imports"] += len(titles)
         for title in titles:
             if title and title not in pending["titles"]:
                 pending["titles"] = (pending["titles"] + [title])[-KEEP_TITLES:]
+        if decisions is None or pending.get("libraries") is None:
+            pending["libraries"] = None  # an import that counts as it is: the app's own libraries run
+        else:
+            for decision in decisions:
+                entry = pending["libraries"].setdefault(decision.library, {"whole": False, "collections": [], "reasons": []})
+                entry["whole"] = entry["whole"] or decision.whole
+                entry["collections"] = sorted(set(entry["collections"]) | set(decision.collections))
+                if decision.reason not in entry["reasons"]:
+                    entry["reasons"] = (entry["reasons"] + [decision.reason])[-KEEP_TITLES:]
         set_setting(self.db, pending_key(kind), pending)
 
     @staticmethod
@@ -266,7 +357,9 @@ class Arr:
         return min(quiet, parse_utc(pending["first_at"]) + MAX_WAIT)
 
     @staticmethod
-    def request(runs: AppRuns) -> RunRequest:
+    def request(runs: AppRuns, pending: dict) -> RunRequest:
+        if pending.get("libraries"):
+            return wanted.narrowed(runs.mode, pending["libraries"])
         return RunRequest(mode=runs.mode, libraries=list(runs.libraries))
 
     def tick(self, now: datetime) -> list[int]:
@@ -278,7 +371,7 @@ class Arr:
             if not pending or now < self.due_at(pending, settings.app(kind)):
                 continue
             delete_setting(self.db, pending_key(kind))
-            queued.append(self.runner.enqueue(self.request(settings.app(kind)), trigger="arr"))
+            queued.append(self.runner.enqueue(self.request(settings.app(kind), pending), trigger="arr"))
         return queued
 
     def pending(self) -> dict[str, dict]:

@@ -16,6 +16,7 @@ from . import __version__
 from .arr import Arr
 from .maintainerr import Maintainerr
 from .arr_routes import router as arr_router
+from .wanted import WantedRecorder
 from .services import router as services_router
 from .auth import AuthMiddleware, LoginThrottle
 from .auth_routes import TIMEZONE
@@ -115,11 +116,13 @@ def create_app(
         tasks.setup(app.state.timezone)
         app.state.tasks = tasks
         # Started after the runner has marked cut-off runs interrupted; its first tick catches up on missed runs.
-        app.state.arr = Arr(app.state.db, runner, app.state.http, app.state.secrets, settings.kometa_config)
+        kometa_root = settings.kometa_entry.parent if settings.kometa_entry else None
+        app.state.arr = Arr(app.state.db, runner, app.state.http, app.state.secrets, settings.kometa_config, kometa_root)
         app.state.arr.start()
         maintainerr = Maintainerr(app.state.db, app.state.http, app.state.secrets, settings.kometa_config, settings.kometa_entry.parent if settings.kometa_entry else None)
         app.state.maintainerr = maintainerr
         runner.hooks.append(maintainerr)
+        runner.hooks.append(WantedRecorder(app.state.db, runner, settings.kometa_config, kometa_root))
         if app.state.writer is not None:
             app.state.writer.guard = lambda path, root: [risk.message for risk in maintainerr.risks(path, root)]
         maintainerr.start()
