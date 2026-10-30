@@ -43,9 +43,14 @@ def _load(path: Path) -> tuple[CommentedMap, tuple[int, int, int]]:
     if not path.exists():
         return CommentedMap(), TEMPLATE_INDENT
     text = path.read_text(encoding="utf-8")
-    # ruamel guesses list indentation (where items start, where the dash sits) but not mapping indentation.
+    # ruamel guesses list indentation (where items start, where the dash sits) but not mapping indentation,
+    # and its guess only means something if the file has a block list.
     _, sequence, offset = load_yaml_guess_indent(text)
-    indent = (_mapping_indent(text), sequence or TEMPLATE_INDENT[1], offset if sequence else TEMPLATE_INDENT[2])
+    has_list = any(line.lstrip(" ").startswith("- ") for line in text.splitlines())
+    if has_list and sequence:
+        indent = (_mapping_indent(text), sequence, offset or 0)
+    else:
+        indent = (_mapping_indent(text), *TEMPLATE_INDENT[1:])
     document = _yaml(indent).load(text)
     if document is None:
         return CommentedMap(), TEMPLATE_INDENT

@@ -227,6 +227,32 @@ def test_webhook_events_belong_to_the_running_run(tmp_path, config):
     assert "iVBORw0KGgo" not in stored
 
 
+def test_a_critical_error_fails_the_run_even_when_kometa_exits_0(tmp_path, config):
+    release = tmp_path / "release"
+    plan(config, wait_for=str(release))
+    with make_client(tmp_path) as client:
+        run_id = client.post("/api/v1/runs", json={}).json()["id"]
+        wait_for(client, run_id, {"running"})
+        post_event(client, {"event": "error", "error": "Libraries: TV is not a valid library", "critical": False})
+        post_event(client, {"event": "error", "error": "Config Error: tmdb sub-attribute apikey not found", "critical": True})
+        release.touch()
+        run = wait_for(client, run_id)
+    assert (run["status"], run["exit_code"]) == ("failed", 0)
+    assert run["error"] == "Config Error: tmdb sub-attribute apikey not found"
+
+
+def test_non_critical_errors_leave_the_run_finished(tmp_path, config):
+    release = tmp_path / "release"
+    plan(config, wait_for=str(release))
+    with make_client(tmp_path) as client:
+        run_id = client.post("/api/v1/runs", json={}).json()["id"]
+        wait_for(client, run_id, {"running"})
+        post_event(client, {"event": "error", "error": "IMDb list not found", "critical": False})
+        release.touch()
+        run = wait_for(client, run_id)
+    assert (run["status"], run["error_events"]) == ("succeeded", 1)
+
+
 def test_webhooks_need_the_token(tmp_path, config):
     with make_client(tmp_path) as client:
         assert post_event(client, {"event": "run_start"}, token="wrong").status_code == 403

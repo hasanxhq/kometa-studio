@@ -234,16 +234,27 @@ class Runner:
                 for subscriber in active.subscribers:
                     subscriber.send(None)
 
+            critical = self._first_critical_error(run_id)
             if active.timed_out:
                 status, error = "timed_out", f"Stopped after the {self.settings.run_timeout // 60} minute time limit"
             elif active.cancel_requested:
                 status, error = "cancelled", None
-            elif exit_code == 0:
-                status, error = "succeeded", None
-            else:
+            elif exit_code != 0:
                 status, error = "failed", f"Kometa exited with code {exit_code}"
+            elif critical is not None:
+                # Kometa exits 0 even when a critical error (a config error, say) stopped it doing anything.
+                status, error = "failed", critical
+            else:
+                status, error = "succeeded", None
             log.write(f"Kometa Studio: run {status.replace('_', ' ')} (exit code {exit_code})\n")
             self._finish(run_id, status, exit_code=exit_code, error=error)
+
+    def _first_critical_error(self, run_id: int) -> str | None:
+        for (payload,) in self.db.execute("SELECT payload FROM run_events WHERE run_id = ? AND event = 'error' ORDER BY id", (run_id,)):
+            data = json.loads(payload)
+            if data.get("critical"):
+                return str(data.get("error") or "Kometa reported a critical error")
+        return None
 
     async def _pump(self, active: Active, log) -> None:
         assert active.process.stdout is not None

@@ -122,11 +122,11 @@ def test_studio_webhooks_are_only_written_once(tmp_path):
     assert len(list((tmp_path / "backups").iterdir())) == 1
 
 
-def test_a_config_without_webhooks(tmp_path):
+def test_a_config_without_lists_gets_the_templates_list_style(tmp_path):
     path = tmp_path / "config.yml"
     path.write_text("plex:\n  url: http://plex:32400\n")
     ensure_studio_webhooks(path, STUDIO, tmp_path / "backups")
-    assert list(YAML().load(path.read_text())["webhooks"]["run_end"]) == [STUDIO]
+    assert f"  run_end:\n    - {STUDIO}  # managed by Kometa Studio\n" in path.read_text()
 
 
 def test_webhooks_need_an_existing_config(tmp_path):
