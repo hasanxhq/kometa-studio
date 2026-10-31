@@ -147,7 +147,7 @@ export function FullCheck({ title = "Full check" }: { title?: string }) {
       }
     >
       <p className="mb-3 text-sm text-muted">
-        Kometa reads your whole config and connects to Plex and every service in it (TMDb, Trakt, Radarr…) to make sure they answer. It doesn't
+        Kometa reads your whole config and connects to Plex and every service in it (TMDb, MDBList, Radarr…) to make sure they answer. It doesn't
         change anything or send notifications.
       </p>
       {run.isError && (

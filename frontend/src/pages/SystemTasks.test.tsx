@@ -43,7 +43,7 @@ describe("System → Tasks", () => {
     const row = (await screen.findByText("Nightly collections")).closest("li")!;
     expect(row).toHaveTextContent("Collections only · Every day at 03:00");
     expect(row).toHaveTextContent("in 5 h");
-    const last = within(row).getByRole("link", { name: /Finished/ });
+    const last = within(row).getByRole("link", { name: /Succeeded/ });
     expect(last).toHaveAttribute("href", "/activity/queue/9");
     expect(last).toHaveTextContent("Catch-up");
   });

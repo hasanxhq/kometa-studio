@@ -85,7 +85,7 @@ export function SystemLogs() {
         </div>
         <div className="min-w-0 flex-1 basis-48">
           <Field label="Search">
-            <input className={inputClass} type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="e.g. Trakt" />
+            <input className={inputClass} type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="e.g. TMDb" />
           </Field>
         </div>
         {path && (
