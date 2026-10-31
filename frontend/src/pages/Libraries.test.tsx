@@ -164,7 +164,7 @@ describe("A library", () => {
     mockApi(api);
     renderAt("/libraries/Movies?tab=defaults");
     expect(await screen.findByText("Basic Charts Collections")).toBeInTheDocument();
-    expect(screen.getByText("sep_style")).toBeInTheDocument();
+    expect(screen.getByText("sep_style: purple")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Operations" }));
     await waitFor(() => expect(screen.getByText("mass_genre_update")).toBeInTheDocument());

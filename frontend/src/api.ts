@@ -436,6 +436,18 @@ export type ConfigLibrary = {
   counts: LibraryCounts;
 };
 
+export type DefaultEntry = {
+  name: string; // what `default:` takes
+  group: "chart" | "award" | "both" | "movie" | "show" | "overlays";
+  types: string[]; // the Plex library types it suits: movie, show
+  title: string | null;
+  docs_url: string | null;
+};
+
+export type DefaultsCatalogue = { collections: DefaultEntry[]; overlays: DefaultEntry[] };
+
+export type DefaultKind = "collection" | "overlay";
+
 // --- Plex ---
 
 export type PlexLibrarySummary = { key: string; title: string; type: string; collections: number; managed: number; maintainerr?: number };
@@ -598,6 +610,13 @@ export const api = {
     library: (name: string) => request<ConfigLibrary>("GET", `/config/libraries/${encodeURIComponent(name)}`),
     file: (path: string) => request<{ path: string; text: string }>("GET", `/config/file?path=${encodeURIComponent(path)}`),
     addLibrary: (name: string) => request<SaveResult>("POST", "/config/libraries", { name }),
+    defaults: () => request<DefaultsCatalogue>("GET", "/config/defaults"),
+    useDefault: (library: string, kind: DefaultKind, name: string, variables: Record<string, unknown>) =>
+      request<SaveResult>("PUT", `/config/libraries/${encodeURIComponent(library)}/defaults/${kind}/${encodeURIComponent(name)}`, { template_variables: variables }),
+    dropDefault: (library: string, kind: DefaultKind, name: string) =>
+      request<SaveResult>("DELETE", `/config/libraries/${encodeURIComponent(library)}/defaults/${kind}/${encodeURIComponent(name)}`),
+    setLibraryVariables: (library: string, variables: Record<string, unknown>) =>
+      request<SaveResult>("PUT", `/config/libraries/${encodeURIComponent(library)}/template-variables`, { template_variables: variables }),
   },
   plexLibraries: {
     list: () => request<{ libraries: PlexLibrarySummary[] }>("GET", "/plex/libraries"),

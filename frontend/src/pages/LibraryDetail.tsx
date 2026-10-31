@@ -6,6 +6,7 @@ import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError, api, type ConfigLibrary, type FileReference, type PlexCollection } from "../api";
 import { AddLibrary } from "../components/AddLibrary";
+import { DefaultsTab } from "./LibraryDefaults";
 import { PlexPoster } from "../components/PlexPoster";
 import { Button, Card, Tag } from "../components/ui";
 import { collectionPath, libraryTypeLabels, mergeLibraries } from "../libraries";
@@ -365,31 +366,6 @@ function OverlaysTab({ config }: { config: ConfigLibrary }) {
   );
 }
 
-function DefaultsTab({ config }: { config: ConfigLibrary }) {
-  const defaults = [...config.collection_files, ...config.overlay_files].filter((r) => r.kind === "default");
-  return (
-    <div className="flex flex-col gap-4">
-      <Card title="Template variables for every file in this library">
-        <KeyValues values={config.template_variables} />
-      </Card>
-      <Card title={`Kometa defaults in use (${defaults.length})`}>
-        {defaults.length === 0 ? (
-          <p className="text-sm text-muted">This library doesn't use any of Kometa's defaults.</p>
-        ) : (
-          <ul className="flex flex-col gap-4">
-            {defaults.map((reference, index) => (
-              <li key={index} className="flex flex-col gap-2 border-b border-border pb-4 last:border-0">
-                <ReferenceHeader reference={reference} />
-                <KeyValues values={reference.template_variables} empty="No template variables: Kometa's defaults apply." />
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-    </div>
-  );
-}
-
 function OperationsTab({ config }: { config: ConfigLibrary }) {
   return (
     <div className="flex flex-col gap-4">
@@ -462,7 +438,7 @@ export function LibraryDetail() {
       </p>
     );
   } else {
-    body = { overlays: <OverlaysTab config={config.data} />, defaults: <DefaultsTab config={config.data} />, operations: <OperationsTab config={config.data} /> }[tab];
+    body = { overlays: <OverlaysTab config={config.data} />, defaults: <DefaultsTab config={config.data} libraryType={entry.plex?.type ?? null} />, operations: <OperationsTab config={config.data} /> }[tab];
   }
 
   return (

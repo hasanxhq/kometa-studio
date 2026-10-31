@@ -11,7 +11,7 @@ from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 from ruamel.yaml.error import YAMLError
 
-from .config_items import FILE_LISTS, ItemProblem, new_file
+from .config_items import FILE_LISTS, ItemProblem, _update, new_file
 from .config_write import ConfigWriter, Edit, SaveRefused, file_hash
 from .kometa_config import TEMPLATE_INDENT, _parse, render
 
@@ -140,3 +140,88 @@ async def new_file_for_library(writer: ConfigWriter, relative: str, library: str
         raise SaveRefused(problem.status, problem.message, path=relative) from None
     config = _config_edit(writer, lambda current: with_library_file(current or "", library, FILE_LISTS[section], writer.reference(path)))
     return await writer.save([Edit(writer.relative(path), text, None), config], f"Added {name!r} in a new file, {writer.relative(path)}, for {library}")
+
+
+# --- Kometa's defaults in a library -------------------------------------------------------
+
+
+def _is_default(entry: object, name: str) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    return entry.get("default") == name or entry.get("pmm") == name or entry.get("git") == f"PMM/{name}"
+
+
+def _library_body(document: CommentedMap, library: str) -> CommentedMap:
+    libraries = document.get("libraries")
+    if not isinstance(libraries, CommentedMap) or library not in libraries:
+        raise ValueError(f"config.yml has no library called {library}")
+    body = libraries[library]
+    if body is None:
+        body = CommentedMap()
+        libraries[library] = body
+    if not isinstance(body, CommentedMap):
+        raise ValueError(f"{library} in config.yml isn't a mapping")
+    return body
+
+
+def _set_variables(entry: CommentedMap, variables: dict) -> None:
+    current = entry.get("template_variables")
+    if not variables:
+        entry.pop("template_variables", None)
+    elif isinstance(current, CommentedMap):
+        _update(current, variables)  # unchanged variables keep their YAML (comments, quoting)
+    else:
+        entry["template_variables"] = CommentedMap(variables)
+
+
+def with_library_default(text: str, library: str, files: str, name: str, variables: dict | None) -> str:
+    """``text`` with Kometa's default ``name`` in the library's ``files`` list, with these template variables; ``variables`` None takes it out.
+
+    A default listed more than once (with different variables, say) has its first entry changed, or every entry taken out.
+    """
+    document, indent = _parse(text)
+    body = _library_body(document, library)
+    if files not in body and OLD_NAMES[files] in body:
+        raise ValueError(f"{library} still uses the old {OLD_NAMES[files]}. Rename it to {files} in config.yml first.")
+    current = body.get(files)
+    entries = current if isinstance(current, list) else ([] if current is None else [current])
+    if variables is None:
+        kept = [entry for entry in entries if not _is_default(entry, name)]
+        if len(kept) == len(entries):
+            raise ValueError(f"{library} doesn't use the {name} default")
+        if kept:
+            if isinstance(current, list):
+                current[:] = kept
+            else:
+                body[files] = CommentedSeq(kept)
+        else:
+            del body[files]  # Kometa refuses an empty list
+        return render(text, document, indent)
+    found = next((entry for entry in entries if _is_default(entry, name)), None)
+    if found is None:
+        found = CommentedMap([("default", name)])
+        if isinstance(current, list):
+            current.append(found)
+        else:
+            body[files] = CommentedSeq([*entries, found])
+    elif not isinstance(found, CommentedMap):
+        raise ValueError(f"The {name} entry in config.yml isn't a mapping")
+    _set_variables(found, variables)
+    return render(text, document, indent)
+
+
+def with_library_variables(text: str, library: str, variables: dict) -> str:
+    """``text`` with the library's own template_variables (for every file in it) set to ``variables``."""
+    document, indent = _parse(text)
+    _set_variables(_library_body(document, library), variables)
+    return render(text, document, indent)
+
+
+async def set_library_default(writer: ConfigWriter, library: str, kind: str, name: str, variables: dict | None) -> dict:
+    files = "overlay_files" if kind == "overlay" else "collection_files"
+    action = f"Turned off the {name} default" if variables is None else f"Set the {name} default"
+    return await writer.save([_config_edit(writer, lambda text: with_library_default(text or "", library, files, name, variables))], f"{action} for {library}")
+
+
+async def set_library_variables(writer: ConfigWriter, library: str, variables: dict) -> dict:
+    return await writer.save([_config_edit(writer, lambda text: with_library_variables(text or "", library, variables))], f"Set the template variables for {library}")
