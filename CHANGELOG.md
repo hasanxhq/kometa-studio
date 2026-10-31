@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A run's log can show only warnings and errors, and runs count their warnings on the Queue, the Overview and the run's page. Runs from before this update show none.
 - Save stays in view at the bottom of the page on the collection, overlay, playlist and file editors and Settings → Kometa.
 - **Run Kometa** and schedules pick libraries from config.yml's list instead of typing their names. None picked still means every library.
 - Text boxes and dropdowns use the same font as the rest of Studio. The code font stays for YAML, file names, Kometa's own keys and the API key.

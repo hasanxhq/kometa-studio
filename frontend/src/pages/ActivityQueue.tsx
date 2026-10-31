@@ -71,6 +71,7 @@ export function RunRow({ run }: { run: Run }) {
             </span>
           )}
           {run.error_events > 0 && <span className="text-err">{run.error_events} error{run.error_events === 1 ? "" : "s"}</span>}
+          {run.warnings > 0 && <span className="text-warn">{run.warnings} warning{run.warnings === 1 ? "" : "s"}</span>}
           <span>{formatTime(run.started_at ?? run.queued_at)}</span>
           {run.started_at && <span>{formatDuration(run.started_at, run.finished_at)}</span>}
         </span>

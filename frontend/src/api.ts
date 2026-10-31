@@ -134,6 +134,7 @@ export type Run = {
   error: string | null;
   summary: RunSummary | null;
   error_events: number;
+  warnings: number; // lines of its log, as the log's filter counts them
 };
 
 export type RunEvent = {

@@ -64,6 +64,7 @@ def run_json(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, Any]:
         "error": row["error"],
         "summary": json.loads(row["summary"]) if row["summary"] else None,
         "error_events": errors,
+        "warnings": row["warnings"],
     }
 
 

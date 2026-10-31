@@ -34,6 +34,7 @@ function run(overrides: Partial<Run>): Run {
     error: null,
     summary: null,
     error_events: 0,
+    warnings: 0,
     ...overrides,
   };
 }

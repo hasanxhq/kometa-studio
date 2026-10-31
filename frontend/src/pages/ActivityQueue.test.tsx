@@ -34,6 +34,7 @@ function run(overrides: Partial<Run>): Run {
     error: null,
     summary: null,
     error_events: 0,
+    warnings: 0,
     ...overrides,
   };
 }
@@ -110,6 +111,38 @@ describe("Activity → Queue", () => {
     await waitFor(() => expect(calls.some((c) => c.route === "POST /runs/3/cancel")).toBe(true));
     source.emit("end", { status: "cancelled", dropped: false });
     expect(source.closed).toBe(true);
+  });
+
+  it("filters the log to warnings and errors", async () => {
+    mockApi({ "GET /runs": () => ({ runs: [run({ id: 3, status: "running", finished_at: null, exit_code: null })], current: 3 }), "GET /kometa": () => ready });
+    renderAt("/activity/queue");
+    await screen.findByLabelText("Run log");
+    const source = FakeEventSource.latest();
+    source.open();
+    source.emit("lines", ["Starting Kometa"]);
+    const log = screen.getByLabelText("Run log");
+
+    fireEvent.change(screen.getByLabelText("Show"), { target: { value: "problems" } });
+    expect(within(log).getByText("No warnings or errors so far.")).toBeInTheDocument();
+
+    source.emit("lines", ["| Config Warning: sonarr add_missing not found |", "| Config Error: tmdb apikey is required |", "Kometa Studio: run failed"]);
+    expect(within(log).queryByText("Starting Kometa")).not.toBeInTheDocument();
+    expect(within(log).getByText(/Config Warning/)).toHaveClass("text-warn");
+    expect(within(log).getByText(/Config Error/)).toBeInTheDocument();
+    expect(within(log).getByText("Kometa Studio: run failed")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("3 of 4 lines");
+
+    fireEvent.change(screen.getByLabelText("Show"), { target: { value: "all" } });
+    expect(within(log).getByText("Starting Kometa")).toBeInTheDocument();
+  });
+
+  it("counts a run's warnings", async () => {
+    mockApi({ "GET /runs": () => ({ runs: [run({ id: 2, warnings: 2 }), run({ id: 1, warnings: 1 }), run({ id: 0 })], current: null }), "GET /kometa": () => ready });
+    renderAt("/activity/queue");
+
+    expect(await screen.findByText("2 warnings")).toHaveClass("text-warn");
+    expect(screen.getByText("1 warning")).toBeInTheDocument();
+    expect(screen.getAllByText(/warnings?$/)).toHaveLength(2);
   });
 
   it("lists recent runs with their numbers", async () => {

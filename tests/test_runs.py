@@ -82,6 +82,17 @@ def test_a_run_streams_its_output_to_a_log(tmp_path, config):
     assert "api/v1/kometa/events?token=" in text and "url: http://plex:32400" in text
 
 
+def test_a_run_counts_the_warnings_in_its_log(tmp_path, config):
+    plan(config, lines=["Starting Kometa", "| Config Warning: sonarr add_missing not found |", "| WARNING: slow |", "Error: warning about a warning", "Finished"])
+    with make_client(tmp_path) as client:
+        wait_for_flags(client)
+        run = wait_for(client, client.post("/api/v1/runs", json={"mode": "collections"}).json()["id"])
+        listed = client.get("/api/v1/runs").json()["runs"][0]
+
+    assert run["warnings"] == 2  # the error line is an error, as the log shows it
+    assert listed["warnings"] == 2
+
+
 def test_kometa_flags_come_from_its_help(tmp_path, config):
     with make_client(tmp_path) as client:
         wait_for_flags(client)

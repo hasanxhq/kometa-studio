@@ -101,6 +101,11 @@ export function RunDetail() {
               <span className="text-err">{r.error}</span>
             </Row>
           )}
+          {r.warnings > 0 && (
+            <Row label="Warnings">
+              <span className="text-warn">{r.warnings} in the log</span>
+            </Row>
+          )}
           {r.command && (
             <Row label="Command">
               <code className="break-all font-mono text-xs">{r.command}</code>
