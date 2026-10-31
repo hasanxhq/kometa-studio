@@ -91,6 +91,7 @@ function LastRunTile({ run }: { run: Run | undefined }) {
         </span>
       )}
       {run.error_events > 0 && <span className="text-sm text-err">{plural(run.error_events, "error")}</span>}
+      {run.warnings > 0 && <span className="text-sm text-warn">{plural(run.warnings, "warning")}</span>}
     </Tile>
   );
 }

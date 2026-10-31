@@ -3,9 +3,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { api, type RunStatus } from "../api";
+import { inputClass } from "./ui";
 
 const MAX_LINES = 5000; // the full log is a download away
 
+// Kometa's output doesn't mark a line's level, so its words decide. The server counts a run's warnings the same way (runner.py).
 function lineClass(line: string): string {
   if (/\b(error|critical|traceback)\b/i.test(line)) return "text-err";
   if (/\bwarning\b/i.test(line)) return "text-warn";
@@ -18,6 +20,7 @@ export function RunLog({ runId, onEnd }: { runId: number; onEnd?: (status: RunSt
   const [{ lines, cut }, setLog] = useState<{ lines: string[]; cut: boolean }>({ lines: [], cut: false });
   const [live, setLive] = useState(true);
   const [follow, setFollow] = useState(true);
+  const [problemsOnly, setProblemsOnly] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const onEndRef = useRef(onEnd);
@@ -56,21 +59,30 @@ export function RunLog({ runId, onEnd }: { runId: number; onEnd?: (status: RunSt
 
   useLayoutEffect(() => {
     if (follow && box.current) box.current.scrollTop = box.current.scrollHeight;
-  }, [lines, follow]);
+  }, [lines, follow, problemsOnly]);
 
   const onScroll = () => {
     const el = box.current;
     if (el) setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 24);
   };
 
+  const shown = problemsOnly ? lines.filter((line) => lineClass(line)) : lines;
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
         <span role="status">
-          {live ? "Live" : "Finished"} · {lines.length} line{lines.length === 1 ? "" : "s"}
+          {live ? "Live" : "Finished"} · {problemsOnly ? `${shown.length} of ${lines.length}` : lines.length} line{lines.length === 1 ? "" : "s"}
           {cut && " (earlier lines are in the full log)"}
         </span>
-        <span className="flex items-center gap-3">
+        <span className="flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2">
+            Show
+            <select className={`${inputClass} w-auto`} value={problemsOnly ? "problems" : "all"} onChange={(e) => setProblemsOnly(e.target.value === "problems")}>
+              <option value="all">Everything</option>
+              <option value="problems">Warnings and errors</option>
+            </select>
+          </label>
           {!follow && (
             <button type="button" className="min-h-11 underline" onClick={() => setFollow(true)}>
               Jump to the end
@@ -90,8 +102,10 @@ export function RunLog({ runId, onEnd }: { runId: number; onEnd?: (status: RunSt
       >
         {lines.length === 0 ? (
           <p className="text-muted">{live ? "Waiting for Kometa's output…" : "No output."}</p>
+        ) : shown.length === 0 ? (
+          <p className="text-muted">No warnings or errors{live ? " so far" : ""}.</p>
         ) : (
-          lines.map((line, index) => (
+          shown.map((line, index) => (
             <div key={index} className={`whitespace-pre ${lineClass(line)}`}>
               {line || " "}
             </div>

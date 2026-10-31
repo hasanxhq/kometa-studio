@@ -24,6 +24,9 @@ from .kometa_config import ensure_studio_webhooks
 from .settings import Settings
 
 FINISHED = ("succeeded", "failed", "cancelled", "interrupted", "timed_out")
+# What makes a log line an error or a warning: the same words as the log's colours and filter (frontend's RunLog.tsx).
+LOG_ERROR = re.compile(r"\b(error|critical|traceback)\b", re.IGNORECASE)
+LOG_WARNING = re.compile(r"\bwarning\b", re.IGNORECASE)
 KOMETA_CRITICAL = re.compile(r"\[CRITICAL\]\s*\|\s*(.*?)\s*\|?\s*$", re.MULTILINE)  # a line of Kometa's logs/meta.log
 SUBSCRIBER_BACKLOG = 10_000  # lines a slow browser may fall behind before it's dropped (it reconnects)
 LINE_LIMIT = 1024 * 1024  # longest single output line Studio reads
@@ -68,6 +71,7 @@ class Active:
     cancel_requested: bool = False
     timed_out: bool = False
     started: float = 0.0  # when Kometa was started
+    warnings: int = 0  # log lines so far that are warnings
 
 
 class Runner:
@@ -204,10 +208,11 @@ class Runner:
             await self._run(row[0], RunRequest.model_validate_json(row[1]))
 
     def _finish(self, run_id: int, status: str, *, exit_code: int | None = None, error: str | None = None) -> None:
+        warnings = self._active.warnings if self._active else 0
         with self.db:
             self.db.execute(
-                "UPDATE runs SET status = ?, finished_at = ?, exit_code = ?, error = ? WHERE id = ?",
-                (status, now(), exit_code, error, run_id),
+                "UPDATE runs SET status = ?, finished_at = ?, exit_code = ?, error = ?, warnings = ? WHERE id = ?",
+                (status, now(), exit_code, error, warnings, run_id),
             )
 
     def _prepare(self, request: RunRequest) -> tuple[list[str], Path]:
@@ -339,6 +344,8 @@ class Runner:
     def _emit(self, active: Active, log, line: str) -> None:
         """Write a line to the run's log and to everyone following it live."""
         log.write(line + "\n")
+        if LOG_WARNING.search(line) and not LOG_ERROR.search(line):
+            active.warnings += 1
         for subscriber in list(active.subscribers):
             subscriber.send(line)
             if subscriber.dropped:

@@ -2,7 +2,7 @@
 
 import { QueryClient } from "@tanstack/react-query";
 import { act, render } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { RouterProvider, createMemoryRouter } from "react-router";
 import { vi } from "vitest";
 
 import { App } from "./App";
@@ -30,11 +30,8 @@ export function mockApi(routes: Record<string, Handler>) {
 
 export function renderAt(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <MemoryRouter initialEntries={[path]}>
-      <App queryClient={queryClient} />
-    </MemoryRouter>,
-  );
+  const router = createMemoryRouter([{ path: "*", element: <App queryClient={queryClient} /> }], { initialEntries: [path] });
+  return render(<RouterProvider router={router} />);
 }
 
 // jsdom has no EventSource. Tests push server-sent events through `emit`.

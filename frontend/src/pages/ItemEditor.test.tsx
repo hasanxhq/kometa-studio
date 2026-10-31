@@ -200,6 +200,148 @@ describe("The collection form", () => {
   });
 });
 
+describe("Where a collection shows", () => {
+  const heroesWith = (value: Record<string, unknown>) => ({
+    ...routes,
+    "GET /config/item?path=Movies.yml&section=collections&name=Heroes": () => ({ ...heroes, value: { ...heroes.value, ...value } }),
+    "POST /config/item": () => ({ backup: "b", files: [], validation: passed }),
+  });
+  const open = () => renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+  const saved = async (calls: { route: string; body: unknown }[]) => {
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /config/item")).toBe(true));
+    return (calls.find((c) => c.route === "POST /config/item")?.body as { value: Record<string, unknown> }).value;
+  };
+
+  it("ticks a box to show it", async () => {
+    const calls = mockApi(heroesWith({}));
+    open();
+    const home = await screen.findByRole("checkbox", { name: "My home" });
+    expect(home).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Friends' home" })).toBeInTheDocument();
+
+    fireEvent.click(home);
+
+    expect((await saved(calls)).visible_home).toBe(true);
+  });
+
+  it("writes false when a saved yes is unticked, so Kometa changes Plex", async () => {
+    const calls = mockApi(heroesWith({ visible_home: true }));
+    open();
+    const home = await screen.findByRole("checkbox", { name: "My home" });
+    expect(home).toBeChecked();
+
+    fireEvent.click(home);
+
+    expect((await saved(calls)).visible_home).toBe(false);
+  });
+
+  it("goes back to not set when a box that was never set is ticked and unticked", async () => {
+    const calls = mockApi(heroesWith({}));
+    open();
+    const home = await screen.findByRole("checkbox", { name: "My home" });
+
+    fireEvent.click(home);
+    fireEvent.click(home);
+
+    expect(home).not.toBeChecked();
+    expect(await saved(calls)).not.toHaveProperty("visible_home");
+  });
+
+  it("keeps a schedule as YAML, and the others as boxes", async () => {
+    const calls = mockApi(heroesWith({ visible_home: "weekly(sunday)" }));
+    open();
+
+    expect(await screen.findByLabelText("My home")).toHaveValue("weekly(sunday)");
+    expect(screen.queryByRole("checkbox", { name: "My home" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Friends' home" }));
+
+    expect(await saved(calls)).toMatchObject({ visible_home: "weekly(sunday)", visible_shared: true });
+  });
+
+  it("offers YAML for all of them under Show Advanced", async () => {
+    localStorage.setItem("studio.showAdvanced", "true");
+    mockApi(heroesWith({ visible_home: true }));
+    open();
+
+    expect(await screen.findByLabelText(/My home/)).toHaveValue("true"); // yes or no as a control, since the schema's shapes allow it
+    expect(screen.getByLabelText(/Friends' home/)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "My home" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Turn on Show Advanced/)).not.toBeInTheDocument();
+  });
+});
+
+describe("Leaving the form", () => {
+  async function editHeroes() {
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+    fireEvent.change(await screen.findByLabelText(/Summary/), { target: { value: "Not saved yet." } });
+  }
+
+  it("asks before leaving unsaved edits, and stays if told to", async () => {
+    mockApi(routes);
+    await editHeroes();
+
+    fireEvent.click(screen.getByRole("link", { name: "Edit the whole file as YAML" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "You have unsaved changes" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Stay here" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(screen.getByDisplayValue("Not saved yet.")).toBeInTheDocument();
+  });
+
+  it("leaves if told to", async () => {
+    mockApi({ ...routes, "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: "collections: {}\n", hash: "h1", hidden: 0, kind: "collection" }) });
+    await editHeroes();
+
+    fireEvent.click(screen.getByRole("link", { name: "Edit the whole file as YAML" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Leave without saving" }));
+
+    expect(await screen.findByRole("heading", { name: "Movies.yml" })).toBeInTheDocument();
+  });
+
+  it("doesn't ask when nothing has changed, or once it's saved", async () => {
+    mockApi({ ...routes, "POST /config/item": () => ({ backup: "b", files: [], validation: passed }), "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: "collections: {}\n", hash: "h1", hidden: 0, kind: "collection" }) });
+    await editHeroes();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText("Kometa checked it, and it's saved.");
+
+    fireEvent.click(screen.getByRole("link", { name: "Edit the whole file as YAML" }));
+
+    expect(await screen.findByRole("heading", { name: "Movies.yml" })).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("doesn't ask after deleting what was being edited", async () => {
+    mockApi({ ...routes, "POST /config/item": () => ({ backup: "b", files: [], validation: passed }) });
+    await editHeroes();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Heroes" }));
+
+    await waitFor(() => expect(screen.queryByLabelText(/Summary/)).not.toBeInTheDocument());
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("doesn't ask when a new collection changes file", async () => {
+    mockApi({
+      ...routes,
+      "GET /config/libraries/Movies": () => ({
+        name: "Movies",
+        collection_files: [{ kind: "file", value: "config/Movies.yml", template_variables: {}, options: {}, files: [{ path: "Movies.yml" }], error: null }],
+        overlay_files: [],
+      }),
+      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: "collections: {}\n", hash: "h1", hidden: 0, kind: "collection" }),
+    });
+    renderAt("/items?section=collections&new=1&library=Movies");
+    await screen.findByRole("option", { name: "Movies.yml" });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Pixar" } });
+    fireEvent.change(screen.getByLabelText("File"), { target: { value: "Movies.yml" } });
+
+    expect(await screen.findByText("New collection in Movies.yml")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+});
+
 describe("The overlay form", () => {
   it("places the badge on the preview and keeps the overlay's shorthand", async () => {
     const overlaySchema = {

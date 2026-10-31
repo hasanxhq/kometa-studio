@@ -34,6 +34,7 @@ function run(overrides: Partial<Run>): Run {
     error: null,
     summary: null,
     error_events: 0,
+    warnings: 0,
     ...overrides,
   };
 }
@@ -107,7 +108,7 @@ describe("The Overview", () => {
     expect(within(glance).getByRole("link", { name: /Now/ })).toHaveTextContent("Nothing running");
     const last = within(glance).getByRole("link", { name: /Last run/ });
     expect(last).toHaveAttribute("href", "/activity/queue/7");
-    expect(last).toHaveTextContent("Finished Everything");
+    expect(last).toHaveTextContent("Succeeded Everything");
     expect(last).toHaveTextContent("Scheduled");
     expect(last).toHaveTextContent("+14 −3 items");
     expect(within(glance).getByRole("link", { name: /Next run/ })).toHaveTextContent("in 5 h");

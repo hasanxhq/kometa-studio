@@ -30,6 +30,12 @@ export function Button({ variant = "secondary", className = "", type = "button",
   );
 }
 
+/** A form's Save and the like: they stay at the bottom of the page while a long form scrolls. */
+export function StickyActions({ children }: { children: ReactNode }) {
+  // The negative offsets are main's padding (Layout): without them, the form shows through the gap below the bar.
+  return <div className="sticky -bottom-4 z-10 flex flex-wrap items-center gap-3 border-t border-border bg-bg py-3 md:-bottom-6">{children}</div>;
+}
+
 export type Tone = "muted" | "ok" | "warn" | "err" | "info";
 
 export function Tag({ tone = "muted", children }: { tone?: Tone; children: ReactNode }) {
@@ -60,7 +66,7 @@ export function Checkbox({ checked, onChange, children, disabled }: { checked: b
 }
 
 export const inputClass =
-  "min-h-11 w-full rounded-control border border-border-strong bg-bg px-3 font-mono text-sm text-text placeholder:text-muted/60 focus:border-accent focus:outline-none";
+  "min-h-11 w-full rounded-control border border-border-strong bg-bg px-3 text-sm text-text placeholder:text-muted/60 focus:border-accent focus:outline-none";
 
 /** A button that asks once more before doing something hard to undo. */
 export function ConfirmButton({

@@ -186,7 +186,7 @@ function VariablesEditor({
           {addable.length > 0 && (
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="text-muted">Add a variable</span>
-              <select className={inputClass} value="" onChange={(e) => e.target.value && set(e.target.value, null)}>
+              <select className={`${inputClass} font-mono`} value="" onChange={(e) => e.target.value && set(e.target.value, null)}>
                 <option value="">Choose from {addable.length}…</option>
                 {addable.map((name) => (
                   <option key={name} value={name}>

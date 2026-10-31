@@ -3,15 +3,16 @@
 // as written. Saving changes only this item, and Kometa checks it like any save.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { useAdvanced } from "../advanced";
 import { api, saveRefusal, type ConfigLibrary, type FileReference, type ItemSection, type SaveResult, type Validation } from "../api";
 import { AddMissing, addMissingKeys, missingApp as missingAppFor } from "../components/AddMissing";
 import { FilterChips } from "../components/FilterChips";
+import { LeaveGuard } from "../components/LeaveGuard";
 import { Problems, SettingField, YamlBox, withKey } from "../components/forms/fields";
-import { Button, Card, Field, inputClass } from "../components/ui";
+import { Button, Card, Checkbox, Field, StickyActions, inputClass } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
 import { useLibraryType } from "../libraries";
 import { itemProblems } from "../yaml/check";
@@ -57,9 +58,6 @@ const DESIGNED: Record<string, { key: string; label: string; hint?: string }[]> 
     { key: "sync_mode", label: "Sync mode", hint: "sync removes items the sources no longer list; append only adds." },
     { key: "collection_order", label: "Order of items", hint: "e.g. release, alpha, added, custom" },
     { key: "minimum_items", label: "Minimum items", hint: "Smaller collections aren't built." },
-    { key: "visible_home", label: "Show on Home" },
-    { key: "visible_library", label: "Show in the library's recommendations" },
-    { key: "visible_shared", label: "Show on friends' Home" },
     { key: "schedule", label: "Schedule", hint: "e.g. daily, weekly(sunday)" },
   ],
   overlays: [],
@@ -72,6 +70,13 @@ const DESIGNED: Record<string, { key: string; label: string; hint?: string }[]> 
     { key: "schedule", label: "Schedule", hint: "e.g. daily, weekly(sunday)" },
   ],
 };
+
+// Where a collection shows in Plex. Kometa takes yes, no or a schedule for each, and leaves Plex alone if it's not set.
+const VISIBILITY: { key: string; label: string }[] = [
+  { key: "visible_home", label: "My home" },
+  { key: "visible_library", label: "Library recommended" },
+  { key: "visible_shared", label: "Friends' home" },
+];
 
 const OVERLAY_FIELDS: { key: string; label: string }[] = [
   { key: "name", label: "Image or text" },
@@ -294,7 +299,7 @@ function Sources({
         <label className="flex flex-col gap-1.5 text-sm">
           <span className="text-muted">Add a source</span>
           <select
-            className={inputClass}
+            className={`${inputClass} font-mono`}
             value=""
             onChange={(e) => e.target.value && root && setValue({ ...value, [e.target.value]: starting(root, keys.get(e.target.value)!.schema) })}
           >
@@ -416,6 +421,65 @@ function OverlayDesign({
   );
 }
 
+// --- Where it shows ----------------------------------------------------------------
+
+/** Checkboxes, or a YAML box for any that's a schedule. Show Advanced offers the YAML box for all of them, to set a schedule. */
+function ShowOn({
+  value,
+  saved,
+  setValue,
+  root,
+  keys,
+  problems,
+  onValidity,
+}: {
+  value: Value;
+  saved: Value;
+  setValue: (value: Value) => void;
+  root: JsonSchema | null;
+  keys: Map<string, KeyInfo>;
+  problems: Map<string, string[]>;
+  onValidity: (key: string, ok: boolean) => void;
+}) {
+  const { showAdvanced } = useAdvanced();
+  const asField = ({ key, label }: (typeof VISIBILITY)[number]) => (
+    <SettingField
+      key={key}
+      name={key}
+      label={label}
+      root={root}
+      schema={keys.get(key)?.schema}
+      value={value[key]}
+      onChange={(next) => setValue(withKey(value, key, next))}
+      onValidity={(ok) => onValidity(key, ok)}
+      problems={problems.get(key)}
+    />
+  );
+  const shownAsField = VISIBILITY.filter(({ key }) => showAdvanced || (value[key] !== undefined && typeof value[key] !== "boolean"));
+  const boxes = VISIBILITY.filter((item) => !shownAsField.includes(item));
+  return (
+    <fieldset className="flex flex-col gap-2 sm:col-span-2">
+      <legend className="mb-1.5 text-sm text-muted">Show on</legend>
+      {boxes.length > 0 && (
+        <div className="flex flex-wrap gap-x-6">
+          {boxes.map(({ key, label }) => (
+            <Checkbox
+              key={key}
+              checked={value[key] === true}
+              // Unticking has to say so, or Kometa would leave Plex as it is. If it was never set, it goes back to never set.
+              onChange={(checked) => setValue(withKey(value, key, checked ? true : saved[key] === undefined ? undefined : false))}
+            >
+              {label}
+            </Checkbox>
+          ))}
+        </div>
+      )}
+      {shownAsField.length > 0 && <div className="grid gap-4 sm:grid-cols-2">{shownAsField.map(asField)}</div>}
+      <p className="text-xs text-muted">A box that was never ticked leaves Plex's own setting alone.{!showAdvanced && " Turn on Show Advanced to set a schedule."}</p>
+    </fieldset>
+  );
+}
+
 // --- Page ------------------------------------------------------------------------------
 
 export default function ItemEditor() {
@@ -458,6 +522,7 @@ export default function ItemEditor() {
   const [badYaml, setBadYaml] = useState<Set<string>>(new Set());
   const [verdict, setVerdict] = useState<{ validation: Validation; saved: boolean } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleted = useRef(false); // what's being edited is gone, so there's nothing to keep
 
   const value = edited ?? item.data?.value ?? {};
   const currentName = name ?? item.data?.name ?? "";
@@ -517,6 +582,7 @@ export default function ItemEditor() {
     mutationFn: () => api.items.save({ path, base_hash: item.data!.hash, section, name: original, value: null }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["config"] });
+      deleted.current = true;
       navigate(playlist ? "/playlists" : library ? `/libraries/${encodeURIComponent(library)}` : "/libraries");
     },
   });
@@ -545,7 +611,7 @@ export default function ItemEditor() {
 
   // One set of filters is edited as chips; several sets (a list, any of which may match) stay under Show Advanced.
   const chips = (section === "collections" || playlist) && (value.filters === undefined || (typeof value.filters === "object" && value.filters !== null && !Array.isArray(value.filters)));
-  const designed = new Set([...(DESIGNED[section] ?? []).map((d) => d.key), ...(section === "overlays" ? ["overlay"] : []), ...(chips ? ["filters"] : []), ...(missingApp ? addMissingKeys(missingApp) : [])]);
+  const designed = new Set([...(DESIGNED[section] ?? []).map((d) => d.key), ...(section === "collections" ? VISIBILITY.map((v) => v.key) : []), ...(section === "overlays" ? ["overlay"] : []), ...(chips ? ["filters"] : []), ...(missingApp ? addMissingKeys(missingApp) : [])]);
   const present = Object.keys(value);
   const advanced = present.filter((key) => !designed.has(key) && !isBuilder(key) && keys.has(key));
   const unknown = present.filter((key) => !keys.has(key) && !isBuilder(key) && !designed.has(key));
@@ -575,6 +641,7 @@ export default function ItemEditor() {
                 problems={problems.get(key)}
               />
             ))}
+            {section === "collections" && <ShowOn value={value} saved={item.data?.value ?? {}} setValue={setEdited} root={root} keys={keys} problems={problems} onValidity={validity} />}
           </div>
         </Card>
       )}
@@ -608,7 +675,7 @@ export default function ItemEditor() {
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="text-muted">Add a setting</span>
               <select
-                className={inputClass}
+                className={`${inputClass} font-mono`}
                 value=""
                 onChange={(e) => e.target.value && root && setEdited({ ...value, [e.target.value]: starting(root, keys.get(e.target.value)!.schema) })}
               >
@@ -648,6 +715,7 @@ export default function ItemEditor() {
 
   return (
     <div className="flex max-w-4xl flex-col gap-4">
+      <LeaveGuard dirty={dirty} released={deleted} />
       <Link to={back} className="min-h-11 content-center text-sm text-muted underline">
         ← {playlist ? "Playlists" : (library ?? "Libraries")}
       </Link>
@@ -707,7 +775,7 @@ export default function ItemEditor() {
       </Card>
       {designedPart}
       {advancedPart}
-      <div className="flex flex-wrap items-center gap-3">
+      <StickyActions>
         <Button
           variant="primary"
           onClick={() => save.mutate()}
@@ -745,7 +813,7 @@ export default function ItemEditor() {
         {problems.size > 0 && badYaml.size === 0 && (
           <span className="text-sm text-warn">Kometa's schema flags {problems.size === 1 ? "a setting" : `${problems.size} settings`}; Kometa will check again on save.</span>
         )}
-      </div>
+      </StickyActions>
       {run.isSuccess && (
         <p role="status" className="text-sm text-ok">
           Queued as <Link className="underline" to={`/activity/queue/${run.data.id}`}>run #{run.data.id}</Link>. Only {original} runs, ignoring its schedule.

@@ -20,7 +20,7 @@ export function describeRequest(request: RunRequest): string {
 export const statusLabels: Record<RunStatus, string> = {
   queued: "Queued",
   running: "Running",
-  succeeded: "Finished",
+  succeeded: "Succeeded",
   failed: "Failed",
   cancelled: "Cancelled",
   interrupted: "Interrupted",

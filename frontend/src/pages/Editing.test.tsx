@@ -45,6 +45,24 @@ describe("Editing a file", () => {
     await waitFor(() => expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument());
   });
 
+  it("asks before leaving unsaved changes for another page", async () => {
+    mockApi({
+      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: MOVIES, hash: "h1", hidden: 0, kind: "collection" }),
+      "GET /config": () => ({ path: "/config/config.yml", libraries: [], playlist_files: [] }),
+    });
+    renderAt("/files?path=Movies.yml");
+
+    fireEvent.change(await screen.findByLabelText("Contents of Movies.yml"), { target: { value: MOVIES + "# mine\n" } });
+    fireEvent.click(screen.getByRole("link", { name: "← Libraries" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Stay here" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(screen.getByLabelText("Contents of Movies.yml")).toHaveValue(MOVIES + "# mine\n");
+
+    fireEvent.click(screen.getByRole("link", { name: "← Libraries" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Leave without saving" }));
+    await waitFor(() => expect(screen.queryByLabelText("Contents of Movies.yml")).not.toBeInTheDocument());
+  });
+
   it("shows Kometa's reasons when it refuses, separating problems already there", async () => {
     mockApi({
       "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: MOVIES, hash: "h1", hidden: 0, kind: "collection" }),
