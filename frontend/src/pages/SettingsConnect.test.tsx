@@ -44,6 +44,7 @@ function routes(extra: Record<string, (body: unknown) => unknown> = {}) {
     "GET /config": () => overview,
     "GET /settings/maintainerr": () => notConnected,
     "GET /settings/services": () => keys,
+    "GET /settings/tautulli": () => ({ url: null, apikey: null }),
     ...extra,
   });
 }
@@ -247,5 +248,35 @@ describe("Only imports that matter", () => {
     await waitFor(() => expect(calls.some((c) => c.route === "POST /settings/arr/reports")).toBe(true));
     fireEvent.click(within(form).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/arr/radarr/runs")?.body).toMatchObject({ trigger: "relevant" }));
+  });
+});
+
+describe("Tautulli", () => {
+  it("saves only after a passing test, and keeps the saved key when it's left empty", async () => {
+    const saved = { url: "http://tautulli:8181", apikey: "…7d2e" };
+    const calls = routes({
+      "POST /settings/tautulli/test": (body) => ((body as { apikey: string | null }).apikey === "wrong" ? { ok: false, error: "Tautulli rejected the API key" } : { ok: true, version: "v2.15.2" }),
+      "PUT /settings/tautulli": () => saved,
+    });
+    renderAt("/settings/connect");
+
+    const form = await screen.findByRole("form", { name: "Tautulli connection" });
+    const save = within(form).getByRole("button", { name: "Save" });
+    fireEvent.change(within(form).getByLabelText("URL"), { target: { value: "http://tautulli:8181" } });
+    fireEvent.change(within(form).getByLabelText("API key"), { target: { value: "wrong" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Test" }));
+    expect(await within(form).findByText("Tautulli rejected the API key")).toBeInTheDocument();
+    expect(save).toBeDisabled();
+
+    fireEvent.change(within(form).getByLabelText("API key"), { target: { value: "right" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Test" }));
+    expect(await within(form).findByText("Tautulli v2.15.2 answered.")).toBeInTheDocument();
+    fireEvent.click(save);
+    await waitFor(() => expect(calls.some((call) => call.route === "PUT /settings/tautulli")).toBe(true));
+    expect(calls.find((call) => call.route === "PUT /settings/tautulli")?.body).toEqual({ url: "http://tautulli:8181", apikey: "right" });
+
+    const after = await screen.findByRole("form", { name: "Tautulli connection" });
+    await waitFor(() => expect(within(after).getByLabelText("API key")).toHaveAttribute("placeholder", "Saved (…7d2e), leave empty to keep it"));
+    expect(within(after).getByRole("button", { name: "Remove" })).toBeInTheDocument();
   });
 });

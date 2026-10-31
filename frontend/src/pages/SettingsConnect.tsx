@@ -17,6 +17,7 @@ import {
   type MaintainerrState,
   type RunMode,
   type ServiceName,
+  type TautulliState,
 } from "../api";
 import { Button, Card, ConfirmButton, Field, inputClass } from "../components/ui";
 import { formatRelative, formatTime, modes } from "../runs";
@@ -656,12 +657,88 @@ function ServiceForm({
   );
 }
 
+// --- Tautulli ---------------------------------------------------------------------
+
+function TautulliForm({ current }: { current: TautulliState }) {
+  const queryClient = useQueryClient();
+  const [url, setUrl] = useState(current.url ?? "");
+  const [apikey, setApikey] = useState("");
+  const body = () => ({ url, apikey: apikey || null });
+  const test = useMutation({ mutationFn: () => api.tautulli.test(body()) });
+  const done = (data: TautulliState) => {
+    queryClient.setQueryData(["tautulli"], data);
+    setApikey("");
+    test.reset();
+  };
+  const save = useMutation({ mutationFn: () => api.tautulli.save(body()), onSuccess: done });
+  const remove = useMutation({ mutationFn: api.tautulli.remove, onSuccess: done });
+  // Any change to how Kometa reaches Tautulli needs a new test.
+  const changed = (set: (value: string) => void) => (value: string) => {
+    set(value);
+    test.reset();
+    save.reset();
+  };
+  const tested = test.data?.ok === true;
+  const ready = url.trim() !== "" && (apikey !== "" || current.apikey !== null);
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (tested) save.mutate();
+  };
+  return (
+    <form className="flex flex-col gap-3" onSubmit={submit} aria-label="Tautulli connection">
+      <div className="flex flex-wrap gap-3">
+        <div className="min-w-0 flex-1 basis-64">
+          <Field label="URL" hint="As Kometa reaches it.">
+            <input
+              className={inputClass}
+              value={url}
+              onChange={(e) => changed(setUrl)(e.target.value)}
+              placeholder="http://tautulli:8181"
+              inputMode="url"
+              spellCheck={false}
+            />
+          </Field>
+        </div>
+        <div className="min-w-0 flex-1 basis-64">
+          <Field label="API key" hint="Tautulli → Settings → Web Interface → API Key">
+            <input
+              className={inputClass}
+              type="password"
+              autoComplete="off"
+              value={apikey}
+              onChange={(e) => changed(setApikey)(e.target.value)}
+              placeholder={current.apikey ? `Saved (${current.apikey}), leave empty to keep it` : ""}
+            />
+          </Field>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={() => test.mutate()} disabled={!ready || test.isPending}>
+          {test.isPending ? "Testing…" : "Test"}
+        </Button>
+        <Button variant="primary" type="submit" disabled={!tested || save.isPending} title={tested ? undefined : "Test the connection first"}>
+          {save.isPending ? "Saving…" : "Save"}
+        </Button>
+        {current.url && (
+          <ConfirmButton label="Remove" confirm="Remove Tautulli" warning="Kometa stops using Tautulli: its Tautulli collections stop updating." onConfirm={() => remove.mutate()} busy={remove.isPending} />
+        )}
+        {test.data && (test.data.ok ? <Outcome ok>{test.data.version ? `Tautulli ${test.data.version} answered.` : "Tautulli answered."}</Outcome> : <Outcome ok={false}>{test.data.error}</Outcome>)}
+        {test.isError && <Outcome ok={false}>{test.error.message}</Outcome>}
+        {save.isSuccess && <Outcome ok>Saved to config.yml</Outcome>}
+        {save.isError && <Outcome ok={false}>{save.error.message}</Outcome>}
+        {remove.isError && <Outcome ok={false}>{remove.error.message}</Outcome>}
+      </div>
+    </form>
+  );
+}
+
 // --- Page --------------------------------------------------------------------------
 
 export function SettingsConnect() {
   const arr = useQuery({ queryKey: ["arr"], queryFn: api.arr.get, refetchInterval: 30_000 });
   const maintainerr = useQuery({ queryKey: ["maintainerr"], queryFn: api.maintainerr.get });
   const keys = useQuery({ queryKey: ["services"], queryFn: api.services.get });
+  const tautulli = useQuery({ queryKey: ["tautulli"], queryFn: api.tautulli.get });
   const config = useQuery({ queryKey: ["config"], queryFn: api.config.overview, retry: false });
   const libraries = config.data?.libraries.map((library) => library.name) ?? [];
 
@@ -723,6 +800,23 @@ export function SettingsConnect() {
                 <ServiceForm key={JSON.stringify(keys.data[service.name])} {...service} saved={keys.data[service.name].apikey} />
               </Section>
             ))
+          )}
+        </div>
+      </Card>
+      <Card title="Tautulli">
+        <div className="flex flex-col gap-3">
+          <p className="text-sm text-muted">
+            Kometa's Tautulli connection, in config.yml. Kometa uses it for collections of what's popular or most watched on your server
+            (<code className="font-mono text-xs">tautulli_popular</code>, <code className="font-mono text-xs">tautulli_watched</code>).
+          </p>
+          {tautulli.isPending ? (
+            <p className="text-muted">Loading…</p>
+          ) : tautulli.isError ? (
+            <p role="alert" className="text-err">
+              {tautulli.error.message}
+            </p>
+          ) : (
+            <TautulliForm key={JSON.stringify(tautulli.data)} current={tautulli.data} />
           )}
         </div>
       </Card>

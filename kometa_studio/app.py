@@ -24,6 +24,7 @@ from .usage import ApiCalls
 from .usage import router as usage_router
 from .wanted import WantedRecorder
 from .services import router as services_router
+from .tautulli import router as tautulli_router
 from .auth import AuthMiddleware, LoginThrottle
 from .reverse_proxy import UrlBaseMiddleware
 from .auth_routes import TIMEZONE
@@ -181,6 +182,7 @@ def create_app(
     app.include_router(tasks_router)
     app.include_router(arr_router)
     app.include_router(services_router)
+    app.include_router(tautulli_router)
     app.include_router(usage_router)
     app.include_router(overlays_router)
     app.include_router(network_router)
