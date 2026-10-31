@@ -12,7 +12,7 @@ from pydantic import BaseModel, StringConstraints
 
 from . import backups
 from .config_items import ItemProblem, read_item, schema_kind
-from .config_sections import add_library, new_file_for_library
+from .config_sections import add_library, new_file_for_library, set_library_default, set_library_variables
 from .config_write import ConfigWriter, Edit, SaveRefused
 from .db import get_setting, set_setting
 from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets
@@ -226,6 +226,44 @@ class LibraryIn(BaseModel):
 async def add_config_library(body: LibraryIn, writer: Writer) -> dict:
     """Add a Plex library to config.yml, empty: its files come next (new collection files, Kometa's defaults)."""
     return await _write_call(add_library(writer, body.name))
+
+
+@router.get("/config/defaults")
+async def defaults_catalogue(reader: Reader) -> dict:
+    """Every default the installed Kometa has, for the Defaults gallery."""
+    return reader.catalogue()
+
+
+class VariablesIn(BaseModel):
+    template_variables: dict = {}
+
+
+def _known_default(reader: ConfigReader, kind: str, name: str) -> None:
+    catalogue = reader.catalogue()
+    if kind not in ("collection", "overlay"):
+        raise HTTPException(404, "Defaults are collection or overlay defaults")
+    if name not in {entry["name"] for entry in catalogue["collections" if kind == "collection" else "overlays"]}:
+        raise HTTPException(404, f"The installed Kometa has no {kind} default called {name}")
+
+
+@router.put("/config/libraries/{library}/defaults/{kind}/{name}")
+async def use_default(library: str, kind: str, name: str, body: VariablesIn, reader: Reader, writer: Writer) -> dict:
+    """Turn a default on for a library, or change its template variables (all of them: missing ones are removed)."""
+    _known_default(reader, kind, name)
+    return await _write_call(set_library_default(writer, library, kind, name, body.template_variables))
+
+
+@router.delete("/config/libraries/{library}/defaults/{kind}/{name}")
+async def drop_default(library: str, kind: str, name: str, writer: Writer) -> dict:
+    if kind not in ("collection", "overlay"):
+        raise HTTPException(404, "Defaults are collection or overlay defaults")
+    return await _write_call(set_library_default(writer, library, kind, name, None))
+
+
+@router.put("/config/libraries/{library}/template-variables")
+async def library_variables(library: str, body: VariablesIn, writer: Writer) -> dict:
+    """The library's own template variables, which every file in it gets (sep_style, collection_mode, …)."""
+    return await _write_call(set_library_variables(writer, library, body.template_variables))
 
 
 @router.get("/config/edit")

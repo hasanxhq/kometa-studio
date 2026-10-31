@@ -139,3 +139,52 @@ export function controlFor(root: JsonSchema, schema: JsonSchema): Control {
       return { kind: "yaml" };
   }
 }
+
+type Conditional = JsonSchema & { if?: JsonSchema; then?: JsonSchema; else?: JsonSchema };
+
+/**
+ * The template variables Kometa's config schema allows for one of its defaults. The schema picks them with a chain of
+ * if (default is X) / then / else under `kometa-default-collection-path` (or `-overlay-path`).
+ */
+export function defaultVariablesSchema(root: JsonSchema, kind: "collection" | "overlay", name: string): JsonSchema | undefined {
+  const top = root.definitions?.[`kometa-default-${kind}-path`] as Conditional | undefined;
+  if (!top) return undefined;
+  const search = (node: Conditional | undefined, depth = 0): JsonSchema | undefined => {
+    if (!node || depth > 500) return undefined;
+    for (const part of [node, ...((node.allOf ?? []) as Conditional[])]) {
+      if (part.if?.properties?.default && (part.if.properties.default as { const?: unknown }).const === name) return part.then?.properties?.template_variables;
+      if (part.else) {
+        const found = search(part.else as Conditional, depth + 1);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  };
+  return search(top) ?? top.properties?.template_variables;
+}
+
+/** The keys a mapping schema names, with descriptions; and its key patterns (use_<key> and the like). */
+export function mappingKeys(root: JsonSchema, schema: JsonSchema | undefined): { keys: KeyInfo[]; patterns: { pattern: string; description?: string }[] } {
+  const keys = new Map<string, KeyInfo>();
+  const patterns: { pattern: string; description?: string }[] = [];
+  for (const branch of branches(root, schema)) {
+    for (const [name, property] of Object.entries(branch.properties ?? {})) {
+      if (!keys.has(name)) keys.set(name, { name, description: property.description ?? deref(root, property)?.description, schema: property });
+    }
+    for (const [pattern, property] of Object.entries(branch.patternProperties ?? {})) {
+      if (!patterns.some((p) => p.pattern === pattern)) patterns.push({ pattern, description: property.description ?? deref(root, property)?.description });
+    }
+  }
+  return { keys: [...keys.values()], patterns };
+}
+
+/** The schema for a key in a mapping, by name or by pattern. */
+export function keySchema(root: JsonSchema, schema: JsonSchema | undefined, key: string): JsonSchema | undefined {
+  for (const branch of branches(root, schema)) {
+    if (branch.properties?.[key]) return branch.properties[key];
+    const pattern = Object.entries(branch.patternProperties ?? {}).find(([regex]) => new RegExp(regex).test(key));
+    if (pattern) return pattern[1];
+  }
+  return undefined;
+}
+

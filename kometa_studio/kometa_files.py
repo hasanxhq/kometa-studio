@@ -202,6 +202,35 @@ class ConfigReader:
             candidates = [self.defaults / name] + [self.defaults / folder / name for folder in ("movie", "show", "both", "chart", "award")]
         return next((path for path in candidates if path.is_file()), None)
 
+    # --- Kometa's defaults, as a catalogue -------------------------------------------
+
+    def catalogue(self) -> dict[str, list[dict]]:
+        """The defaults the installed Kometa has, by the name ``default:`` takes, with their titles, wiki links and library types.
+
+        Collection defaults live in movie/, show/, both/, chart/ and award/ (a name in movie/ and show/ suits both);
+        overlay defaults in overlays/, where a _movie or _show ending says which libraries they're for.
+        """
+        collections: dict[str, dict] = {}
+        for folder in ("chart", "award", "both", "movie", "show"):
+            for path in sorted((self.defaults / folder).glob("*.yml")):
+                types = ["movie", "show"] if folder in ("chart", "award", "both") else [folder]
+                entry = collections.get(path.stem)
+                if entry is None:
+                    title, docs = _banner(_read(path))
+                    collections[path.stem] = {"name": path.stem, "group": folder, "types": types, "title": title, "docs_url": docs}
+                else:
+                    entry["types"] = sorted(set(entry["types"]) | set(types), key=("movie", "show").index)
+                    if entry["group"] in ("movie", "show") and folder in ("movie", "show"):
+                        entry["group"] = "both"
+        overlays = []
+        for path in sorted((self.defaults / "overlays").glob("*.yml")):
+            if path.stem == "templates":
+                continue
+            title, docs = _banner(_read(path))
+            types = ["movie"] if path.stem.endswith("_movie") else ["show"] if path.stem.endswith("_show") else ["movie", "show"]
+            overlays.append({"name": path.stem, "group": "overlays", "types": types, "title": title, "docs_url": docs})
+        return {"collections": list(collections.values()), "overlays": overlays}
+
     # --- one YAML file ------------------------------------------------------------
 
     def display_path(self, path: Path) -> str:
@@ -237,6 +266,13 @@ class ConfigReader:
 
 def _mapping(value: Any) -> dict:
     return value if isinstance(value, dict) else {}
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
 
 
 def _banner(text: str) -> tuple[str | None, str | None]:
