@@ -104,6 +104,9 @@ export function RunRequestFields({
             );
           })}
         </div>
+        {value.mode === "all" && (
+          <p className="mt-1.5 text-xs text-muted">Everything set up in config.yml: steps a library has nothing configured for are skipped.</p>
+        )}
       </fieldset>
       <Field label="Libraries" hint="Names as in config.yml, separated by commas. Leave empty for every library.">
         <input className={inputClass} value={value.libraries} onChange={(e) => set({ libraries: e.target.value })} placeholder="All libraries" />
