@@ -7,7 +7,7 @@ import { Link, useParams, useSearchParams } from "react-router";
 import { ApiError, api, type ConfigLibrary, type FileReference, type PlexCollection } from "../api";
 import { AddLibrary } from "../components/AddLibrary";
 import { DefaultsTab } from "./LibraryDefaults";
-import { PlexPoster } from "../components/PlexPoster";
+import { PlexPoster, posterGrid } from "../components/PlexPoster";
 import { Button, Card, Tag } from "../components/ui";
 import { collectionPath, libraryTypeLabels, mergeLibraries } from "../libraries";
 
@@ -214,7 +214,7 @@ function CollectionsTab({
               Unmanaged collections were made some other way (by hand in Plex, or by another tool), and Kometa leaves them alone.
               {maintainerr > 0 && " Maintainerr's collections are protected: Studio refuses any change, and holds any run, that would let Kometa touch them."}
             </p>
-            <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            <ul className={posterGrid}>
               {shown.map((collection) => {
                 const file = fileFor.get(collection.title.toLowerCase());
                 return (
@@ -238,7 +238,7 @@ function CollectionsTab({
                     </span>
                     {file && config && !collection.maintainerr && (
                       <Link
-                        className="text-xs text-muted underline-offset-2 hover:underline"
+                        className="break-words text-xs text-muted underline-offset-2 hover:underline"
                         to={itemLink(file, "collections", configured.find((c) => c.name.toLowerCase() === collection.title.toLowerCase())!.name, config.name)}
                       >
                         Defined in {file}
@@ -443,9 +443,6 @@ export function LibraryDetail() {
 
   return (
     <div className="flex max-w-6xl flex-col gap-4">
-      <Link to="/libraries" className="min-h-11 content-center text-sm text-muted underline">
-        ← Libraries
-      </Link>
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-2xl font-semibold">{entry.name}</h2>
         {entry.plex && <Tag>{libraryTypeLabels[entry.plex.type] ?? entry.plex.type}</Tag>}
