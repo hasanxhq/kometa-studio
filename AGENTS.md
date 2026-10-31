@@ -112,7 +112,7 @@ Only when the maintainer asks. One `release/*` branch at a time.
 
 **Hotfixes:** `hotfix/<name>` from `main` with the fix, its tests, a patch `VERSION` bump and a changelog entry; PR into `main`, tag `vX.Y.Z`, merge `main` back into `dev`. If a release branch is open, merge the hotfix into it too.
 
-`vX.Y.Z` tags go only on `main`. Never move or delete a pushed tag.
+`vX.Y.Z` tags go only on `main`. Alphas aren't releases: bump `VERSION` and date the changelog in a PR into `dev`, tag that merge commit `vX.Y.Z-alpha.N` (annotated), and publish it as a GitHub pre-release. `main` doesn't move for an alpha. Never move or delete a pushed tag.
 
 ## Contributing to Kometa itself
 
