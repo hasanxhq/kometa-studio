@@ -19,7 +19,7 @@ import {
   type ServiceName,
   type TautulliState,
 } from "../api";
-import { Button, Card, ConfirmButton, Field, inputClass } from "../components/ui";
+import { Button, Card, Checkbox, ConfirmButton, Field, inputClass } from "../components/ui";
 import { formatRelative, formatTime, modes } from "../runs";
 
 const apps: { kind: ArrKind; label: string }[] = [
@@ -33,15 +33,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <h3 className="font-display text-base font-semibold">{title}</h3>
       {children}
     </section>
-  );
-}
-
-function Checkbox({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: ReactNode }) {
-  return (
-    <label className="flex min-h-11 items-start gap-2 text-sm">
-      <input type="checkbox" className="mt-1 size-4 shrink-0 accent-accent" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span>{children}</span>
-    </label>
   );
 }
 

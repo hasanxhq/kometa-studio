@@ -295,3 +295,70 @@ describe("Filter chips", () => {
     expect(screen.queryByRole("group", { name: "Add a filter" })).toBeNull();
   });
 });
+
+describe("Adding a collection's missing items", () => {
+  const counts = { collection_files: 1, overlay_files: 0, metadata_files: 0, defaults: 0, collections: 1, overlays: 0, operations: 0, problems: [] };
+  const connection = (url: string | null, everywhere = false) => ({
+    url,
+    token: url ? "…ab12" : null,
+    root_folder_path: null,
+    quality_profile: null,
+    add_missing: everywhere,
+    search: everywhere,
+    username: null,
+    has_password: false,
+    status: null,
+  });
+  const libraries = (type: string, radarr: ReturnType<typeof connection>) => ({
+    ...routes,
+    "GET /plex/libraries": () => ({ libraries: [{ key: "1", title: "Movies", type, collections: 1, managed: 1 }] }),
+    "GET /config": () => ({ path: "/config/config.yml", libraries: [{ name: "Movies", plex_name: "Movies", ...counts }], playlist_files: [] }),
+    "GET /settings/arr": () => ({ settings: {}, connections: { radarr, sonarr: connection(null) }, pending: {}, skipped: { radarr: [], sonarr: [] }, libraries: [] }),
+    "POST /config/item": () => ({ backup: "b", files: [], validation: passed }),
+  });
+  const saved = (calls: { route: string; body: unknown }[]) => (calls.find((c) => c.route === "POST /config/item")?.body as { value: Record<string, unknown> }).value;
+
+  it("sends a movie library's missing items to Radarr, with a warning, and can search for them", async () => {
+    const calls = mockApi(libraries("movie", connection("http://radarr:7878")));
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+
+    const add = await screen.findByRole("checkbox", { name: /Add missing movies to Radarr/ });
+    expect(add).not.toBeChecked();
+    expect(screen.getByText(/use with caution: big lists and collections can send dozens of movies to Radarr at once/)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /Search for them/ })).toBeNull();
+
+    fireEvent.click(add);
+    fireEvent.click(screen.getByRole("checkbox", { name: /Search for them/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /config/item")).toBe(true));
+    expect(saved(calls)).toEqual({ ...heroes.value, radarr_add_missing: true, radarr_search: true });
+  });
+
+  it("writes a setting only where this collection differs from config.yml's radarr block", async () => {
+    const calls = mockApi(libraries("movie", connection("http://radarr:7878", true)));
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+
+    const add = await screen.findByRole("checkbox", { name: /Add missing movies to Radarr/ });
+    expect(add).toBeChecked(); // on for every collection
+    expect(screen.getByText(/config.yml turns this on for every collection/)).toBeInTheDocument();
+
+    fireEvent.click(add);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /config/item")).toBe(true));
+    expect(saved(calls)).toEqual({ ...heroes.value, radarr_add_missing: false });
+  });
+
+  it("can't be ticked until Radarr is connected, and isn't offered for a music library", async () => {
+    mockApi(libraries("movie", connection(null)));
+    const { unmount } = renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+    expect(await screen.findByRole("checkbox", { name: /Add missing movies to Radarr/ })).toBeDisabled();
+    expect(screen.getByRole("link", { name: /Connect it in Settings → Connect/ })).toHaveAttribute("href", "/settings/connect");
+    unmount();
+
+    mockApi(libraries("artist", connection("http://radarr:7878")));
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+    expect(await screen.findByDisplayValue("Everything Heroes.")).toBeInTheDocument();
+    expect(screen.queryByText("Missing items")).toBeNull();
+  });
+});

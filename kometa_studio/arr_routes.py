@@ -40,6 +40,9 @@ def _connection_json(db: sqlite3.Connection, service: Arr, kind: Kind) -> dict:
         "token": mask(token),  # the key and password never leave the server
         "root_folder_path": str(section["root_folder_path"]) if section.get("root_folder_path") else None,
         "quality_profile": str(section["quality_profile"]) if section.get("quality_profile") else None,
+        # Kometa's defaults for every collection; a collection's own radarr_add_missing etc. overrides them.
+        "add_missing": section.get("add_missing") is True,
+        "search": section.get("search") is True,
         "username": proxy.get("username"),
         "has_password": bool(proxy.get("password")),
         "status": get_setting(db, f"arr.status.{kind}"),

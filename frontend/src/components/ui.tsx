@@ -50,6 +50,15 @@ export function Field({ label, children, hint }: { label: string; children: Reac
   );
 }
 
+export function Checkbox({ checked, onChange, children, disabled }: { checked: boolean; onChange: (checked: boolean) => void; children: ReactNode; disabled?: boolean }) {
+  return (
+    <label className={`flex min-h-11 items-start gap-2 text-sm ${disabled ? "opacity-60" : ""}`}>
+      <input type="checkbox" className="mt-1 size-4 shrink-0 accent-accent" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span>{children}</span>
+    </label>
+  );
+}
+
 export const inputClass =
   "min-h-11 w-full rounded-control border border-border-strong bg-bg px-3 font-mono text-sm text-text placeholder:text-muted/60 focus:border-accent focus:outline-none";
 

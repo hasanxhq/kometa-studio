@@ -8,6 +8,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { useAdvanced } from "../advanced";
 import { api, saveRefusal, type ConfigLibrary, type FileReference, type ItemSection, type SaveResult, type Validation } from "../api";
+import { AddMissing, addMissingKeys, useMissingApp } from "../components/AddMissing";
 import { FilterChips } from "../components/FilterChips";
 import { Problems, SettingField, YamlBox } from "../components/forms/fields";
 import { Button, Card, Field, inputClass } from "../components/ui";
@@ -299,6 +300,7 @@ export default function ItemEditor() {
   const libraryConfig = useQuery({ queryKey: ["config", "library", library], queryFn: () => api.config.library(library!), enabled: creating && !!library });
   const overview = useQuery({ queryKey: ["config"], queryFn: api.config.overview, enabled: creating && playlist, retry: false });
   const files = ownFiles(libraryConfig.data, section, overview.data?.playlist_files);
+  const missingApp = useMissingApp(section === "collections" ? library : null); // Radarr or Sonarr, from the library's type
   const [fileName, setFileName] = useState<string | null>(null);
   const newName = fileName ?? (library || playlist ? suggestedName(library, section, files) : "");
 
@@ -408,7 +410,7 @@ export default function ItemEditor() {
 
   // One set of filters is edited as chips; several sets (a list, any of which may match) stay under Show Advanced.
   const chips = (section === "collections" || playlist) && (value.filters === undefined || (typeof value.filters === "object" && value.filters !== null && !Array.isArray(value.filters)));
-  const designed = new Set([...(DESIGNED[section] ?? []).map((d) => d.key), ...(section === "overlays" ? ["overlay"] : []), ...(chips ? ["filters"] : [])]);
+  const designed = new Set([...(DESIGNED[section] ?? []).map((d) => d.key), ...(section === "overlays" ? ["overlay"] : []), ...(chips ? ["filters"] : []), ...(missingApp ? addMissingKeys(missingApp) : [])]);
   const present = Object.keys(value);
   const advanced = present.filter((key) => !designed.has(key) && !isBuilder(key) && keys.has(key));
   const unknown = present.filter((key) => !keys.has(key) && !isBuilder(key) && !designed.has(key));
@@ -441,6 +443,7 @@ export default function ItemEditor() {
           </div>
         </Card>
       )}
+      {missingApp && <AddMissing app={missingApp} value={value} setValue={setEdited} />}
     </>
   );
   const advancedPart: ReactNode = (

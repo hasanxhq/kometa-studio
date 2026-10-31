@@ -9,8 +9,8 @@ const off = { enabled: false, trigger: "any" as const, mode: "all" as const, wai
 const state: ArrState = {
   settings: { radarr: off, sonarr: off },
   connections: {
-    radarr: { url: "http://radarr:7878", token: "…ab12", root_folder_path: "/movies", quality_profile: null, username: null, has_password: false, status: null },
-    sonarr: { url: null, token: null, root_folder_path: null, quality_profile: null, username: null, has_password: false, status: null },
+    radarr: { url: "http://radarr:7878", token: "…ab12", root_folder_path: "/movies", quality_profile: null, add_missing: false, search: false, username: null, has_password: false, status: null },
+    sonarr: { url: null, token: null, root_folder_path: null, quality_profile: null, add_missing: false, search: false, username: null, has_password: false, status: null },
   },
   pending: {},
   skipped: { radarr: [], sonarr: [] },

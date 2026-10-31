@@ -188,6 +188,8 @@ export type ArrConnection = {
   token: string | null; // masked, e.g. "…1234"; the key itself never leaves the server
   root_folder_path: string | null;
   quality_profile: string | null;
+  add_missing: boolean; // config.yml sends every collection's missing items to the app
+  search: boolean; // ...and has it search for them as they're added
   username: string | null; // for a proxy in front of the app (Studio's own)
   has_password: boolean;
   status: { checked_at: string; ok: boolean; error: string | null } | null;
