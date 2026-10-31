@@ -7,7 +7,7 @@ import { useMemo, useState } from "react";
 import { api, type SaveResult } from "../api";
 import { mappingKeys, loadSchema, type JsonSchema, type KeyInfo } from "../yaml/schema";
 import { SettingField } from "./forms/fields";
-import { Button, Card } from "./ui";
+import { Button, Card, StickyActions } from "./ui";
 import { SaveError, ValidationReport } from "./ValidationReport";
 
 type Values = Record<string, unknown>;
@@ -148,7 +148,7 @@ function SettingsForm({ saved, defaults, root, save }: { saved: Values; defaults
           </details>
         );
       })}
-      <div className="flex flex-wrap items-center gap-3">
+      <StickyActions>
         <Button variant="primary" type="submit" disabled={!dirty || badYaml.size > 0 || save.isPending}>
           {save.isPending ? "Kometa is checking…" : "Save settings"}
         </Button>
@@ -163,7 +163,7 @@ function SettingsForm({ saved, defaults, root, save }: { saved: Values; defaults
           </Button>
         )}
         {badYaml.size > 0 && <span className="text-sm text-warn">Fix the YAML in {[...badYaml].join(", ")} first.</span>}
-      </div>
+      </StickyActions>
       {save.isSuccess && <ValidationReport validation={save.data.validation} saved />}
       <SaveError error={save.error} />
     </form>

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Save stays in view at the bottom of the page on the collection, overlay, playlist and file editors and Settings → Kometa.
 - **Run Kometa** and schedules pick libraries from config.yml's list instead of typing their names. None picked still means every library.
 - Text boxes and dropdowns use the same font as the rest of Studio. The code font stays for YAML, file names, Kometa's own keys and the API key.
 - Collection form: **Show on** is three checkboxes (My home, Library recommended, Friends' home) instead of three empty YAML boxes. A value that's a schedule stays as YAML, and Show Advanced offers YAML for all three, to set one.

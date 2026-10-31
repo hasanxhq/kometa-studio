@@ -12,7 +12,7 @@ import { AddMissing, addMissingKeys, missingApp as missingAppFor } from "../comp
 import { FilterChips } from "../components/FilterChips";
 import { LeaveGuard } from "../components/LeaveGuard";
 import { Problems, SettingField, YamlBox, withKey } from "../components/forms/fields";
-import { Button, Card, Checkbox, Field, inputClass } from "../components/ui";
+import { Button, Card, Checkbox, Field, StickyActions, inputClass } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
 import { useLibraryType } from "../libraries";
 import { itemProblems } from "../yaml/check";
@@ -775,7 +775,7 @@ export default function ItemEditor() {
       </Card>
       {designedPart}
       {advancedPart}
-      <div className="flex flex-wrap items-center gap-3">
+      <StickyActions>
         <Button
           variant="primary"
           onClick={() => save.mutate()}
@@ -813,7 +813,7 @@ export default function ItemEditor() {
         {problems.size > 0 && badYaml.size === 0 && (
           <span className="text-sm text-warn">Kometa's schema flags {problems.size === 1 ? "a setting" : `${problems.size} settings`}; Kometa will check again on save.</span>
         )}
-      </div>
+      </StickyActions>
       {run.isSuccess && (
         <p role="status" className="text-sm text-ok">
           Queued as <Link className="underline" to={`/activity/queue/${run.data.id}`}>run #{run.data.id}</Link>. Only {original} runs, ignoring its schedule.

@@ -6,7 +6,7 @@ import { Link, useSearchParams } from "react-router";
 
 import { ApiError, api, saveRefusal, type EditableFile, type Validation } from "../api";
 import { LeaveGuard } from "../components/LeaveGuard";
-import { Button, Card } from "../components/ui";
+import { Button, Card, StickyActions } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
 
 const YamlEditor = lazy(() => import("../components/YamlEditor"));
@@ -73,7 +73,7 @@ function Editor({ file, onSaved, onReload }: { file: EditableFile; onSaved: () =
         Kometa's schema is checked as you type, and keys complete with Ctrl+Space. Tab indents; press Esc, then Tab, to move on. Saving still
         runs Kometa's own check.
       </p>
-      <div className="flex flex-wrap items-center gap-3">
+      <StickyActions>
         <Button variant="primary" onClick={() => save.mutate()} disabled={!dirty || busy}>
           {save.isPending ? "Kometa is checking…" : "Save"}
         </Button>
@@ -84,7 +84,7 @@ function Editor({ file, onSaved, onReload }: { file: EditableFile; onSaved: () =
           Undo my changes
         </Button>
         {dirty && <span className="text-sm text-muted">Unsaved changes</span>}
-      </div>
+      </StickyActions>
       {problem && !verdict && (
         <p role="alert" className="text-err">
           {problem.message}
