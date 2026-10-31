@@ -5,6 +5,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router";
 import { useAdvanced } from "../advanced";
 import { api } from "../api";
 import { JobsButton, JobsDrawer } from "./Jobs";
+import { StreakMark } from "./StreakMark";
 import { pageTitle, sections } from "../nav";
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
@@ -109,8 +110,11 @@ export function Layout() {
           menuOpen ? "block" : "hidden",
         ].join(" ")}
       >
-        <div className="flex h-14 items-center px-6 font-display text-lg font-semibold">
-          Kometa <span className="ml-1 text-accent">Studio</span>
+        <div className="flex h-14 items-center gap-2 px-6 font-display text-lg font-semibold">
+          <StreakMark />
+          <span>
+            Kometa <span className="ml-1 text-accent">Studio</span>
+          </span>
         </div>
         <Sidebar onNavigate={() => setMenuOpen(false)} />
         {/* On phones the header has no room for it. */}

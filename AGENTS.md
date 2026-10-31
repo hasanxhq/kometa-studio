@@ -47,6 +47,7 @@ An unofficial, arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kom
 | `kometa_studio/static/` | Built frontend (git-ignored; `npm run build` writes it) |
 | `frontend/` | React + Vite + TypeScript app. `src/nav.ts` defines the navigation and routes, `src/api.ts` the API calls, `src/components/ui.tsx` shared building blocks, `src/components/RunRequestFields.tsx` the run fields shared by Run now and schedules, `src/yaml/` checking YAML against Kometa's schema (tested on Kometa's own defaults: keep false alarms at zero), `src/components/forms/` the form fields |
 | `tests/` | Backend tests and fixtures. `fakeplex.py` stands in for plex.tv and a Plex server (shaped like a real server's answers), `fixtures/fake_kometa.py` for `kometa.py`; tests never touch the network |
+| `brand/`, `frontend/public/` | The logo: SVG masters, usage rules and `build_icons.py` in `brand/`; favicons, app icons and the web manifest in `frontend/public/`, which are built from them. Edit the masters, not the built files. |
 | `Dockerfile`, `compose.yaml` | Image built on `kometateam/kometa:<tag>`; Kometa stays at `/` with its own venv. Kometa's JSON schemas come from the same tag's source into `/studio/json-schema` (Kometa's image leaves them out) |
 | `kometa/` | Read-only clone of upstream Kometa for reference. Git-ignored; never commit it or edit it |
 
