@@ -225,3 +225,26 @@ async def set_library_default(writer: ConfigWriter, library: str, kind: str, nam
 
 async def set_library_variables(writer: ConfigWriter, library: str, variables: dict) -> dict:
     return await writer.save([_config_edit(writer, lambda text: with_library_variables(text or "", library, variables))], f"Set the template variables for {library}")
+
+
+# --- Kometa's own settings: block ------------------------------------------------------
+
+
+def with_settings(text: str, values: dict) -> str:
+    """``text`` with Kometa's ``settings:`` block set to ``values``. Unchanged keys keep their YAML; an empty block goes."""
+    document, indent = _parse(text)
+    current = document.get("settings")
+    if not values:
+        document.pop("settings", None)
+    elif isinstance(current, CommentedMap):
+        _update(current, values)
+    else:
+        document["settings"] = CommentedMap(values)
+    return render(text, document, indent)
+
+
+async def set_settings(writer: ConfigWriter, base: dict, values: dict) -> dict:
+    """Save the settings form. ``base`` is what the form started from: if config.yml's settings changed since, nothing is saved."""
+    if (read_section(writer.config_path, "settings") or {}) != base:
+        raise SaveRefused(409, "Kometa's settings in config.yml changed since you opened them. Reload to see the new ones.")
+    return await writer.save([_config_edit(writer, lambda text: with_settings(text or "", values))], "Changed Kometa's settings")

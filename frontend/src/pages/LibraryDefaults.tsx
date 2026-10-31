@@ -5,10 +5,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
-import { api, saveRefusal, type ConfigLibrary, type DefaultEntry, type DefaultKind, type FileReference, type SaveResult } from "../api";
+import { api, type ConfigLibrary, type DefaultEntry, type DefaultKind, type FileReference, type SaveResult } from "../api";
 import { Problems, SettingField, YamlBox } from "../components/forms/fields";
 import { Button, Card, ConfirmButton, Tag, inputClass } from "../components/ui";
-import { ValidationReport } from "../components/ValidationReport";
+import { SaveError } from "../components/ValidationReport";
 import { defaultVariablesSchema, keySchema, loadSchema, mappingKeys, type JsonSchema } from "../yaml/schema";
 
 type Values = Record<string, unknown>;
@@ -35,17 +35,6 @@ function useSave<T = void>(mutation: (arg: T) => Promise<SaveResult>, onSaved?: 
       onSaved?.();
     },
   });
-}
-
-function SaveError({ error }: { error: Error | null }) {
-  if (!error) return null;
-  const refusal = saveRefusal(error);
-  if (refusal?.validation) return <ValidationReport validation={refusal.validation} saved={false} />;
-  return (
-    <p role="alert" className="text-sm text-err">
-      {error.message}
-    </p>
-  );
 }
 
 /** Template variables as fields: known ones from the schema, the rest (use_<key> and the like) as YAML. */

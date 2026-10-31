@@ -88,6 +88,7 @@ export function SettingField({
   onValidity,
   problems,
   hint,
+  unset = "Not set",
 }: {
   name: string;
   label?: string;
@@ -98,6 +99,7 @@ export function SettingField({
   onValidity?: (ok: boolean) => void;
   problems?: string[];
   hint?: string;
+  unset?: string; // what an empty field means, e.g. Kometa's default
 }) {
   const id = useId();
   const control = root && schema ? controlFor(root, schema) : { kind: "yaml" as const };
@@ -105,7 +107,7 @@ export function SettingField({
   if (control.kind === "boolean") {
     input = (
       <select id={id} className={inputClass} value={value === undefined ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value === "true")}>
-        <option value="">Not set</option>
+        <option value="">{unset}</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
       </select>
@@ -113,7 +115,7 @@ export function SettingField({
   } else if (control.kind === "enum") {
     input = (
       <select id={id} className={inputClass} value={value === undefined ? "" : String(value)} onChange={(e) => onChange(e.target.value || undefined)}>
-        <option value="">Not set</option>
+        <option value="">{unset}</option>
         {control.options.map((option) => (
           <option key={option} value={option}>
             {option}
@@ -131,11 +133,20 @@ export function SettingField({
         max={control.maximum}
         step={control.kind === "integer" ? 1 : "any"}
         value={typeof value === "number" ? value : ""}
+        placeholder={unset === "Not set" ? undefined : unset}
         onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
       />
     );
   } else if (control.kind === "string") {
-    input = <input id={id} className={inputClass} value={value === undefined ? "" : String(value)} onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)} />;
+    input = (
+      <input
+        id={id}
+        className={inputClass}
+        value={value === undefined ? "" : String(value)}
+        placeholder={unset === "Not set" ? undefined : unset}
+        onChange={(e) => onChange(e.target.value === "" ? undefined : e.target.value)}
+      />
+    );
   } else {
     return (
       <div className="flex flex-col gap-1.5 text-sm">
