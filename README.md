@@ -17,6 +17,22 @@ Then open http://localhost:8484. `config/` becomes Kometa's config folder inside
 
 Settings in `compose.yaml` can be overridden with environment variables: `PUID`, `PGID`, `TZ`, `STUDIO_PORT`, `KOMETA_CONFIG_DIR`, `KOMETA_TAG`. Schedules use `TZ` unless `STUDIO_TIMEZONE` is set.
 
+### Behind a reverse proxy
+
+Set a **URL base** (such as `/kometa`) in Settings → General. Studio answers with and without it, so the proxy can pass the path on or strip it. For nginx:
+
+```nginx
+location /kometa/ {
+    proxy_pass http://kometa-studio:8484;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;  # live run logs
+}
+```
+
+Requests that come through a proxy never count as local for sign-in, unless the proxy is listed under **Trusted proxies** in the same card. List the proxy's own address rather than a whole network where you can.
+
 ## Develop
 
 ```bash

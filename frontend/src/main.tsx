@@ -8,10 +8,11 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router";
 
 import { App } from "./App";
+import { urlBase } from "./base";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={urlBase || undefined}>
       <App />
     </BrowserRouter>
   </StrictMode>,

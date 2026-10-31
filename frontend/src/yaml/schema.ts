@@ -4,6 +4,8 @@
 import Ajv, { type ValidateFunction } from "ajv";
 import draft06 from "ajv/dist/refs/json-schema-draft-06.json";
 
+import { urlBase } from "../base";
+
 export type SchemaKind = "config" | "collection" | "overlay" | "metadata" | "playlist" | "template";
 
 export type JsonSchema = {
@@ -33,7 +35,7 @@ const loaded = new Map<SchemaKind, Promise<LoadedSchema | null>>();
 export function loadSchema(kind: SchemaKind): Promise<LoadedSchema | null> {
   let promise = loaded.get(kind);
   if (!promise) {
-    promise = fetch(`/api/v1/config/schemas/${kind}`)
+    promise = fetch(`${urlBase}/api/v1/config/schemas/${kind}`)
       .then((response) => (response.ok ? (response.json() as Promise<JsonSchema>) : null))
       .then((root) => (root ? { root, validate: compile(root) } : null))
       .catch(() => null);

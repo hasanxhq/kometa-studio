@@ -4,7 +4,9 @@ Every /api path goes through ``AuthMiddleware``. A request is let in when it car
 (``X-Api-Key`` header or ``apikey`` query parameter), a valid session cookie, or comes from a local
 address while sign-in allows that. Until a username and password are set, only local addresses get
 in, so a fresh install is never open to the internet. A request relayed by a proxy (it carries
-``X-Forwarded-For`` or similar) never counts as local: the proxy itself is usually on the same host.
+``X-Forwarded-For`` or similar) never counts as local, the proxy itself being usually on the same host,
+unless it comes from a proxy trusted on Settings → General: then the visitor's own address decides
+(reverse_proxy.visitor).
 
 Changes from another site are refused whatever the credentials: a browser always sends ``Origin``
 on a cross-site POST, and it must match the host Studio was reached at.
@@ -23,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from . import reverse_proxy
 from .db import get_setting, set_setting
 
 AUTH = "auth"  # {"username", "password" (scrypt hash), "required": "enabled" | "disabled_for_local"}
@@ -32,7 +35,6 @@ SESSION_DAYS = 30
 
 # Paths that check their own token, are how one signs in, or say only "up" (the container's health check).
 OPEN_PATHS = {"/api/v1/ping", "/api/v1/auth", "/api/v1/auth/login", "/api/v1/auth/logout", "/api/v1/kometa/events"}
-PROXY_HEADERS = (b"x-forwarded-for", b"forwarded", b"x-real-ip")
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 # Logins: this many failures from one address within the window, and it has to wait.
@@ -150,9 +152,10 @@ class Caller:
     headers: dict[bytes, bytes]
     query: dict[str, list[str]]
     scheme: str
+    trusted: list[str]  # proxies whose X-Forwarded-For Studio believes
 
     @classmethod
-    def from_scope(cls, scope: dict) -> "Caller":
+    def from_scope(cls, scope: dict, trusted: list[str] | None = None) -> "Caller":
         client = scope.get("client")
         return cls(
             method=scope["method"],
@@ -161,6 +164,7 @@ class Caller:
             headers={key.lower(): value for key, value in scope.get("headers", [])},
             query=parse_qs(scope.get("query_string", b"").decode("latin-1")),
             scheme=scope.get("scheme", "http"),
+            trusted=trusted or [],
         )
 
     def header(self, name: bytes) -> str | None:
@@ -168,8 +172,13 @@ class Caller:
         return value.decode("latin-1") if value is not None else None
 
     @property
+    def address(self) -> str | None:
+        """The visitor's address: the peer's, or through a trusted proxy, the one it names."""
+        return reverse_proxy.visitor(self.client_host, self.headers, self.trusted)[0]
+
+    @property
     def local(self) -> bool:
-        return is_local(self.client_host, any(name in self.headers for name in PROXY_HEADERS))
+        return is_local(*reverse_proxy.visitor(self.client_host, self.headers, self.trusted))
 
     @property
     def cookie(self) -> str | None:
@@ -244,7 +253,8 @@ class AuthMiddleware:
         if scope["type"] != "http" or not scope["path"].startswith("/api/"):
             await self.app(scope, receive, send)
             return
-        decision = decide(scope["app"].state.db, Caller.from_scope(scope))
+        db = scope["app"].state.db
+        decision = decide(db, Caller.from_scope(scope, reverse_proxy.load(db).trusted))
         if decision.allowed:
             scope.setdefault("state", {})["auth_via"] = decision.via
             await self.app(scope, receive, send)
