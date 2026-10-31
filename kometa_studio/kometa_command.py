@@ -73,7 +73,6 @@ def build_command(
         ("--ignore-schedules", request.ignore_schedules),
         ("--no-missing", request.no_missing),
         ("--tests", request.tests),
-        ("--timings", request.timings),
         ("--low-priority", request.low_priority),
     ):
         if wanted:

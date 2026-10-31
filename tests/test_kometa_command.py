@@ -54,7 +54,6 @@ def test_every_option():
         "--ignore-schedules",
         "--no-missing",
         "--tests",
-        "--timings",
         "--low-priority",
     ]
 

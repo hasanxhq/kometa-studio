@@ -111,6 +111,5 @@ def test_every_run_records_its_calls_per_service(tmp_path):
             time.sleep(0.05)
         run = client.get(f"/api/v1/runs/{run_id}").json()
         page = client.get("/api/v1/usage").json()
-    assert "--timings" in run["command"]
     assert page["today"] == {"tmdb": 12, "mdblist": 2}
     assert page["mdblist"] is None and page["limit_share"] == 0.8

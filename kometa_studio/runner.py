@@ -8,8 +8,10 @@ exited after ``kill_after`` seconds.
 import asyncio
 import json
 import os
+import re
 import signal
 import sqlite3
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -22,6 +24,7 @@ from .kometa_config import ensure_studio_webhooks
 from .settings import Settings
 
 FINISHED = ("succeeded", "failed", "cancelled", "interrupted", "timed_out")
+KOMETA_CRITICAL = re.compile(r"\[CRITICAL\]\s*\|\s*(.*?)\s*\|?\s*$", re.MULTILINE)  # a line of Kometa's logs/meta.log
 SUBSCRIBER_BACKLOG = 10_000  # lines a slow browser may fall behind before it's dropped (it reconnects)
 LINE_LIMIT = 1024 * 1024  # longest single output line Studio reads
 
@@ -64,6 +67,7 @@ class Active:
     subscribers: set[Subscriber] = field(default_factory=set)
     cancel_requested: bool = False
     timed_out: bool = False
+    started: float = 0.0  # when Kometa was started
 
 
 class Runner:
@@ -217,8 +221,6 @@ class Runner:
             ensure_studio_webhooks(s.kometa_config, self.webhook_url, s.data_dir / "backups")
         except OSError as error:
             raise ValueError(f"Couldn't add Studio's webhooks to {s.kometa_config}: {error}") from None
-        if self.flags is None or "--timings" in self.flags:
-            request = request.model_copy(update={"timings": True})  # Kometa's calls per service, for usage.py
         argv = kometa_command.build_command(s.kometa_python, s.kometa_entry, s.kometa_config, request, self.flags)
         return argv, s.kometa_entry.parent
 
@@ -244,6 +246,7 @@ class Runner:
                         self._emit(active, log, "Kometa Studio: run cancelled before Kometa started")
                         self._finish(run_id, "cancelled")
                         return
+                    active.started = time.time()
                     active.process = await asyncio.create_subprocess_exec(
                         *argv,
                         cwd=cwd,
@@ -293,10 +296,27 @@ class Runner:
         if exit_code != 0:
             return "failed", f"Kometa exited with code {exit_code}"
         critical = self._first_critical_error(run_id)
+        if critical is None and not self._reported_finishing(run_id):
+            critical = self._crash_in_kometas_log(active.started)
         if critical is not None:
             # Kometa exits 0 even when a critical error (a config error, say) stopped it doing anything.
             return "failed", critical
         return "succeeded", None
+
+    def _reported_finishing(self, run_id: int) -> bool:
+        return self.db.execute("SELECT 1 FROM run_events WHERE run_id = ? AND event = 'run_end' LIMIT 1", (run_id,)).fetchone() is not None
+
+    def _crash_in_kometas_log(self, since: float) -> str | None:
+        """A crash before Kometa's webhooks are set up reaches only its own log, and it still exits 0."""
+        assert self.settings.kometa_config is not None
+        log = self.settings.kometa_config.parent / "logs" / "meta.log"
+        try:
+            if log.stat().st_mtime < since:
+                return None  # left by an earlier run
+            match = KOMETA_CRITICAL.search(log.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            return None
+        return match.group(1) if match else None
 
     def _first_critical_error(self, run_id: int) -> str | None:
         for (payload,) in self.db.execute("SELECT payload FROM run_events WHERE run_id = ? AND event = 'error' ORDER BY id", (run_id,)):

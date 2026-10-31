@@ -1,9 +1,11 @@
 """How much Kometa's runs use TMDb, MDBList and the other services, and keeping runs after imports
 within MDBList's daily allowance (feedback round 1).
 
-Every run passes ``--timings``, so Kometa writes ``logs/timings-<time>.json`` with its calls per
-service (``source``: tmdb, mdblist, imdb, …). A run hook adds them up and keeps them on the run
-(``runs.api_calls``), which gives the day's totals.
+With ``--timings``, Kometa writes ``logs/timings-<time>.json`` with its calls per service (``source``:
+tmdb, mdblist, imdb, …). A run hook adds them up and keeps them on the run (``runs.api_calls``), which
+gives the day's totals. Runs don't pass it for now: Kometa 2.5.3 crashes on it at startup, because
+``modules/timings.py`` takes ``util.logger`` on import, before ``kometa.py`` has set it. Until a Kometa
+that's fixed, there are no totals, and MDBList's allowance comes from ``/user`` alone.
 
 A free MDBList key allows 1000 requests a day, and the count resets at midnight UTC. Studio asks
 MDBList's ``/user`` how much of today's allowance the key has used (at most every
