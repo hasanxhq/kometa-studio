@@ -24,6 +24,7 @@ export const sections: Section[] = [
         path: "/libraries",
         summary: "One card per Plex library, with its collections, overlays, defaults and operations.",
       },
+      { label: "Defaults", path: "/defaults", summary: "Kometa's ready-made collections and overlays, turned on per library and customized without YAML." },
       { label: "Overlays", path: "/overlays", summary: "Kometa's overlays per library: what draws them, when, and turning them off and on." },
       { label: "Playlists", path: "/playlists", summary: "Kometa's playlists, from config.yml's playlist_files." },
     ],
