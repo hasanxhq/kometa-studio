@@ -34,7 +34,7 @@ class RunRequest(BaseModel):
     ignore_schedules: bool = False
     no_missing: bool = False
     tests: bool = False
-    timings: bool = False
+    timings: bool = False  # never passed on (Kometa 2.5.3 crashes on --timings; see usage.py), kept so stored requests load
     low_priority: bool = True
 
     @field_validator("libraries", "collections", "files")

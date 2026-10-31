@@ -52,7 +52,7 @@ function Health({ checks }: { checks: HealthCheck[] }) {
 
 const serviceNames: Record<string, string> = { tmdb: "TMDb", mdblist: "MDBList", imdb: "IMDb", tvdb: "TheTVDB", omdb: "OMDb", plex: "Plex", letterboxd: "Letterboxd" };
 
-// What today's runs asked of each service (Kometa's --timings), and how close MDBList's key is to its daily allowance.
+// What today's runs asked of each service (from Kometa's --timings, which runs can't use yet; see usage.py), and how close MDBList's key is to its daily allowance.
 function Usage() {
   const usage = useQuery({ queryKey: ["usage"], queryFn: api.usage, refetchInterval: 60_000 });
   if (!usage.data) return null;

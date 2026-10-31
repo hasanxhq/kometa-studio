@@ -13,7 +13,6 @@ const plexState = { config: { path: "/config/config.yml", url: null, token: null
 function routes(setup: () => SetupState, extra = {}) {
   return {
     "GET /config/setup": setup,
-    "GET /general": () => general(),
     "GET /settings/general": () => general(),
     "GET /plex": () => plexState,
     "GET /settings/services": () => ({ tmdb: { apikey: null }, mdblist: { apikey: null } }),
