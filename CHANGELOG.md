@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Library and collection pages: posters at half the size, and the same size at any screen width.
+- A collection's title card is half as tall.
+
+### Removed
+
+- The "← Libraries" link on a library's page; the sidebar already goes there.
+
 ## [0.0.1-alpha.1] - 2026-10-31
 
 ### Added

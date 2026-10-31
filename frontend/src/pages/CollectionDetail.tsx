@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router";
 
 import { api, type ConfigLibrary, type PlexItem } from "../api";
-import { PlexPoster } from "../components/PlexPoster";
+import { PlexPoster, posterGrid } from "../components/PlexPoster";
 import { Button, Card, Tag, inputClass } from "../components/ui";
 import { libraryPath, mergeLibraries } from "../libraries";
 
@@ -143,26 +143,26 @@ export function CollectionDetail() {
   return (
     <div className="flex max-w-6xl flex-col gap-4">
       {back}
-      <section className="flex flex-col gap-4 rounded-card border border-border bg-surface p-4 sm:flex-row md:p-6">
-        <div className="w-32 shrink-0 sm:w-40">
+      <section className="flex gap-4 rounded-card border border-border bg-surface p-4">
+        <div className="w-[4.5rem] shrink-0">
           <PlexPoster thumb={collection.thumb} title={collection.title} />
         </div>
-        <div className="flex min-w-0 flex-col gap-2">
-          <h2 className="break-words text-2xl font-semibold">{collection.title}</h2>
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2 className="break-words text-xl font-semibold">{collection.title}</h2>
           <span className="flex flex-wrap items-center gap-1.5 text-sm text-muted">
             {total} title{total === 1 ? "" : "s"}
             {collection.managed ? <Tag tone="ok">By Kometa</Tag> : collection.maintainerr ? <Tag tone="info">By Maintainerr</Tag> : <Tag>Unmanaged</Tag>}
             {collection.smart && <Tag>Smart</Tag>}
+            {defined && config.data && !collection.maintainerr && (
+              <Link
+                className="ml-1.5 min-h-11 min-w-0 content-center break-words text-muted underline hover:text-text"
+                to={`/items?${new URLSearchParams({ path: defined.path, section: "collections", name: defined.name, library: config.data.name })}`}
+              >
+                Defined in {defined.path}
+              </Link>
+            )}
           </span>
           {collection.summary && <p className="whitespace-pre-line text-sm">{collection.summary}</p>}
-          {defined && config.data && !collection.maintainerr && (
-            <Link
-              className="min-h-11 content-center self-start text-sm text-muted underline hover:text-text"
-              to={`/items?${new URLSearchParams({ path: defined.path, section: "collections", name: defined.name, library: config.data.name })}`}
-            >
-              Defined in {defined.path}
-            </Link>
-          )}
           {collection.maintainerr && <p className="text-sm text-muted">Maintainerr made this collection. Kometa leaves it alone.</p>}
           {collection.smart && <p className="text-sm text-muted">A smart collection: Plex fills it from its filter, so its titles change as the library does.</p>}
         </div>
@@ -197,7 +197,7 @@ export function CollectionDetail() {
             {shown.length === 0 ? (
               <p className="text-sm text-muted">Nothing matches.</p>
             ) : (
-              <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6" aria-label="Titles">
+              <ul className={posterGrid} aria-label="Titles">
                 {shown.map((item) => (
                   <Item key={item.rating_key} item={item} />
                 ))}

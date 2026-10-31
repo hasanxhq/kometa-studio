@@ -5,6 +5,10 @@ import { useState } from "react";
 
 import { api } from "../api";
 
+// A grid of posters, the same size at any width. 5.5rem is the narrowest that still fits an "Unmanaged" tag; auto-fill
+// (not auto-fit) keeps a short row from stretching its posters.
+export const posterGrid = "grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-4";
+
 export function PlexPoster({ thumb, title }: { thumb: string | null; title: string }) {
   const [failed, setFailed] = useState(false);
   return (
