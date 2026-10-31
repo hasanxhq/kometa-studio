@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from kometa_studio.app import create_app
-from kometa_studio.kometa_files import ConfigReader, mask_secrets, unmask_secrets
+from kometa_studio.kometa_files import ConfigReader, _is_builder, mask_secrets, unmask_secrets
 from kometa_studio.settings import Settings
 
 CONFIG = """\
@@ -150,6 +150,15 @@ def test_collections_are_summarised_with_their_builders(kometa):
         {"name": "Pixar", "dynamic": False, "type": None, "builders": [], "templates": ["Studio"], "sync_mode": None, "schedule": None},
         {"name": "Best of 2024", "dynamic": False, "type": None, "builders": ["plex_search", "smart_label"], "templates": [], "sync_mode": None, "schedule": None},
         {"name": "Genres", "dynamic": True, "type": "genre", "builders": [], "templates": [], "sync_mode": None, "schedule": None},
+    ]
+
+
+def test_radarr_and_sonarr_settings_arent_builders():
+    assert [k for k in ("radarr_all", "radarr_taglist", "sonarr_all", "radarr_add_missing", "radarr_search", "sonarr_tag", "tmdb_collection") if _is_builder(k)] == [
+        "radarr_all",
+        "radarr_taglist",
+        "sonarr_all",
+        "tmdb_collection",
     ]
 
 

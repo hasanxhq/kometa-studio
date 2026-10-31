@@ -26,6 +26,9 @@ BUILDER_SOURCES = (
     "serializd sonarr stevenlu tautulli tmdb trakt tvdb wetrakr"
 ).split()
 SMART_BUILDERS = {"smart_filter", "smart_label"}
+# Radarr and Sonarr have two builders each (modules/radarr.py, sonarr.py: builders); their other keys are settings.
+ARR_SOURCES = {"radarr", "sonarr"}
+ARR_BUILDERS = {"radarr_all", "radarr_taglist", "sonarr_all", "sonarr_taglist"}
 
 BANNER_URL = re.compile(r"https?://kometa\.wiki/\S+")
 
@@ -292,7 +295,10 @@ def _banner(text: str) -> tuple[str | None, str | None]:
 
 
 def _is_builder(key: str) -> bool:
-    return key in SMART_BUILDERS or key.split("_", 1)[0] in BUILDER_SOURCES and "_" in key
+    source = key.split("_", 1)[0]
+    if source in ARR_SOURCES:
+        return key in ARR_BUILDERS  # radarr_add_missing, radarr_search and the rest are settings
+    return key in SMART_BUILDERS or source in BUILDER_SOURCES and "_" in key
 
 
 def _collection(name: str, body: Any, dynamic: bool) -> dict:

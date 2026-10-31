@@ -189,12 +189,21 @@ def test_the_connect_page_reads_config_yml(tmp_path):
         "token": "…-key",
         "root_folder_path": None,
         "quality_profile": None,
+        "add_missing": False,
+        "search": False,
         "username": None,
         "has_password": False,
         "status": None,
     }
     assert state["connections"]["sonarr"]["url"] is None
     assert RADARR_KEY not in str(state)
+
+
+def test_the_connect_page_says_whether_every_collection_adds_missing_items(tmp_path):
+    with make_client(tmp_path, FakeArr()) as client:
+        (tmp_path / "config.yml").write_text(CONFIG + "  add_missing: true\n  search: true\n")
+        radarr = client.get("/api/v1/settings/arr").json()["connections"]["radarr"]
+    assert (radarr["add_missing"], radarr["search"]) == (True, True)
 
 
 def test_a_test_says_what_answered_with_its_folders_and_profiles(tmp_path):
