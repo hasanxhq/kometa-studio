@@ -284,6 +284,10 @@ export type ServiceName = "tmdb" | "mdblist";
 export type ServicesState = Record<ServiceName, { apikey: string | null }>; // apikey masked
 export type ServiceTest = { ok: true; limit?: number | null; used?: number | null } | { ok: false; error: string };
 
+export type TautulliState = { url: string | null; apikey: string | null }; // apikey masked
+export type TautulliInput = { url: string; apikey: string | null }; // apikey null: keep the saved one
+export type TautulliTest = { ok: true; version: string | null } | { ok: false; error: string };
+
 // Kometa's own log files (System → Logs).
 export type LogLevel = "TRACE" | "DEBUG" | "INFO" | "WARNING" | "ERROR" | "CRITICAL";
 export type LogFile = { path: string; size: number; modified: number };
@@ -661,6 +665,12 @@ export const api = {
     test: (name: ServiceName, apikey: string | null) => request<ServiceTest>("POST", `/settings/services/${name}/test`, { apikey }),
     save: (name: ServiceName, apikey: string | null) => request<ServicesState>("PUT", `/settings/services/${name}`, { apikey }),
     remove: (name: ServiceName) => request<ServicesState>("DELETE", `/settings/services/${name}`),
+  },
+  tautulli: {
+    get: () => request<TautulliState>("GET", "/settings/tautulli"),
+    test: (body: TautulliInput) => request<TautulliTest>("POST", "/settings/tautulli/test", body),
+    save: (body: TautulliInput) => request<TautulliState>("PUT", "/settings/tautulli", body),
+    remove: () => request<TautulliState>("DELETE", "/settings/tautulli"),
   },
 
   logs: {
