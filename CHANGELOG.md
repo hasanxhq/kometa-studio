@@ -117,3 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **DNS over HTTPS** (Cloudflare or Google) for ticked services: TMDb, MDBList, IMDb, TheTVDB, plex.tv, Letterboxd, GitHub. It's saved only after each one resolves.
   - **IPv4 first**, for networks with broken IPv6.
   - **Connection check:** for each service Studio and Kometa use, what this network's DNS says and what DNS over HTTPS says, whether it connects and how fast, and a verdict, such as "Blocked by this network's DNS".
+
+### Fixed
+
+- Runs no longer crash when Kometa starts. Studio was passing `--timings`, and Kometa 2.5.3 crashes on that flag and still exits 0, so runs stopped within seconds and showed as succeeded. Calls per service on System → Status aren't available until a Kometa version fixes this. MDBList's daily allowance still shows.
+- A run where Kometa crashes before it reports anything now counts as failed, with the error from Kometa's own log.
+- **Add to Kometa** writes a new library as `Movies: {}` rather than a blank `Movies:`, which crashed Kometa's run.

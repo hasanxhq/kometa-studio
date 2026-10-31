@@ -65,7 +65,7 @@ function Usage() {
     <Card title="Service use today">
       <div className="flex flex-col gap-3 text-sm">
         {sources.length === 0 ? (
-          <p className="text-muted">No runs have called TMDb, MDBList or other services today (UTC).</p>
+          <p className="text-muted">Calls per service aren't available: this version of Kometa can't report them yet.</p>
         ) : (
           <ul className="flex flex-wrap gap-x-6 gap-y-1">
             {sources.map(([source, calls]) => (

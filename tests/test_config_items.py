@@ -181,12 +181,18 @@ def test_schemas_are_served_from_the_installed_kometa(tmp_path, kometa):
 
 def test_adding_a_library_keeps_the_rest_of_config_yml():
     text = "plex:\n  url: http://plex:32400   # the seedbox\nlibraries:\n  Movies:\n    collection_files:\n      - default: basic\n"
-    assert with_library(text, "TV Shows") == text + "  TV Shows:\n"
-    assert with_library("plex:\n  url: x\n", "Movies") == "plex:\n  url: x\nlibraries:\n  Movies:\n"
+    assert with_library(text, "TV Shows") == text + "  TV Shows: {}\n"  # not blank: Kometa crashes on a blank library
+    assert with_library("plex:\n  url: x\n", "Movies") == "plex:\n  url: x\nlibraries:\n  Movies: {}\n"
     with pytest.raises(ValueError, match="already has a library called Movies"):
         with_library(text, "Movies")
     with pytest.raises(ValueError, match="already has"):  # another key pointing at that Plex library
         with_library("libraries:\n  Films:\n    library_name: Movies\n", "Movies")
+
+
+def test_a_new_library_gets_its_first_file_in_block_style():
+    text = with_library("libraries:\n  Movies:\n    collection_files:\n      - file: config/Movies.yml\n", "TV Shows")
+    changed = with_library_file(text, "TV Shows", "collection_files", "config/Shows.yml")
+    assert changed.endswith("  TV Shows:\n    collection_files:\n      - file: config/Shows.yml\n")
 
 
 @pytest.mark.parametrize(
@@ -220,7 +226,7 @@ def test_adding_a_library_through_the_api(tmp_path, kometa):
         again = client.post("/api/v1/config/libraries", json={"name": "TV Shows"})
         libraries = client.get("/api/v1/config").json()["libraries"]
     assert added.status_code == 200 and added.json()["validation"]["ok"]
-    assert (kometa / "config" / "config.yml").read_text().endswith("  TV Shows:\n")
+    assert (kometa / "config" / "config.yml").read_text().endswith("  TV Shows: {}\n")
     assert again.status_code == 409
     assert [library["name"] for library in libraries] == ["Movies", "TV Shows"]
 

@@ -243,6 +243,56 @@ def test_a_critical_error_fails_the_run_even_when_kometa_exits_0(tmp_path, confi
     assert run["error"] == "Config Error: tmdb sub-attribute apikey not found"
 
 
+def kometas_log(config: Path, age: float = -60) -> None:
+    """A logs/meta.log with Kometa's crash in it, written ``age`` seconds ago (by default, during the run)."""
+    log = config.parent / "logs" / "meta.log"
+    log.parent.mkdir(exist_ok=True)
+    log.write_text(
+        "[2026-10-31 12:42:04,803] [kometa.py:481]  [INFO]     | Kometa starting |\n"
+        "[2026-10-31 12:42:04,832] [kometa.py:308]  [CRITICAL] | 'NoneType' object has no attribute 'info'       |\n"
+    )
+    when = time.time() - age
+    os.utime(log, (when, when))
+
+
+def test_a_crash_only_kometas_log_knows_about_fails_the_run(tmp_path, config):
+    plan(config, lines=["Starting Kometa"], exit=0)
+    kometas_log(config)
+    with make_client(tmp_path) as client:
+        run_id = client.post("/api/v1/runs", json={"mode": "collections"}).json()["id"]
+        run = wait_for(client, run_id)
+    assert run["status"] == "failed" and run["exit_code"] == 0
+    assert run["error"] == "'NoneType' object has no attribute 'info'"
+
+
+def test_a_critical_line_left_by_an_earlier_run_doesnt_count(tmp_path, config):
+    plan(config, lines=["Starting Kometa"], exit=0)
+    kometas_log(config, age=3600)
+    with make_client(tmp_path) as client:
+        run_id = client.post("/api/v1/runs", json={"mode": "collections"}).json()["id"]
+        assert wait_for(client, run_id)["status"] == "succeeded"
+
+
+def test_a_run_kometa_saw_through_isnt_failed_by_a_critical_line(tmp_path, config):
+    release = tmp_path / "release"
+    plan(config, wait_for=str(release))
+    kometas_log(config)  # Kometa logs some critical lines it carries on from, such as failing to lower its priority
+    with make_client(tmp_path) as client:
+        run_id = client.post("/api/v1/runs", json={"mode": "collections"}).json()["id"]
+        wait_for(client, run_id, {"running"})
+        post_event(client, {"event": "run_end"})
+        release.touch()
+        assert wait_for(client, run_id)["status"] == "succeeded"
+
+
+def test_runs_dont_pass_timings_which_crashes_kometa(tmp_path, config):
+    plan(config, lines=["Starting Kometa"], exit=0)
+    with make_client(tmp_path) as client:
+        wait_for_flags(client)
+        run_id = client.post("/api/v1/runs", json={"mode": "collections", "timings": True}).json()["id"]
+        assert "--timings" not in wait_for(client, run_id)["command"]
+
+
 def test_non_critical_errors_leave_the_run_finished(tmp_path, config):
     release = tmp_path / "release"
     plan(config, wait_for=str(release))
