@@ -617,6 +617,8 @@ export const api = {
   kometa: () => request<KometaInfo>("GET", "/kometa"),
   config: {
     overview: () => request<{ path: string; libraries: LibraryCounts[]; playlist_files: FileReference[] }>("GET", "/config"),
+    // Sources a collection can't use yet, by the first word of their keys, each with the reason.
+    sources: (library: string | null) => request<{ unavailable: Record<string, string> }>("GET", `/config/sources${library ? `?library=${encodeURIComponent(library)}` : ""}`),
     settings: () => request<KometaSettings>("GET", "/config/settings"),
     saveSettings: (base: Record<string, unknown>, values: Record<string, unknown>) => request<SaveResult>("PUT", "/config/settings", { base, values }),
     library: (name: string) => request<ConfigLibrary>("GET", `/config/libraries/${encodeURIComponent(name)}`),

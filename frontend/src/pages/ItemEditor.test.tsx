@@ -16,6 +16,8 @@ const collectionSchema = {
       properties: {
         tmdb_collection: { oneOf: [{ type: "integer" }, { type: "array", items: { type: "integer" } }], description: "TMDb collection IDs" },
         tmdb_trending_weekly: { type: "integer", minimum: 1 },
+        mal_id: { type: "integer" },
+        mdblist_list: { type: "string" },
         summary: { type: "string" },
         sort_title: { type: "string" },
         sync_mode: { type: "string", enum: ["sync", "append"] },
@@ -361,6 +363,41 @@ describe("Adding a collection's missing items", () => {
     renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
     expect(await screen.findByDisplayValue("Everything Heroes.")).toBeInTheDocument();
     expect(screen.queryByText("Missing items")).toBeNull();
+  });
+});
+
+describe("The source list", () => {
+  const options = () => within(screen.getByText("Add a source").closest("label")!).getAllByRole("option") as HTMLOptionElement[];
+
+  it("greys out sources whose service isn't set up, saying what each needs", async () => {
+    const calls = mockApi({ ...routes, "GET /config/sources?library=Movies": () => ({ unavailable: { mal: "needs MyAnimeList" } }) });
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+
+    const greyed = await screen.findByRole("option", { name: "mal_id (needs MyAnimeList)" });
+    expect(greyed).toBeDisabled();
+    expect(greyed.closest("optgroup")).toHaveAttribute("label", "Not set up yet");
+    expect(screen.getByRole("option", { name: "mdblist_list" })).toBeEnabled();
+    // The available ones come first.
+    const names = options().map((o) => o.textContent);
+    expect(names.indexOf("mdblist_list")).toBeLessThan(names.indexOf("mal_id (needs MyAnimeList)"));
+    expect(screen.getByRole("link", { name: "Settings → Connect" })).toHaveAttribute("href", "/settings/connect");
+    expect(calls.some((c) => c.route === "GET /config/sources?library=Movies")).toBe(true);
+  });
+
+  it("leaves a source that's already in the collection alone", async () => {
+    mockApi({ ...routes, "GET /config/sources?library=Movies": () => ({ unavailable: { tmdb: "needs TMDb" } }) });
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+
+    expect(await screen.findByRole("option", { name: "tmdb_trending_weekly (needs TMDb)" })).toBeDisabled();
+    expect(screen.getByLabelText("tmdb_collection")).toHaveValue("- 556");
+  });
+
+  it("offers everything when Studio can't tell what's set up", async () => {
+    mockApi(routes);
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+
+    expect(await screen.findByRole("option", { name: "mal_id" })).toBeEnabled();
+    expect(screen.queryByText(/Greyed-out sources/)).toBeNull();
   });
 });
 

@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from kometa_studio.app import create_app
-from kometa_studio.kometa_files import ConfigReader, _is_builder, mask_secrets, unmask_secrets
+from kometa_studio.kometa_files import ConfigReader, _is_builder, mask_secrets, unavailable_sources, unmask_secrets
 from kometa_studio.settings import Settings
 
 CONFIG = """\
@@ -160,6 +160,48 @@ def test_radarr_and_sonarr_settings_arent_builders():
         "sonarr_all",
         "tmdb_collection",
     ]
+
+
+def test_sources_are_unavailable_until_config_yml_has_what_they_need():
+    document = {
+        "libraries": {"Movies": {"radarr": {"url": "http://own:7878", "token": "k"}}, "TV Shows": {}},
+        "tmdb": {"apikey": "k"},
+        "mdblist": {"apikey": None},  # the block alone isn't enough
+        "mal": {"client_id": "c"},  # half of what it needs
+        "anidb": None,  # Kometa needs nothing but the block
+        "sonarr": {"url": "http://sonarr:8989", "token": "k"},
+    }
+    unavailable = unavailable_sources(document, "TV Shows")
+    assert unavailable == {
+        "trakt": "Kometa no longer supports Trakt",
+        "flicklist": "needs FlickList",
+        "floppy": "needs Floppy",
+        "mal": "needs MyAnimeList",
+        "mdblist": "needs MDBList",
+        "radarr": "needs Radarr",
+        "serializd": "needs Serializd",
+        "tautulli": "needs Tautulli",
+        "wetrakr": "needs WeTrakr",
+    }
+    # A library's own block counts for that library, and only for the sources Kometa reads per library.
+    assert "radarr" not in unavailable_sources(document, "Movies")
+    assert "radarr" in unavailable_sources(document, None)
+    assert "mdblist" in unavailable_sources({"libraries": {"Movies": {"mdblist": {"apikey": "k"}}}}, "Movies")
+    # Half a shared block, finished in the library's own.
+    shared = {"libraries": {"Movies": {"radarr": {"token": "k"}}}, "radarr": {"url": "http://radarr:7878"}}
+    assert "radarr" not in unavailable_sources(shared, "Movies")
+
+
+def test_the_sources_route_greys_out_nothing_when_config_yml_cant_be_read(tmp_path):
+    config = tmp_path / "config.yml"
+    config.write_text("libraries:\n  Movies: {}\ntmdb:\n  apikey: k\n")
+    app = create_app(Settings(data_dir=tmp_path / "data", kometa_config=config), static_dir=tmp_path / "no-static")
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        fine = client.get("/api/v1/config/sources", params={"library": "Movies"}).json()["unavailable"]
+        config.write_text("libraries: [unclosed\n")
+        broken = client.get("/api/v1/config/sources").json()["unavailable"]
+    assert "tmdb" not in fine and fine["radarr"] == "needs Radarr"
+    assert broken == {}
 
 
 def test_folders_and_overlays(kometa):

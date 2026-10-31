@@ -12,10 +12,10 @@ from pydantic import BaseModel, StringConstraints
 
 from . import backups
 from .config_items import ItemProblem, read_item, schema_kind
-from .config_sections import add_library, new_file_for_library, new_playlist_file, read_section, set_library_default, set_library_variables, set_settings
+from .config_sections import add_library, new_file_for_library, new_playlist_file, read_document, read_section, set_library_default, set_library_variables, set_settings
 from .config_write import ConfigWriter, Edit, SaveRefused
 from .db import get_setting, set_setting
-from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets, settings_defaults
+from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets, settings_defaults, unavailable_sources
 from .runs_routes import get_db
 from .settings import Settings
 
@@ -362,6 +362,14 @@ class ItemIn(BaseModel):
     create: bool = False
     rename: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)] | None = None
     library: str | None = None
+
+
+@router.get("/config/sources")
+async def config_sources(request: Request, library: str | None = None) -> dict:
+    """Sources the collection form greys out. An unreadable config.yml greys out nothing: Kometa has the last word on a save."""
+    settings: Settings = request.app.state.settings
+    document = read_document(settings.kometa_config)
+    return {"unavailable": unavailable_sources(document, library) if document is not None else {}}
 
 
 @router.get("/config/schemas/{kind}")

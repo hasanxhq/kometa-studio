@@ -20,15 +20,20 @@ from .kometa_config import TEMPLATE_INDENT, _parse, render
 OLD_NAMES = {"collection_files": "metadata_path", "overlay_files": "overlay_path"}
 
 
-def read_section(config: Path | None, key: str) -> dict | None:
-    """A top-level section as plain data, or None if config.yml doesn't have it as a mapping."""
+def read_document(config: Path | None) -> dict | None:
+    """config.yml as plain data, or None if it's missing or can't be read."""
     if config is None or not config.is_file():
         return None
     try:
         document = YAML(typ="safe").load(config.read_text(encoding="utf-8")) or {}
     except (OSError, YAMLError):
         return None
-    section = document.get(key) if isinstance(document, dict) else None
+    return document if isinstance(document, dict) else None
+
+
+def read_section(config: Path | None, key: str) -> dict | None:
+    """A top-level section as plain data, or None if config.yml doesn't have it as a mapping."""
+    section = (read_document(config) or {}).get(key)
     return section if isinstance(section, dict) else None
 
 

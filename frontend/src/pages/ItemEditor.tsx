@@ -137,6 +137,7 @@ function Sources({
   problems,
   onValidity,
   single = false,
+  library,
 }: {
   value: Value;
   setValue: (value: Value) => void;
@@ -145,9 +146,14 @@ function Sources({
   problems: Map<string, string[]>;
   onValidity: (key: string, ok: boolean) => void;
   single?: boolean; // a playlist: Kometa takes one source
+  library: string | null;
 }) {
   const present = Object.keys(value).filter(isBuilder);
   const available = [...new Set([...COMMON_BUILDERS, ...[...keys.keys()].filter(isBuilder).sort()])].filter((key) => keys.has(key) && !present.includes(key));
+  // Sources whose service isn't in config.yml yet are shown greyed out. Until this answers, nothing is: Kometa checks every save.
+  const sources = useQuery({ queryKey: ["config", "sources", library], queryFn: () => api.config.sources(library), retry: false });
+  const needs = (key: string) => sources.data?.unavailable[key.split("_")[0]];
+  const greyedOut = available.filter(needs);
   return (
     <Card title="Where the items come from">
       <p className="mb-3 text-sm text-muted">
@@ -184,13 +190,33 @@ function Sources({
             onChange={(e) => e.target.value && root && setValue({ ...value, [e.target.value]: starting(root, keys.get(e.target.value)!.schema) })}
           >
             <option value="">Choose…</option>
-            {available.map((key) => (
-              <option key={key} value={key}>
-                {key}
-              </option>
-            ))}
+            {available
+              .filter((key) => !needs(key))
+              .map((key) => (
+                <option key={key} value={key}>
+                  {key}
+                </option>
+              ))}
+            {greyedOut.length > 0 && (
+              <optgroup label="Not set up yet">
+                {greyedOut.map((key) => (
+                  <option key={key} value={key} disabled>
+                    {key} ({needs(key)})
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
         </label>
+        {greyedOut.length > 0 && (
+          <p className="text-xs text-muted">
+            Greyed-out sources need a service that isn't set up yet. Radarr, Sonarr, Tautulli, TMDb and MDBList connect in{" "}
+            <Link className="underline" to="/settings/connect">
+              Settings → Connect
+            </Link>
+            ; the others go in config.yml.
+          </p>
+        )}
       </div>
     </Card>
   );
@@ -426,7 +452,7 @@ export default function ItemEditor() {
 
   const designedPart: ReactNode = (
     <>
-      <Sources value={value} setValue={setEdited} keys={keys} root={root} problems={problems} onValidity={validity} single={playlist} />
+      <Sources value={value} setValue={setEdited} keys={keys} root={root} problems={problems} onValidity={validity} single={playlist} library={library} />
       {chips && <FilterChips filters={value.filters as Record<string, unknown> | undefined} onChange={(next) => setEdited(withKey(value, "filters", next))} />}
       {section === "overlays" && <OverlayDesign value={value} setValue={setEdited} root={root} name={currentName} problems={problems} />}
       {(DESIGNED[section] ?? []).length > 0 && (
