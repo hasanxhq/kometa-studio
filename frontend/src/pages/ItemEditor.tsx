@@ -20,7 +20,13 @@ type Value = Record<string, unknown>;
 
 // Builder keys start with their source, as in Kometa's modules (same list as the backend's).
 const SOURCES = "anidb anilist flicklist floppy icheckmovies imdb letterboxd mal mdblist mojo plex radarr reciperr serializd sonarr stevenlu tautulli tmdb trakt tvdb wetrakr".split(" ");
-export const isBuilder = (key: string) => key === "smart_filter" || key === "smart_label" || (key.includes("_") && SOURCES.includes(key.split("_")[0]));
+// Radarr and Sonarr have two builders each; radarr_add_missing, radarr_search and the rest are settings.
+const ARR_BUILDERS = ["radarr_all", "radarr_taglist", "sonarr_all", "sonarr_taglist"];
+export const isBuilder = (key: string) => {
+  const source = key.split("_")[0];
+  if (source === "radarr" || source === "sonarr") return ARR_BUILDERS.includes(key);
+  return key === "smart_filter" || key === "smart_label" || (key.includes("_") && SOURCES.includes(source));
+};
 
 const COMMON_BUILDERS = [
   "tmdb_collection",

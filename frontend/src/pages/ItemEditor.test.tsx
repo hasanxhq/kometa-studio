@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Item, Validation } from "../api";
 import { mockApi, renderAt } from "../test-utils";
+import { isBuilder } from "./ItemEditor";
 
 // A small schema shaped like Kometa's collection and overlay schemas.
 const collectionSchema = {
@@ -360,5 +361,16 @@ describe("Adding a collection's missing items", () => {
     renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
     expect(await screen.findByDisplayValue("Everything Heroes.")).toBeInTheDocument();
     expect(screen.queryByText("Missing items")).toBeNull();
+  });
+});
+
+describe("isBuilder", () => {
+  it("counts only Kometa's Radarr and Sonarr builders as sources, not their settings", () => {
+    expect(["radarr_all", "sonarr_taglist", "radarr_add_missing", "radarr_search", "sonarr_tag", "tmdb_collection", "smart_label"].filter(isBuilder)).toEqual([
+      "radarr_all",
+      "sonarr_taglist",
+      "tmdb_collection",
+      "smart_label",
+    ]);
   });
 });
