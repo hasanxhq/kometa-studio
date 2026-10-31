@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/svg/lockup-on-dark.svg">
+  <img src="brand/svg/lockup-on-light.svg" alt="Kometa Studio" height="56">
+</picture>
+
 # Kometa Studio
 
 An arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kometa): it schedules Kometa runs, edits Kometa's config and YAML files with validation, and shows what each run changed in Plex.
