@@ -6,7 +6,7 @@ import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError, api, type ConfigLibrary, type FileReference, type PlexCollection } from "../api";
 import { AddLibrary } from "../components/AddLibrary";
-import { DefaultsTab } from "./LibraryDefaults";
+import { DefaultsGallery } from "./LibraryDefaults";
 import { PlexPoster, posterGrid } from "../components/PlexPoster";
 import { Button, Card, Tag } from "../components/ui";
 import { collectionPath, libraryTypeLabels, mergeLibraries } from "../libraries";
@@ -438,7 +438,7 @@ export function LibraryDetail() {
       </p>
     );
   } else {
-    body = { overlays: <OverlaysTab config={config.data} />, defaults: <DefaultsTab config={config.data} libraryType={entry.plex?.type ?? null} />, operations: <OperationsTab config={config.data} /> }[tab];
+    body = { overlays: <OverlaysTab config={config.data} />, defaults: <DefaultsGallery key={config.data.name} config={config.data} libraryType={entry.plex?.type ?? null} />, operations: <OperationsTab config={config.data} /> }[tab];
   }
 
   return (

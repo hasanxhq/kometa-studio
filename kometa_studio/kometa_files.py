@@ -9,6 +9,7 @@ every .yml/.yaml in it, ``default`` names a file in Kometa's own defaults folder
 import ast
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,7 @@ ARR_SOURCES = {"radarr", "sonarr"}
 ARR_BUILDERS = {"radarr_all", "radarr_taglist", "sonarr_all", "sonarr_taglist"}
 
 BANNER_URL = re.compile(r"https?://kometa\.wiki/\S+")
+MAX_TOGGLES = 60  # Network overlays have 273: that is no list to tick through
 
 
 def _yaml() -> YAML:
@@ -227,7 +229,7 @@ class ConfigReader:
     # --- Kometa's defaults, as a catalogue -------------------------------------------
 
     def catalogue(self) -> dict[str, list[dict]]:
-        """The defaults the installed Kometa has, by the name ``default:`` takes, with their titles, wiki links and library types.
+        """The defaults the installed Kometa has, by the name ``default:`` takes, with their titles, wiki links, library types and toggles.
 
         Collection defaults live in movie/, show/, both/, chart/ and award/ (a name in movie/ and show/ suits both);
         overlay defaults in overlays/, where a _movie or _show ending says which libraries they're for.
@@ -236,21 +238,26 @@ class ConfigReader:
         for folder in ("chart", "award", "both", "movie", "show"):
             for path in sorted((self.defaults / folder).glob("*.yml")):
                 types = ["movie", "show"] if folder in ("chart", "award", "both") else [folder]
+                text = _read(path)
+                toggles = [{**toggle, "types": types} for toggle in _toggles(text)]
                 entry = collections.get(path.stem)
                 if entry is None:
-                    title, docs = _banner(_read(path))
-                    collections[path.stem] = {"name": path.stem, "group": folder, "types": types, "title": title, "docs_url": docs}
+                    title, docs = _banner(text)
+                    collections[path.stem] = {"name": path.stem, "group": folder, "types": types, "title": title, "docs_url": docs, "toggles": toggles}
                 else:
                     entry["types"] = sorted(set(entry["types"]) | set(types), key=("movie", "show").index)
+                    entry["toggles"] += toggles
                     if entry["group"] in ("movie", "show") and folder in ("movie", "show"):
                         entry["group"] = "both"
         overlays = []
         for path in sorted((self.defaults / "overlays").glob("*.yml")):
             if path.stem == "templates":
                 continue
-            title, docs = _banner(_read(path))
+            text = _read(path)
+            title, docs = _banner(text)
             types = ["movie"] if path.stem.endswith("_movie") else ["show"] if path.stem.endswith("_show") else ["movie", "show"]
-            overlays.append({"name": path.stem, "group": "overlays", "types": types, "title": title, "docs_url": docs})
+            toggles = [{**toggle, "types": types} for toggle in _toggles(text)]
+            overlays.append({"name": path.stem, "group": "overlays", "types": types, "title": title, "docs_url": docs, "toggles": toggles})
         return {"collections": list(collections.values()), "overlays": overlays}
 
     # --- one YAML file ------------------------------------------------------------
@@ -295,6 +302,52 @@ def _read(path: Path) -> str:
         return path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return ""
+
+
+def _template_parts(body: dict) -> list[tuple[str | None, dict]]:
+    """A collection's or overlay's templates, as (name, the variables passed to it). Kometa takes a name, a mapping, or a list of either."""
+    templates = body.get("template")
+    parts = []
+    for template in templates if isinstance(templates, list) else [templates]:
+        if isinstance(template, dict):
+            parts.append((template.get("name"), template))
+        elif isinstance(template, str):
+            parts.append((template, {}))
+    return parts
+
+
+@lru_cache(maxsize=256)
+def _toggles(text: str) -> tuple[dict, ...]:
+    """What a ``use_<key>`` template variable turns on or off in a default, read from the default itself: ({key, label, on}, ...).
+
+    Kometa's ``shared`` template gives its collections ``use_<key>``, and a few overlay defaults have their own. Other defaults
+    get their collections from the library at run time, so there's nothing to list; nor for the ones with more than anyone would tick through.
+    """
+    if "\noverlays:" in text and "use_<<key>>" not in text:  # most overlay defaults, and the biggest files
+        return ()
+    try:
+        data = _yaml().load(text)
+    except YAMLError:
+        return ()
+    if not isinstance(data, dict):
+        return ()
+    found: dict[str, dict] = {}
+    for title, body in (data.get("collections") or {}).items():
+        key = (body.get("variables") or {}).get("key") if isinstance(body, dict) else None
+        parts = _template_parts(body) if isinstance(key, str) else []
+        if any(name == "shared" for name, _ in parts):
+            found.setdefault(key, {"key": key, "label": str(title), "on": all(variables.get(f"use_{key}") is not False for _, variables in parts)})
+    for body in (data.get("dynamic_collections") or {}).values():
+        if isinstance(body, dict) and body.get("type") == "custom" and isinstance(body.get("data"), dict) and any(name == "shared" for name, _ in _template_parts(body)):
+            for key, label in body["data"].items():
+                found.setdefault(str(key), {"key": str(key), "label": str(label), "on": True})
+    if "use_<<key>>" in text:
+        for title, body in (data.get("overlays") or {}).items():
+            variables = (body.get("variables") or {}) if isinstance(body, dict) else {}
+            if "alt" in variables or not isinstance(variables.get("key"), str):  # combinations (use_<key>_<alt>), or no one list of switches
+                return ()
+            found.setdefault(variables["key"], {"key": variables["key"], "label": str(title), "on": True})
+    return tuple(found.values()) if len(found) <= MAX_TOGGLES else ()
 
 
 def _banner(text: str) -> tuple[str | None, str | None]:

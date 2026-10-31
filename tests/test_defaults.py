@@ -51,11 +51,55 @@ def test_the_catalogue_of_installed_defaults(kometa):
     catalogue = ConfigReader(kometa / "config" / "config.yml", kometa).catalogue()
     collections = {entry["name"]: entry for entry in catalogue["collections"]}
     assert collections["basic"] == {
-        "name": "basic", "group": "chart", "types": ["movie", "show"], "title": "Basic Charts Collections", "docs_url": "https://kometa.wiki/en/latest/defaults/chart/basic",
+        "name": "basic", "group": "chart", "types": ["movie", "show"], "title": "Basic Charts Collections", "docs_url": "https://kometa.wiki/en/latest/defaults/chart/basic", "toggles": [],
     }
     assert (collections["decade"]["group"], collections["decade"]["types"]) == ("both", ["movie", "show"])  # in movie/ and show/
     assert (collections["network"]["group"], collections["network"]["types"]) == ("show", ["show"])
     assert [(o["name"], o["types"]) for o in catalogue["overlays"]] == [("content_rating_us_movie", ["movie"]), ("resolution", ["movie", "show"])]
+
+
+def test_toggles_come_from_the_default_itself(kometa):
+    defaults = kometa / "defaults"
+    (defaults / "chart" / "basic.yml").write_text(
+        "collections:\n"
+        "  Newly Released:\n    variables: {key: released}\n    template: [name: smart_filter, name: shared]\n"
+        "  Hidden Gem:\n    variables: {key: gem}\n    template:\n      - name: shared\n        use_gem: false\n"
+        "  Basic Separator:\n    template: {name: separator}\n"  # no shared template: no use_<key>
+    )
+    (defaults / "both" / "streaming.yml").write_text("dynamic_collections:\n  Streaming:\n    type: custom\n    data: {netflix: Netflix, disney: Disney+}\n    template: [streaming, shared]\n")
+    (defaults / "movie" / "decade.yml").write_text("dynamic_collections:\n  Decade:\n    type: decade\n    template: [shared]\n")  # from the library at run time
+    (defaults / "show" / "decade.yml").write_text("dynamic_collections:\n  Decade:\n    type: custom\n    data: {old: Old shows}\n    template: [shared]\n")
+    (defaults / "overlays" / "resolution.yml").write_text("templates:\n  x:\n    optional: [use_<<key>>]\noverlays:\n  Netflix:\n    variables: {key: netflix}\n    template: [name: standard]\n")
+
+    catalogue = ConfigReader(kometa / "config" / "config.yml", kometa).catalogue()
+    collections = {entry["name"]: entry["toggles"] for entry in catalogue["collections"]}
+    both = ["movie", "show"]
+    assert collections["basic"] == [{"key": "released", "label": "Newly Released", "on": True, "types": both}, {"key": "gem", "label": "Hidden Gem", "on": False, "types": both}]
+    assert [t["key"] for t in collections["streaming"]] == ["netflix", "disney"]
+    assert collections["decade"] == [{"key": "old", "label": "Old shows", "on": True, "types": ["show"]}]  # only show/ lists any
+    assert catalogue["overlays"][1]["toggles"] == [{"key": "netflix", "label": "Netflix", "on": True, "types": both}]
+
+
+@pytest.mark.parametrize(
+    "overlays",
+    [
+        "  Plain:\n    variables: {key: 4k}\n",  # the file has no use_<key>
+        "  A:\n    variables: {key: a}\n  B:\n    variables: {key: 200}\n",  # not every overlay has a key: Network's use_ variables are elsewhere
+        "  A:\n    variables: {key: 4k, alt: hdr}\n",  # use_<key>_<alt>
+    ],
+)
+def test_overlays_without_one_list_of_switches_have_no_toggles(kometa, overlays):
+    use = "" if "Plain" in overlays else "templates:\n  x:\n    optional: [use_<<key>>]\n"
+    (kometa / "defaults" / "overlays" / "resolution.yml").write_text(f"{use}overlays:\n{overlays}")
+    catalogue = ConfigReader(kometa / "config" / "config.yml", kometa).catalogue()
+    assert catalogue["overlays"][1]["toggles"] == []
+
+
+def test_a_long_list_of_toggles_is_left_out(kometa):
+    data = "".join(f"      k{n}: Name {n}\n" for n in range(61))
+    (kometa / "defaults" / "both" / "streaming.yml").write_text(f"dynamic_collections:\n  Many:\n    type: custom\n    template: [shared]\n    data:\n{data}")
+    catalogue = ConfigReader(kometa / "config" / "config.yml", kometa).catalogue()
+    assert next(e for e in catalogue["collections"] if e["name"] == "streaming")["toggles"] == []
 
 
 TEXT = """\

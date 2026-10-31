@@ -451,7 +451,10 @@ export type DefaultEntry = {
   types: string[]; // the Plex library types it suits: movie, show
   title: string | null;
   docs_url: string | null;
+  toggles: DefaultToggle[]; // what `use_<key>` turns on or off in it
 };
+
+export type DefaultToggle = { key: string; label: string; on: boolean; types: string[] };
 
 export type DefaultsCatalogue = { collections: DefaultEntry[]; overlays: DefaultEntry[] };
 

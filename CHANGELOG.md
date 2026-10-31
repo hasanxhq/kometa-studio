@@ -7,8 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Defaults** in the sidebar: the Defaults gallery as a page of its own, with an "Apply to" library picker. Until now it was only a tab inside each library.
+
 ### Changed
 
+- The Defaults gallery follows the design: a card per default with a coloured banner and a one-line description, an Enabled checkbox, Collections and Overlays tabs, category and Enabled filters, and a Customize panel beside the cards. A library's Defaults tab is the same gallery.
+- Customize shows what a default can turn on or off as checkboxes (streaming services, charts, seasons and so on, read from the installed Kometa's own files), its common variables as labelled controls (Originals only, Watch region, Show in Plex and more), the rest under More variables, and the YAML it writes. With no card picked, the panel holds the library's own variables.
 - Library and collection pages: posters at half the size, and the same size at any screen width.
 - A collection's title card is half as tall.
 
