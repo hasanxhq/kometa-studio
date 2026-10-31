@@ -8,11 +8,12 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { useAdvanced } from "../advanced";
 import { api, saveRefusal, type ConfigLibrary, type FileReference, type ItemSection, type SaveResult, type Validation } from "../api";
-import { AddMissing, addMissingKeys, useMissingApp } from "../components/AddMissing";
+import { AddMissing, addMissingKeys, missingApp as missingAppFor } from "../components/AddMissing";
 import { FilterChips } from "../components/FilterChips";
 import { Problems, SettingField, YamlBox } from "../components/forms/fields";
 import { Button, Card, Field, inputClass } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
+import { useLibraryType } from "../libraries";
 import { itemProblems } from "../yaml/check";
 import { controlFor, knownKeys, loadSchema, type JsonSchema, type KeyInfo, type SchemaKind } from "../yaml/schema";
 
@@ -137,8 +138,81 @@ const SOURCE_NAMES: Record<string, string> = {
   wetrakr: "WeTrakr",
 };
 
-/** The Add a source list: the most used, then each service by name, then the services that can't be used yet, greyed out. */
-export function sourceGroups(keys: string[], unavailable: Record<string, string>): { label: string; keys: string[]; disabled: boolean }[] {
+// Sources Kometa refuses in the other type of library: 2.5.3's builder.py, show_only_builders and movie_only_builders.
+const SHOW_ONLY = [
+  "serializd_list",
+  "serializd_watchlist",
+  "serializd_trending",
+  "serializd_popular",
+  "serializd_featured",
+  "tmdb_network",
+  "tmdb_show",
+  "tmdb_show_details",
+  "tvdb_show",
+  "tvdb_show_details",
+  "tmdb_airing_today",
+  "tmdb_on_the_air",
+  "sonarr_all",
+  "sonarr_taglist",
+  "flicklist_up_next",
+  "flicklist_tracked",
+];
+const MOVIE_ONLY = [
+  "letterboxd_list",
+  "letterboxd_list_details",
+  "letterboxd_crew",
+  "letterboxd_studio",
+  "letterboxd_country",
+  "letterboxd_language",
+  "letterboxd_genre",
+  "letterboxd_theme",
+  "letterboxd_similar",
+  "letterboxd_collection",
+  "letterboxd_user_films",
+  "letterboxd_user_films_details",
+  "letterboxd_user_reviews",
+  "letterboxd_user_reviews_details",
+  "icheckmovies_list",
+  "icheckmovies_list_details",
+  "stevenlu_popular",
+  "tmdb_collection",
+  "tmdb_collection_details",
+  "tmdb_movie",
+  "tmdb_movie_details",
+  "tmdb_now_playing",
+  "tvdb_movie",
+  "tvdb_movie_details",
+  "tmdb_upcoming",
+  "radarr_all",
+  "radarr_taglist",
+  "mojo_world",
+  "mojo_domestic",
+  "mojo_international",
+  "mojo_record",
+  "mojo_all_time",
+  "mojo_never",
+];
+// A music library takes only these (builder.py: music_attributes), plus the summaries and artwork, which fill nothing.
+const MUSIC_SOURCES = ["plex_search", "plex_all", "smart_filter", "smart_label"];
+const MUSIC_DETAIL = /_(summary|description|biography|poster|profile|background|logo|square_art)$/;
+
+/** Why a source can't be used in this type of library: the group it goes in, or nothing if it can. */
+function libraryLimit(key: string, libraryType: string | undefined): string | undefined {
+  if (libraryType === "movie" && SHOW_ONLY.includes(key)) return "TV libraries only";
+  if (libraryType === "show" && MOVIE_ONLY.includes(key)) return "Movie libraries only";
+  if (libraryType === "artist" && !MUSIC_SOURCES.includes(key) && !MUSIC_DETAIL.test(key)) return "Not for music libraries";
+  return undefined;
+}
+
+type SourceGroup = { label: string; keys: string[]; greyed?: "setup" | "library" };
+
+/**
+ * The Add a source list: the most used, then each service by name, then what can't be used yet (a service that isn't
+ * set up), then what can't be used in this library at all, whatever is set up. The last two are greyed out.
+ */
+export function sourceGroups(allKeys: string[], unavailable: Record<string, string>, libraryType?: string): SourceGroup[] {
+  const limited = allKeys.filter((key) => libraryLimit(key, libraryType));
+  const keys = allKeys.filter((key) => !limited.includes(key));
   const source = (key: string) => key.split("_")[0];
   const name = (prefix: string) => SOURCE_NAMES[prefix] ?? prefix;
   const usable = keys.filter((key) => !unavailable[source(key)]);
@@ -146,9 +220,10 @@ export function sourceGroups(keys: string[], unavailable: Record<string, string>
     [...new Set(list.map(source))].sort((a, b) => name(a).localeCompare(name(b))).map((prefix) => ({ prefix, keys: list.filter((key) => source(key) === prefix) }));
   const common = usable.filter((key) => COMMON_BUILDERS.includes(key));
   return [
-    ...(common.length ? [{ label: "Most used", keys: common, disabled: false }] : []),
-    ...bySource(usable.filter((key) => !common.includes(key))).map((group) => ({ label: name(group.prefix), keys: group.keys, disabled: false })),
-    ...bySource(keys.filter((key) => unavailable[source(key)])).map((group) => ({ label: `${name(group.prefix)} (${unavailable[group.prefix]})`, keys: group.keys, disabled: true })),
+    ...(common.length ? [{ label: "Most used", keys: common }] : []),
+    ...bySource(usable.filter((key) => !common.includes(key))).map((group) => ({ label: name(group.prefix), keys: group.keys })),
+    ...bySource(keys.filter((key) => unavailable[source(key)])).map((group) => ({ label: `${name(group.prefix)} (${unavailable[group.prefix]})`, keys: group.keys, greyed: "setup" as const })),
+    ...(limited.length ? [{ label: libraryLimit(limited[0], libraryType)!, keys: limited, greyed: "library" as const }] : []),
   ];
 }
 
@@ -178,6 +253,7 @@ function Sources({
   onValidity,
   single = false,
   library,
+  libraryType,
 }: {
   value: Value;
   setValue: (value: Value) => void;
@@ -187,12 +263,13 @@ function Sources({
   onValidity: (key: string, ok: boolean) => void;
   single?: boolean; // a playlist: Kometa takes one source
   library: string | null;
+  libraryType: string | undefined;
 }) {
   const present = Object.keys(value).filter(isBuilder);
   const available = [...new Set([...COMMON_BUILDERS, ...[...keys.keys()].filter(isBuilder).sort()])].filter((key) => keys.has(key) && !present.includes(key));
   // Sources whose service isn't in config.yml yet are greyed out: a run would fail on them. Until this answers, nothing is.
   const sources = useQuery({ queryKey: ["config", "sources", library], queryFn: () => api.config.sources(library), retry: false });
-  const groups = sourceGroups(available, sources.data?.unavailable ?? {});
+  const groups = sourceGroups(available, sources.data?.unavailable ?? {}, libraryType);
   return (
     <Card title="Where the items come from">
       <p className="mb-3 text-sm text-muted">
@@ -232,7 +309,7 @@ function Sources({
             {groups.map((group) => (
               <optgroup key={group.label} label={group.label}>
                 {group.keys.map((key) => (
-                  <option key={key} value={key} disabled={group.disabled}>
+                  <option key={key} value={key} disabled={!!group.greyed}>
                     {key}
                   </option>
                 ))}
@@ -240,7 +317,7 @@ function Sources({
             ))}
           </select>
         </label>
-        {groups.some((group) => group.disabled) && (
+        {groups.some((group) => group.greyed === "setup") && (
           <p className="text-xs text-muted">
             Greyed-out sources need a service that isn't set up yet. Radarr, Sonarr, Tautulli, TMDb and MDBList connect in{" "}
             <Link className="underline" to="/settings/connect">
@@ -364,7 +441,8 @@ export default function ItemEditor() {
   const libraryConfig = useQuery({ queryKey: ["config", "library", library], queryFn: () => api.config.library(library!), enabled: creating && !!library });
   const overview = useQuery({ queryKey: ["config"], queryFn: api.config.overview, enabled: creating && playlist, retry: false });
   const files = ownFiles(libraryConfig.data, section, overview.data?.playlist_files);
-  const missingApp = useMissingApp(section === "collections" ? library : null); // Radarr or Sonarr, from the library's type
+  const libraryType = useLibraryType(library); // what Plex says the library is, once it's answered
+  const missingApp = section === "collections" ? missingAppFor(libraryType) : null;
   const [fileName, setFileName] = useState<string | null>(null);
   const newName = fileName ?? (library || playlist ? suggestedName(library, section, files) : "");
 
@@ -484,7 +562,7 @@ export default function ItemEditor() {
 
   const designedPart: ReactNode = (
     <>
-      <Sources value={value} setValue={setEdited} keys={keys} root={root} problems={problems} onValidity={validity} single={playlist} library={library} />
+      <Sources value={value} setValue={setEdited} keys={keys} root={root} problems={problems} onValidity={validity} single={playlist} library={library} libraryType={libraryType} />
       {chips && <FilterChips filters={value.filters as Record<string, unknown> | undefined} onChange={(next) => setEdited(withKey(value, "filters", next))} />}
       {section === "overlays" && <OverlayDesign value={value} setValue={setEdited} root={root} name={currentName} problems={problems} />}
       {(DESIGNED[section] ?? []).length > 0 && (

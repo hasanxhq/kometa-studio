@@ -6,7 +6,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 
 import { api, type ArrKind } from "../api";
-import { mergeLibraries } from "../libraries";
 import { Card, Checkbox } from "./ui";
 
 type Value = Record<string, unknown>;
@@ -16,13 +15,9 @@ const NAMES: Record<ArrKind, string> = { radarr: "Radarr", sonarr: "Sonarr" };
 /** The keys this card owns, for an app. */
 export const addMissingKeys = (app: ArrKind) => [`${app}_add_missing`, `${app}_search`];
 
-/** Which app gets this library's missing items: Radarr for movies, Sonarr for shows, none for music or photos. */
-export function useMissingApp(library: string | null): ArrKind | null {
-  const plex = useQuery({ queryKey: ["plex", "libraries"], queryFn: api.plexLibraries.list, retry: false, staleTime: 60_000, enabled: !!library });
-  const overview = useQuery({ queryKey: ["config"], queryFn: api.config.overview, retry: false, enabled: !!library });
-  if (!library) return null;
-  const type = mergeLibraries(plex.data?.libraries, overview.data?.libraries).find((e) => e.config?.name === library)?.plex?.type;
-  return type === "movie" ? "radarr" : type === "show" ? "sonarr" : null;
+/** Which app gets a library's missing items: Radarr for movies, Sonarr for shows, none for music or photos. */
+export function missingApp(libraryType: string | undefined): ArrKind | null {
+  return libraryType === "movie" ? "radarr" : libraryType === "show" ? "sonarr" : null;
 }
 
 function withKey(value: Value, key: string, next: unknown): Value {

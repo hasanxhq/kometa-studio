@@ -1,6 +1,8 @@
 // Matching Plex's libraries with the ones in Kometa's config.yml.
 
-import type { LibraryCounts, PlexLibrarySummary } from "./api";
+import { useQuery } from "@tanstack/react-query";
+
+import { api, type LibraryCounts, type PlexLibrarySummary } from "./api";
 
 export type LibraryEntry = {
   name: string; // the Plex title, or the config name for a library Plex doesn't have
@@ -21,6 +23,14 @@ export function mergeLibraries(plex: PlexLibrarySummary[] | undefined, config: L
     if (!used.has(library.name)) entries.push({ name: library.name, plex: null, config: library });
   }
   return entries;
+}
+
+/** What Plex says a library in config.yml is (movie, show, artist), once Plex has answered. */
+export function useLibraryType(library: string | null): string | undefined {
+  const plex = useQuery({ queryKey: ["plex", "libraries"], queryFn: api.plexLibraries.list, retry: false, staleTime: 60_000, enabled: !!library });
+  const overview = useQuery({ queryKey: ["config"], queryFn: api.config.overview, retry: false, enabled: !!library });
+  if (!library) return undefined;
+  return mergeLibraries(plex.data?.libraries, overview.data?.libraries).find((entry) => entry.config?.name === library)?.plex?.type;
 }
 
 export const libraryTypeLabels: Record<string, string> = { movie: "Movies", show: "TV", artist: "Music", photo: "Photos" };

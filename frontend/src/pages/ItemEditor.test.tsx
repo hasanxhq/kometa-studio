@@ -17,6 +17,7 @@ const collectionSchema = {
         tmdb_collection: { oneOf: [{ type: "integer" }, { type: "array", items: { type: "integer" } }], description: "TMDb collection IDs" },
         tmdb_trending_weekly: { type: "integer", minimum: 1 },
         mal_id: { type: "integer" },
+        tvdb_show: { type: "integer" },
         mdblist_list: { type: "string" },
         summary: { type: "string" },
         sort_title: { type: "string" },
@@ -399,13 +400,46 @@ describe("The source list", () => {
   it("puts the most used first, then services by name, then the ones that can't be used", () => {
     const keys = ["tmdb_collection", "imdb_list", "tmdb_actor", "anilist_id", "mal_id", "tmdb_list", "trakt_description", "mojo_world"];
     expect(sourceGroups(keys, { mal: "not set up", trakt: "no longer supported by Kometa" })).toEqual([
-      { label: "Most used", keys: ["tmdb_collection", "imdb_list", "tmdb_list"], disabled: false },
-      { label: "AniList", keys: ["anilist_id"], disabled: false },
-      { label: "Box Office Mojo", keys: ["mojo_world"], disabled: false },
-      { label: "TMDb", keys: ["tmdb_actor"], disabled: false },
-      { label: "MyAnimeList (not set up)", keys: ["mal_id"], disabled: true },
-      { label: "Trakt (no longer supported by Kometa)", keys: ["trakt_description"], disabled: true },
+      { label: "Most used", keys: ["tmdb_collection", "imdb_list", "tmdb_list"] },
+      { label: "AniList", keys: ["anilist_id"] },
+      { label: "Box Office Mojo", keys: ["mojo_world"] },
+      { label: "TMDb", keys: ["tmdb_actor"] },
+      { label: "MyAnimeList (not set up)", keys: ["mal_id"], greyed: "setup" },
+      { label: "Trakt (no longer supported by Kometa)", keys: ["trakt_description"], greyed: "setup" },
     ]);
+  });
+
+  it("greys out what the library's type can't use, even if its service isn't set up", () => {
+    const keys = ["tmdb_movie", "tmdb_show", "imdb_chart", "serializd_list", "mojo_world", "mal_id"];
+    expect(sourceGroups(keys, { serializd: "not set up", mal: "not set up" }, "movie")).toEqual([
+      { label: "Most used", keys: ["tmdb_movie", "imdb_chart"] },
+      { label: "Box Office Mojo", keys: ["mojo_world"] },
+      { label: "MyAnimeList (not set up)", keys: ["mal_id"], greyed: "setup" },
+      { label: "TV libraries only", keys: ["tmdb_show", "serializd_list"], greyed: "library" },
+    ]);
+    expect(sourceGroups(keys, {}, "show").at(-1)).toEqual({ label: "Movie libraries only", keys: ["tmdb_movie", "mojo_world"], greyed: "library" });
+    // Nothing is greyed for a type until Plex says what the library is.
+    expect(sourceGroups(keys, {}).some((group) => group.greyed)).toBe(false);
+  });
+
+  it("leaves a music library only what Kometa allows there", () => {
+    const groups = sourceGroups(["plex_search", "plex_all", "smart_filter", "tmdb_poster", "tmdb_movie", "imdb_chart"], {}, "artist");
+    expect(groups.at(-1)).toEqual({ label: "Not for music libraries", keys: ["tmdb_movie", "imdb_chart"], greyed: "library" });
+    expect(groups.flatMap((group) => (group.greyed ? [] : group.keys)).sort()).toEqual(["plex_all", "plex_search", "smart_filter", "tmdb_poster"]);
+  });
+
+  it("greys out a show-only source in a movie library, without pointing to Connect", async () => {
+    const counts = { collection_files: 1, overlay_files: 0, metadata_files: 0, defaults: 0, collections: 1, overlays: 0, operations: 0, problems: [] };
+    mockApi({
+      ...routes,
+      "GET /plex/libraries": () => ({ libraries: [{ key: "1", title: "Movies", type: "movie", collections: 1, managed: 1 }] }),
+      "GET /config": () => ({ path: "/config/config.yml", libraries: [{ name: "Movies", plex_name: "Movies", ...counts }], playlist_files: [] }),
+    });
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "tvdb_show" })).toBeDisabled());
+    expect(screen.getByRole("option", { name: "tvdb_show" }).closest("optgroup")).toHaveAttribute("label", "TV libraries only");
+    expect(screen.queryByText(/Greyed-out sources/)).toBeNull();
   });
 });
 
