@@ -60,7 +60,7 @@ export function Checkbox({ checked, onChange, children, disabled }: { checked: b
 }
 
 export const inputClass =
-  "min-h-11 w-full rounded-control border border-border-strong bg-bg px-3 font-mono text-sm text-text placeholder:text-muted/60 focus:border-accent focus:outline-none";
+  "min-h-11 w-full rounded-control border border-border-strong bg-bg px-3 text-sm text-text placeholder:text-muted/60 focus:border-accent focus:outline-none";
 
 /** A button that asks once more before doing something hard to undo. */
 export function ConfirmButton({ label, confirm, warning, onConfirm, busy }: { label: string; confirm: string; warning: string; onConfirm: () => void; busy: boolean }) {

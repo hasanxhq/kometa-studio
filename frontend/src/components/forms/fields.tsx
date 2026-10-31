@@ -62,7 +62,7 @@ export function YamlBox({
     <div className="flex flex-col gap-1">
       <textarea
         aria-label={label}
-        className={`${inputClass} min-h-0 py-2 leading-5`}
+        className={`${inputClass} min-h-0 py-2 font-mono leading-5`}
         rows={Math.max(rows, text.split("\n").length)}
         value={text}
         spellCheck={false}

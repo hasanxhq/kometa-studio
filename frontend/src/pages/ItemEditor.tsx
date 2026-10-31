@@ -299,7 +299,7 @@ function Sources({
         <label className="flex flex-col gap-1.5 text-sm">
           <span className="text-muted">Add a source</span>
           <select
-            className={inputClass}
+            className={`${inputClass} font-mono`}
             value=""
             onChange={(e) => e.target.value && root && setValue({ ...value, [e.target.value]: starting(root, keys.get(e.target.value)!.schema) })}
           >
@@ -675,7 +675,7 @@ export default function ItemEditor() {
             <label className="flex flex-col gap-1.5 text-sm">
               <span className="text-muted">Add a setting</span>
               <select
-                className={inputClass}
+                className={`${inputClass} font-mono`}
                 value=""
                 onChange={(e) => e.target.value && root && setEdited({ ...value, [e.target.value]: starting(root, keys.get(e.target.value)!.schema) })}
               >

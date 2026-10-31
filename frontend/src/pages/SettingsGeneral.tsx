@@ -156,7 +156,7 @@ function ApiKey({ settings }: { settings: GeneralSettings }) {
         <code className="font-mono">/api/v1/status</code>.
       </p>
       <div className="flex flex-wrap items-center gap-2">
-        <input className={`${inputClass} max-w-md`} value={settings.api_key} readOnly aria-label="API key" onFocus={(e) => e.target.select()} />
+        <input className={`${inputClass} max-w-md font-mono`} value={settings.api_key} readOnly aria-label="API key" onFocus={(e) => e.target.select()} />
         <Button onClick={copy}>{copied ? "Copied" : "Copy"}</Button>
         {confirming ? (
           <>
