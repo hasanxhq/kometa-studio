@@ -112,6 +112,46 @@ function suggestedName(library: string | null, section: ItemSection, taken: stri
 
 const withSuffix = (name: string) => (/\.ya?ml$/i.test(name.trim()) ? name.trim() : `${name.trim()}.yml`);
 
+const SOURCE_NAMES: Record<string, string> = {
+  anidb: "AniDB",
+  anilist: "AniList",
+  flicklist: "FlickList",
+  floppy: "Floppy",
+  icheckmovies: "iCheckMovies",
+  imdb: "IMDb",
+  letterboxd: "Letterboxd",
+  mal: "MyAnimeList",
+  mdblist: "MDBList",
+  mojo: "Box Office Mojo",
+  plex: "Plex",
+  radarr: "Radarr",
+  reciperr: "Reciperr",
+  serializd: "Serializd",
+  smart: "Smart collections",
+  sonarr: "Sonarr",
+  stevenlu: "StevenLu",
+  tautulli: "Tautulli",
+  tmdb: "TMDb",
+  trakt: "Trakt",
+  tvdb: "TVDb",
+  wetrakr: "WeTrakr",
+};
+
+/** The Add a source list: the most used, then each service by name, then the services that can't be used yet, greyed out. */
+export function sourceGroups(keys: string[], unavailable: Record<string, string>): { label: string; keys: string[]; disabled: boolean }[] {
+  const source = (key: string) => key.split("_")[0];
+  const name = (prefix: string) => SOURCE_NAMES[prefix] ?? prefix;
+  const usable = keys.filter((key) => !unavailable[source(key)]);
+  const bySource = (list: string[]) =>
+    [...new Set(list.map(source))].sort((a, b) => name(a).localeCompare(name(b))).map((prefix) => ({ prefix, keys: list.filter((key) => source(key) === prefix) }));
+  const common = usable.filter((key) => COMMON_BUILDERS.includes(key));
+  return [
+    ...(common.length ? [{ label: "Most used", keys: common, disabled: false }] : []),
+    ...bySource(usable.filter((key) => !common.includes(key))).map((group) => ({ label: name(group.prefix), keys: group.keys, disabled: false })),
+    ...bySource(keys.filter((key) => unavailable[source(key)])).map((group) => ({ label: `${name(group.prefix)} (${unavailable[group.prefix]})`, keys: group.keys, disabled: true })),
+  ];
+}
+
 function withKey(value: Value, key: string, next: unknown): Value {
   const copy = { ...value };
   if (next === undefined) delete copy[key];
@@ -137,6 +177,7 @@ function Sources({
   problems,
   onValidity,
   single = false,
+  library,
 }: {
   value: Value;
   setValue: (value: Value) => void;
@@ -145,9 +186,13 @@ function Sources({
   problems: Map<string, string[]>;
   onValidity: (key: string, ok: boolean) => void;
   single?: boolean; // a playlist: Kometa takes one source
+  library: string | null;
 }) {
   const present = Object.keys(value).filter(isBuilder);
   const available = [...new Set([...COMMON_BUILDERS, ...[...keys.keys()].filter(isBuilder).sort()])].filter((key) => keys.has(key) && !present.includes(key));
+  // Sources whose service isn't in config.yml yet are greyed out: a run would fail on them. Until this answers, nothing is.
+  const sources = useQuery({ queryKey: ["config", "sources", library], queryFn: () => api.config.sources(library), retry: false });
+  const groups = sourceGroups(available, sources.data?.unavailable ?? {});
   return (
     <Card title="Where the items come from">
       <p className="mb-3 text-sm text-muted">
@@ -184,13 +229,26 @@ function Sources({
             onChange={(e) => e.target.value && root && setValue({ ...value, [e.target.value]: starting(root, keys.get(e.target.value)!.schema) })}
           >
             <option value="">Choose…</option>
-            {available.map((key) => (
-              <option key={key} value={key}>
-                {key}
-              </option>
+            {groups.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.keys.map((key) => (
+                  <option key={key} value={key} disabled={group.disabled}>
+                    {key}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </label>
+        {groups.some((group) => group.disabled) && (
+          <p className="text-xs text-muted">
+            Greyed-out sources need a service that isn't set up yet. Radarr, Sonarr, Tautulli, TMDb and MDBList connect in{" "}
+            <Link className="underline" to="/settings/connect">
+              Settings → Connect
+            </Link>
+            ; the others go in config.yml.
+          </p>
+        )}
       </div>
     </Card>
   );
@@ -426,7 +484,7 @@ export default function ItemEditor() {
 
   const designedPart: ReactNode = (
     <>
-      <Sources value={value} setValue={setEdited} keys={keys} root={root} problems={problems} onValidity={validity} single={playlist} />
+      <Sources value={value} setValue={setEdited} keys={keys} root={root} problems={problems} onValidity={validity} single={playlist} library={library} />
       {chips && <FilterChips filters={value.filters as Record<string, unknown> | undefined} onChange={(next) => setEdited(withKey(value, "filters", next))} />}
       {section === "overlays" && <OverlayDesign value={value} setValue={setEdited} root={root} name={currentName} problems={problems} />}
       {(DESIGNED[section] ?? []).length > 0 && (

@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Item, Validation } from "../api";
 import { mockApi, renderAt } from "../test-utils";
-import { isBuilder } from "./ItemEditor";
+import { isBuilder, sourceGroups } from "./ItemEditor";
 
 // A small schema shaped like Kometa's collection and overlay schemas.
 const collectionSchema = {
@@ -16,6 +16,8 @@ const collectionSchema = {
       properties: {
         tmdb_collection: { oneOf: [{ type: "integer" }, { type: "array", items: { type: "integer" } }], description: "TMDb collection IDs" },
         tmdb_trending_weekly: { type: "integer", minimum: 1 },
+        mal_id: { type: "integer" },
+        mdblist_list: { type: "string" },
         summary: { type: "string" },
         sort_title: { type: "string" },
         sync_mode: { type: "string", enum: ["sync", "append"] },
@@ -361,6 +363,49 @@ describe("Adding a collection's missing items", () => {
     renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
     expect(await screen.findByDisplayValue("Everything Heroes.")).toBeInTheDocument();
     expect(screen.queryByText("Missing items")).toBeNull();
+  });
+});
+
+describe("The source list", () => {
+  it("groups sources by service and greys out the ones that aren't set up", async () => {
+    mockApi({ ...routes, "GET /config/sources?library=Movies": () => ({ unavailable: { mal: "not set up" } }) });
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+
+    await screen.findByRole("option", { name: "mal_id" });
+    await waitFor(() => expect(screen.getByRole("option", { name: "mal_id" })).toBeDisabled()); // it moves group once Studio knows
+    expect(screen.getByRole("option", { name: "mal_id" }).closest("optgroup")).toHaveAttribute("label", "MyAnimeList (not set up)");
+    const usable = screen.getByRole("option", { name: "mdblist_list" });
+    expect(usable).toBeEnabled();
+    expect(usable.closest("optgroup")).toHaveAttribute("label", "Most used");
+    expect(screen.getByRole("link", { name: "Settings → Connect" })).toHaveAttribute("href", "/settings/connect");
+  });
+
+  it("leaves a source that's already in the collection alone", async () => {
+    mockApi({ ...routes, "GET /config/sources?library=Movies": () => ({ unavailable: { tmdb: "not set up" } }) });
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+
+    await waitFor(() => expect(screen.getByRole("option", { name: "tmdb_trending_weekly" })).toBeDisabled());
+    expect(screen.getByLabelText("tmdb_collection")).toHaveValue("- 556");
+  });
+
+  it("offers everything when Studio can't tell what's set up", async () => {
+    mockApi(routes);
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+
+    expect(await screen.findByRole("option", { name: "mal_id" })).toBeEnabled();
+    expect(screen.queryByText(/Greyed-out sources/)).toBeNull();
+  });
+
+  it("puts the most used first, then services by name, then the ones that can't be used", () => {
+    const keys = ["tmdb_collection", "imdb_list", "tmdb_actor", "anilist_id", "mal_id", "tmdb_list", "trakt_description", "mojo_world"];
+    expect(sourceGroups(keys, { mal: "not set up", trakt: "no longer supported by Kometa" })).toEqual([
+      { label: "Most used", keys: ["tmdb_collection", "imdb_list", "tmdb_list"], disabled: false },
+      { label: "AniList", keys: ["anilist_id"], disabled: false },
+      { label: "Box Office Mojo", keys: ["mojo_world"], disabled: false },
+      { label: "TMDb", keys: ["tmdb_actor"], disabled: false },
+      { label: "MyAnimeList (not set up)", keys: ["mal_id"], disabled: true },
+      { label: "Trakt (no longer supported by Kometa)", keys: ["trakt_description"], disabled: true },
+    ]);
   });
 });
 
