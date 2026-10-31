@@ -61,6 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- An **Everything** run means everything configured, not every step Kometa has. With “Leave Maintainerr overlays alone” on, Maintainerr's overlays are put back before a run and redrawn after it only in libraries where that run changes posters: overlay files (or `remove_overlays`), poster operations (`mass_poster_update`, `assets_for_all`), or metadata and image files. Before, any Everything run did it in every library where Maintainerr had overlays, even with no Kometa overlays at all. The Run form says what Everything covers.
+
 - Settings → General: the timezone list is labelled `UTC +05:30 (Asia/Kolkata)` (offset then IANA name). Schedules and Studio's built-in tasks always use this setting; their forms no longer have a timezone picker. Changing it updates every schedule and task.
 - A library's Collections tab says when Plex can't be reached, instead of saying Plex has no library by that name.
 

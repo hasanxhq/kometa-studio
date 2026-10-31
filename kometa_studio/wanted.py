@@ -51,6 +51,10 @@ MODE_PARTS = {
     "metadata": {"metadata"},
     "playlists": set(),
 }
+# Operations that replace items' posters (Kometa 2.5.3's operations.py).
+POSTER_OPERATIONS = ("mass_poster_update", "assets_for_all")
+# A library attribute that has Kometa's overlay pass run without overlay_files: it takes overlays off (config.py).
+REMOVE_OVERLAYS = ("remove_overlays", "remove_overlay", "revert_overlays")
 BAD_FILENAME = re.compile(r'[\\/:*?"<>|\x00-\x1f]')  # what Kometa strips from a library's name for its files
 
 
@@ -71,8 +75,9 @@ class LibraryPlan:
 
     name: str
     plex_name: str  # the Plex library's title (config.yml's `library_name`, else the name)
-    overlays: bool = False
+    overlays: bool = False  # Kometa's overlay pass runs here: overlay_files, or remove_overlays
     operations: bool = False
+    poster_operations: bool = False  # an operation replaces items' posters
     metadata: bool = False
     rule: list[str] = field(default_factory=list)  # collections an import may join without being on a list
     lists: list[str] = field(default_factory=list)  # collections whose members Kometa's report tells
@@ -82,6 +87,13 @@ class LibraryPlan:
     reports: bool = False  # save_report is on for this library
     report_path: Path | None = None
     fingerprint: str = ""
+
+
+def _operations(body: dict) -> list[dict]:
+    ops = body.get("operations")
+    if isinstance(ops, list):
+        return [op for op in ops if isinstance(op, dict)]
+    return [ops] if isinstance(ops, dict) else []
 
 
 def _template_names(body: dict) -> list[str]:
@@ -140,9 +152,10 @@ def plan(config: Path, kometa_root: Path | None) -> dict[str, LibraryPlan]:
         found = LibraryPlan(
             library.name,
             str(body.get("library_name") or library.name),
-            overlays=bool(library.overlay_files),
+            overlays=bool(library.overlay_files) or any(body.get(key) is True for key in REMOVE_OVERLAYS),
             operations=bool(library.operations),
-            metadata=bool(library.metadata_files),
+            poster_operations=any(op.get(key) not in (None, False) for op in _operations(body) for key in POSTER_OPERATIONS),
+            metadata=bool(library.metadata_files) or bool(body.get("images_files")),  # Kometa's metadata pass runs both
             reports=bool(own_settings.get("save_report", own_settings.get("save_missing", report_default))),
             report_path=Path(str(body["report_path"])) if body.get("report_path") else config.parent / f"{BAD_FILENAME.sub('', library.name)}_report.yml",
         )

@@ -85,9 +85,11 @@ def setup(tmp_path):
     config.mkdir(parents=True)
     (root / "kometa.py").symlink_to(FAKE_KOMETA)
     (config / "config.yml").write_text(
-        f"libraries:\n  Movies:\n    collection_files:\n      - file: config/Movies.yml\n  TV Shows: {{}}\nplex:\n  url: {REMOTE_URI}\n  token: {SERVER_TOKEN}\n"
+        f"libraries:\n  Movies:\n    collection_files:\n      - file: config/Movies.yml\n    overlay_files:\n      - file: config/Overlays.yml\n"
+        f"  TV Shows: {{}}\nplex:\n  url: {REMOTE_URI}\n  token: {SERVER_TOKEN}\n"
     )
     (config / "Movies.yml").write_text("collections:\n  Marvel:\n    tmdb_collection: 2\n")
+    (config / "Overlays.yml").write_text("overlays:\n  4K:\n    plex_search:\n      all:\n        resolution: 4K\n")
     (config / "fake.json").write_text(json.dumps({"lines": ["Kometa ran"]}))
     return root, FakePlex(), FakeMaintainerr()
 
@@ -248,9 +250,7 @@ def test_turning_the_setting_off_or_disconnecting_gives_maintainer_its_schedule_
 def test_the_daily_redraw_lets_kometa_draw_first_when_something_is_new(tmp_path, setup):
     from kometa_studio import maintainerr
 
-    root, plex, fake = setup
-    config = root / "config" / "config.yml"
-    config.write_text(config.read_text().replace("      - file: config/Movies.yml\n", "      - file: config/Movies.yml\n    overlay_files:\n      - file: config/Movies.yml\n"))
+    _, plex, fake = setup
     with make_client(tmp_path, setup) as client:
         connect(client)
         service = client.app.state.maintainerr
@@ -282,6 +282,44 @@ def test_a_run_for_another_library_leaves_its_overlays_alone(tmp_path, setup):
         connect(client)
         finished(client, client.post("/api/v1/runs", json={"mode": "all", "libraries": ["TV Shows"]}).json()["id"])
     assert not any(call.startswith("POST") for call in fake.calls)
+
+
+def test_an_everything_run_leaves_its_overlays_alone_where_kometa_has_none(tmp_path, setup):
+    # "Everything" means everything configured: without overlay files (or poster operations) Kometa changes no posters,
+    # so there's nothing to wrap, even though Maintainerr has overlays in the library.
+    root, _, fake = setup
+    config = root / "config" / "config.yml"
+    config.write_text(config.read_text().replace("    overlay_files:\n      - file: config/Overlays.yml\n", ""))
+    with make_client(tmp_path, setup) as client:
+        connect(client)
+        fake.calls.clear()
+        everything = finished(client, client.post("/api/v1/runs", json={"mode": "all"}).json()["id"])
+        log = log_of(client, everything["id"])
+        fake.down = True  # nor is a run held when Maintainerr is away
+        overlays = finished(client, client.post("/api/v1/runs", json={"mode": "overlays"}).json()["id"])
+    assert everything["status"] == "succeeded" and overlays["status"] == "succeeded"
+    assert not [call for call in fake.calls if call.startswith(("POST", "PUT"))]
+    assert "Kometa changes no posters in this run where Maintainerr has overlays" in log
+
+
+@pytest.mark.parametrize(
+    "library",
+    [
+        "    remove_overlays: true\n",  # Kometa's overlay pass runs to take overlays off
+        "    operations:\n      mass_poster_update:\n        source: tmdb\n",
+        "    operations:\n      - assets_for_all: true\n",
+    ],
+)
+def test_other_ways_kometa_changes_posters_are_wrapped(tmp_path, setup, library):
+    root, _, fake = setup
+    config = root / "config" / "config.yml"
+    config.write_text(config.read_text().replace("    overlay_files:\n      - file: config/Overlays.yml\n", library))
+    with make_client(tmp_path, setup) as client:
+        connect(client)
+        fake.calls.clear()
+        run = finished(client, client.post("/api/v1/runs", json={"mode": "all"}).json()["id"])
+    assert run["status"] == "succeeded"
+    assert [call for call in fake.calls if call.startswith(("POST", "PUT"))] == ["POST /api/overlays/revert/7", "POST /api/overlays/process"]
 
 
 def test_waits_for_maintainerrs_own_overlay_run(tmp_path, setup, monkeypatch):

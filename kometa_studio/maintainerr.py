@@ -380,6 +380,15 @@ class Maintainerr:
         overlaid = self._overlaid(request.libraries)
         if not overlaid:
             return None
+        changing = self._poster_libraries(request)
+        if changing is not None:
+            overlaid = self._overlaid(changing) if changing else []
+            if not overlaid:
+                say(
+                    "Kometa changes no posters in this run where Maintainerr has overlays (no overlay files or poster operations there), "
+                    "so Maintainerr's overlays stay as they are."
+                )
+                return None
         if self.snapshot.error:
             raise RunHeld(
                 f"Held: {self.snapshot.error}. With “Leave Maintainerr overlays alone” on, Kometa only changes posters "
@@ -412,6 +421,26 @@ class Maintainerr:
                 self._wrapping = False
 
         return after
+
+    def _poster_libraries(self, request: RunRequest) -> list[str] | None:
+        """The run's libraries where Kometa would change posters, going by what config.yml sets up there. None if Studio can't tell.
+
+        An "everything" run does what's configured: Kometa runs a library's overlay pass only with overlay files (or
+        remove_overlays), so a library without them has no overlay step to wrap.
+        """
+        try:
+            plans = wanted.plan(self.config, self.kometa_root) if self.config else None
+        except (FileNotFoundError, ValueError):
+            return None
+        if plans is None:
+            return None
+        parts = wanted.MODE_PARTS.get(request.mode, set())
+        return [
+            plan.name
+            for plan in plans.values()
+            if (not request.libraries or plan.name in request.libraries)
+            and (("overlays" in parts and plan.overlays) or ("operations" in parts and plan.poster_operations) or ("metadata" in parts and plan.metadata))
+        ]
 
     def _overlaid(self, libraries: list[str]) -> list[OwnedCollection]:
         """Maintainerr's collections with overlays, in the run's libraries (every library if none are named)."""
