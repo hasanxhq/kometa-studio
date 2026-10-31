@@ -118,6 +118,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **DNS over HTTPS** (Cloudflare or Google) for ticked services: TMDb, MDBList, IMDb, TheTVDB, plex.tv, Letterboxd, GitHub. It's saved only after each one resolves.
   - **IPv4 first**, for networks with broken IPv6.
   - **Connection check:** for each service Studio and Kometa use, what this network's DNS says and what DNS over HTTPS says, whether it connects and how fast, and a verdict, such as "Blocked by this network's DNS".
+- `compose.yaml` defaults `TZ` to UTC. Set `TZ` in `.env` to use your own timezone.
 
 ### Fixed
 

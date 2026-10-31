@@ -10,7 +10,7 @@ services:
     container_name: kometa-studio
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
-      TZ: ${TZ:-Asia/Kolkata}
+      TZ: ${TZ:-UTC}
     ports:
       - "${STUDIO_PORT:-8484}:8484"
     volumes:
