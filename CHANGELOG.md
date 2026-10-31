@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Leaving a collection, overlay, playlist or file editor with unsaved changes now asks first, for any link in Studio as well as closing the tab. Before, a form's link to the YAML editor dropped its edits without a word.
 - Library and collection pages: posters at half the size, and the same size at any screen width.
 - A collection's title card is half as tall.
 

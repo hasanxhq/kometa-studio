@@ -5,6 +5,7 @@ import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { ApiError, api, saveRefusal, type EditableFile, type Validation } from "../api";
+import { LeaveGuard } from "../components/LeaveGuard";
 import { Button, Card } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
 
@@ -25,14 +26,6 @@ function Editor({ file, onSaved, onReload }: { file: EditableFile; onSaved: () =
       setText(file.text);
     }
   }, [file.hash, file.text]);
-
-  // Warn before leaving with unsaved changes.
-  useEffect(() => {
-    if (!dirty) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
 
   const edit = () => [{ path: file.path, text, base_hash: file.hash }];
   const check = useMutation({
@@ -66,6 +59,7 @@ function Editor({ file, onSaved, onReload }: { file: EditableFile; onSaved: () =
 
   return (
     <div className="flex flex-col gap-4">
+      <LeaveGuard dirty={dirty} />
       {file.hidden > 0 && (
         <p className="text-sm text-muted">
           {file.hidden} secret{file.hidden === 1 ? " is" : "s are"} hidden as ••••(n). Leave a placeholder exactly as it is to keep that value, or replace

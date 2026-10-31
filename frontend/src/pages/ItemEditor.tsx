@@ -3,13 +3,14 @@
 // as written. Saving changes only this item, and Kometa checks it like any save.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { useAdvanced } from "../advanced";
 import { api, saveRefusal, type ConfigLibrary, type FileReference, type ItemSection, type SaveResult, type Validation } from "../api";
 import { AddMissing, addMissingKeys, missingApp as missingAppFor } from "../components/AddMissing";
 import { FilterChips } from "../components/FilterChips";
+import { LeaveGuard } from "../components/LeaveGuard";
 import { Problems, SettingField, YamlBox, withKey } from "../components/forms/fields";
 import { Button, Card, Field, inputClass } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
@@ -458,6 +459,7 @@ export default function ItemEditor() {
   const [badYaml, setBadYaml] = useState<Set<string>>(new Set());
   const [verdict, setVerdict] = useState<{ validation: Validation; saved: boolean } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const deleted = useRef(false); // what's being edited is gone, so there's nothing to keep
 
   const value = edited ?? item.data?.value ?? {};
   const currentName = name ?? item.data?.name ?? "";
@@ -517,6 +519,7 @@ export default function ItemEditor() {
     mutationFn: () => api.items.save({ path, base_hash: item.data!.hash, section, name: original, value: null }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["config"] });
+      deleted.current = true;
       navigate(playlist ? "/playlists" : library ? `/libraries/${encodeURIComponent(library)}` : "/libraries");
     },
   });
@@ -648,6 +651,7 @@ export default function ItemEditor() {
 
   return (
     <div className="flex max-w-4xl flex-col gap-4">
+      <LeaveGuard dirty={dirty} released={deleted} />
       <Link to={back} className="min-h-11 content-center text-sm text-muted underline">
         ← {playlist ? "Playlists" : (library ?? "Libraries")}
       </Link>

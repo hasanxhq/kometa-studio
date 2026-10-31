@@ -200,6 +200,77 @@ describe("The collection form", () => {
   });
 });
 
+describe("Leaving the form", () => {
+  async function editHeroes() {
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+    fireEvent.change(await screen.findByLabelText(/Summary/), { target: { value: "Not saved yet." } });
+  }
+
+  it("asks before leaving unsaved edits, and stays if told to", async () => {
+    mockApi(routes);
+    await editHeroes();
+
+    fireEvent.click(screen.getByRole("link", { name: "Edit the whole file as YAML" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "You have unsaved changes" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Stay here" }));
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(screen.getByDisplayValue("Not saved yet.")).toBeInTheDocument();
+  });
+
+  it("leaves if told to", async () => {
+    mockApi({ ...routes, "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: "collections: {}\n", hash: "h1", hidden: 0, kind: "collection" }) });
+    await editHeroes();
+
+    fireEvent.click(screen.getByRole("link", { name: "Edit the whole file as YAML" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Leave without saving" }));
+
+    expect(await screen.findByRole("heading", { name: "Movies.yml" })).toBeInTheDocument();
+  });
+
+  it("doesn't ask when nothing has changed, or once it's saved", async () => {
+    mockApi({ ...routes, "POST /config/item": () => ({ backup: "b", files: [], validation: passed }), "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: "collections: {}\n", hash: "h1", hidden: 0, kind: "collection" }) });
+    await editHeroes();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await screen.findByText("Kometa checked it, and it's saved.");
+
+    fireEvent.click(screen.getByRole("link", { name: "Edit the whole file as YAML" }));
+
+    expect(await screen.findByRole("heading", { name: "Movies.yml" })).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("doesn't ask after deleting what was being edited", async () => {
+    mockApi({ ...routes, "POST /config/item": () => ({ backup: "b", files: [], validation: passed }) });
+    await editHeroes();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Heroes" }));
+
+    await waitFor(() => expect(screen.queryByLabelText(/Summary/)).not.toBeInTheDocument());
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("doesn't ask when a new collection changes file", async () => {
+    mockApi({
+      ...routes,
+      "GET /config/libraries/Movies": () => ({
+        name: "Movies",
+        collection_files: [{ kind: "file", value: "config/Movies.yml", template_variables: {}, options: {}, files: [{ path: "Movies.yml" }], error: null }],
+        overlay_files: [],
+      }),
+      "GET /config/edit?path=Movies.yml": () => ({ path: "Movies.yml", text: "collections: {}\n", hash: "h1", hidden: 0, kind: "collection" }),
+    });
+    renderAt("/items?section=collections&new=1&library=Movies");
+    await screen.findByRole("option", { name: "Movies.yml" });
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Pixar" } });
+    fireEvent.change(screen.getByLabelText("File"), { target: { value: "Movies.yml" } });
+
+    expect(await screen.findByText("New collection in Movies.yml")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+});
+
 describe("The overlay form", () => {
   it("places the badge on the preview and keeps the overlay's shorthand", async () => {
     const overlaySchema = {
