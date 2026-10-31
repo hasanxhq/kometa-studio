@@ -13,6 +13,7 @@ export type Status = {
   kometa: { version: string | null; config: string | null; updates: KometaUpdates };
   database: { schema_version: number };
   health: HealthCheck[];
+  runs: { current: number | null; queued: number; next_scheduled: { at: string; schedule_id: number; name: string } | null };
 };
 
 // --- Sign-in and Settings → General ---
@@ -450,7 +451,7 @@ export type DefaultKind = "collection" | "overlay";
 
 // --- Plex ---
 
-export type PlexLibrarySummary = { key: string; title: string; type: string; collections: number; managed: number; maintainerr?: number };
+export type PlexLibrarySummary = { key: string; title: string; type: string; items?: number | null; collections: number; managed: number; maintainerr?: number };
 
 export type PlexCollection = {
   rating_key: string;

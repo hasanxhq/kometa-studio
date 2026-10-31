@@ -7,6 +7,7 @@ import { Link } from "react-router";
 import { useAdvanced } from "../advanced";
 import { api, type KometaInfo, type Schedule, type ScheduleInput } from "../api";
 import { BuiltinTaskRow, useBuiltinTasks } from "../components/BuiltinTasks";
+import { CatchUpNotice } from "../components/CatchUpNotice";
 import { RunRequestFields, draftFromRequest, emptyDraft, requestFromDraft, type RunDraft } from "../components/RunRequestFields";
 import { Button, Card, Field, Tag, inputClass } from "../components/ui";
 import { dayNames, describeDays, describeRequest, formatRelative, formatTime, statusLabels, statusTones, triggerLabels } from "../runs";
@@ -225,23 +226,7 @@ export function SystemTasks() {
   const { schedules: list, timezone, catch_ups } = schedules.data;
   return (
     <div className="flex max-w-5xl flex-col gap-4">
-      {catch_ups.length > 0 && (
-        <section role="status" className="rounded-card border border-info/40 bg-surface p-4 text-sm">
-          <p className="font-semibold text-info">Studio caught up on missed runs</p>
-          <p className="mt-1 text-muted">Studio was off when these were due, so each ran once when it started again:</p>
-          <ul className="mt-2 flex flex-col gap-1">
-            {catch_ups.map((run) => (
-              <li key={run.id}>
-                {run.name}:{" "}
-                <Link className="underline" to={`/activity/queue/${run.id}`}>
-                  run #{run.id}
-                </Link>{" "}
-                <span className="text-muted">({statusLabels[run.status].toLowerCase()}, {formatTime(run.queued_at)})</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <CatchUpNotice catchUps={catch_ups} />
       <Card
         title="Schedules"
         actions={

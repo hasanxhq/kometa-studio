@@ -103,6 +103,15 @@ class PlexServer:
         container = await self._get(f"/library/sections/{library_key}/all", params)
         return int(container.get("totalSize", container.get("size", 0)) or 0)
 
+    async def size(self, library_key: str, library_type: str) -> int | None:
+        """How many movies or shows a library holds; None for the kinds Kometa doesn't count (music, photos)."""
+        plex_type = {"movie": "1", "show": "2"}.get(library_type)
+        if plex_type is None:
+            return None
+        params = {"type": plex_type, "X-Plex-Container-Start": "0", "X-Plex-Container-Size": "0"}
+        container = await self._get(f"/library/sections/{library_key}/all", params)
+        return int(container.get("totalSize", container.get("size", 0)) or 0)
+
     async def collections(self, library_key: str) -> list[PlexCollection]:
         listing, labels = await asyncio.gather(
             self._get(f"/library/sections/{library_key}/collections"),

@@ -331,18 +331,24 @@ async def plex_libraries(request: Request, http: Http, settings: AppSettings) ->
     theirs = maintainerr_keys(request)
     server = kometa_plex(settings, http)
     libraries = await _plex_read(server.libraries())
-    collections = await _plex_read(asyncio.gather(*(server.collections(library.key) for library in libraries)))
+    collections, sizes = await _plex_read(
+        asyncio.gather(
+            asyncio.gather(*(server.collections(library.key) for library in libraries)),
+            asyncio.gather(*(server.size(library.key, library.type) for library in libraries)),
+        )
+    )
     return {
         "libraries": [
             {
                 "key": library.key,
                 "title": library.title,
                 "type": library.type,
+                "items": size,
                 "collections": len(found),
                 "managed": sum(c.managed for c in found),
                 "maintainerr": sum(c.rating_key in theirs and not c.managed for c in found),
             }
-            for library, found in zip(libraries, collections, strict=True)
+            for library, found, size in zip(libraries, collections, sizes, strict=True)
         ]
     }
 

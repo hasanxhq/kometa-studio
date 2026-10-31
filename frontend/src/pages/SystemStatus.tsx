@@ -132,14 +132,14 @@ export function SystemStatus() {
 }
 
 // Tier 3 (handoff v2 §7.3): Kometa connects to Plex and every service in config.yml, and changes nothing.
-function FullCheck() {
+export function FullCheck({ title = "Full check" }: { title?: string }) {
   const queryClient = useQueryClient();
   const last = useQuery({ queryKey: ["full-check"], queryFn: api.fullCheck.last });
   const run = useMutation({ mutationFn: api.fullCheck.run, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["full-check"] }) });
   const result = run.data ?? last.data?.last ?? null;
   return (
     <Card
-      title="Full check"
+      title={title}
       actions={
         <Button onClick={() => run.mutate()} disabled={run.isPending}>
           {run.isPending ? "Checking… (up to a few minutes)" : "Run full check"}
