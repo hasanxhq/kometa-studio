@@ -111,7 +111,10 @@ describe("A collection's titles", () => {
     renderAt("/libraries/Movies");
     fireEvent.click(await screen.findByRole("link", { name: "Marvel: its titles" }));
     await waitFor(() => expect(screen.getByRole("list", { name: "Titles" })).toHaveTextContent("Film 1"));
-    expect(screen.getByRole("link", { name: "← Movies" })).toHaveAttribute("href", "/libraries/Movies");
+    const breadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(breadcrumb).getByRole("link", { name: "Movies" })).toHaveAttribute("href", "/libraries/Movies");
+    expect(within(breadcrumb).getByRole("link", { name: "Libraries" })).toHaveAttribute("href", "/libraries");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Collection"); // the header names what the page shows
   });
 
   it("says when Plex doesn't know the collection", async () => {
