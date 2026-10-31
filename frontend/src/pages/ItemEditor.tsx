@@ -8,6 +8,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { useAdvanced } from "../advanced";
 import { api, saveRefusal, type ConfigLibrary, type ItemSection, type SaveResult, type Validation } from "../api";
+import { FilterChips } from "../components/FilterChips";
 import { Problems, SettingField, YamlBox } from "../components/forms/fields";
 import { Button, Card, Field, inputClass } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
@@ -392,7 +393,9 @@ export default function ItemEditor() {
       </p>
     );
 
-  const designed = new Set([...(DESIGNED[section] ?? []).map((d) => d.key), ...(section === "overlays" ? ["overlay"] : [])]);
+  // One set of filters is edited as chips; several sets (a list, any of which may match) stay under Show Advanced.
+  const chips = section === "collections" && (value.filters === undefined || (typeof value.filters === "object" && value.filters !== null && !Array.isArray(value.filters)));
+  const designed = new Set([...(DESIGNED[section] ?? []).map((d) => d.key), ...(section === "overlays" ? ["overlay"] : []), ...(chips ? ["filters"] : [])]);
   const present = Object.keys(value);
   const advanced = present.filter((key) => !designed.has(key) && !isBuilder(key) && keys.has(key));
   const unknown = present.filter((key) => !keys.has(key) && !isBuilder(key) && !designed.has(key));
@@ -403,6 +406,7 @@ export default function ItemEditor() {
   const designedPart: ReactNode = (
     <>
       <Sources value={value} setValue={setEdited} keys={keys} root={root} problems={problems} onValidity={validity} />
+      {chips && <FilterChips filters={value.filters as Record<string, unknown> | undefined} onChange={(next) => setEdited(withKey(value, "filters", next))} />}
       {section === "overlays" && <OverlayDesign value={value} setValue={setEdited} root={root} name={currentName} problems={problems} />}
       {(DESIGNED[section] ?? []).length > 0 && (
         <Card title="Settings">

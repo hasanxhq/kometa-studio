@@ -23,6 +23,7 @@ const collectionSchema = {
         visible_home: { oneOf: [{ type: "boolean" }, { type: "string" }] },
         build_collection: { type: "boolean", description: "Build it in Plex" },
         template: { type: "object" },
+        filters: { oneOf: [{ type: "object" }, { type: "array", items: { type: "object" } }] },
       },
     },
   },
@@ -250,5 +251,47 @@ describe("The overlay form", () => {
       overlay: { name: "4K", horizontal_align: "right" },
       plex_search: { all: { resolution: "4K" } },
     });
+  });
+});
+
+describe("Filter chips", () => {
+  it("shows a collection's filters in words, adds year, rating and genre ones, and takes one out", async () => {
+    const filtered: Item = { ...heroes, value: { tmdb_collection: [556], filters: { "year.gte": 2000, "genre.not": "Horror", "has_overlay": false } } };
+    const calls = mockApi({
+      ...routes,
+      "GET /config/item?path=Movies.yml&section=collections&name=Heroes": () => filtered,
+      "POST /config/item": () => ({ backup: "b", files: [], validation: passed }),
+    });
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+
+    const chips = await screen.findByRole("list", { name: "Filters" });
+    expect([...chips.querySelectorAll("li")].map((li) => li.firstChild?.textContent)).toEqual(["Year ≥ 2000", "Genre isn't: Horror", "Not has overlay"]);
+
+    const add = screen.getByRole("group", { name: "Add a filter" });
+    fireEvent.change(within(add).getByRole("combobox"), { target: { value: "critic_rating.gte" } });
+    fireEvent.change(within(add).getByRole("textbox"), { target: { value: "11" } });
+    expect(within(add).getByRole("button", { name: "Add" })).toBeDisabled(); // ratings are out of 10
+    fireEvent.change(within(add).getByRole("textbox"), { target: { value: "7.5" } });
+    fireEvent.click(within(add).getByRole("button", { name: "Add" }));
+    fireEvent.change(within(add).getByRole("combobox"), { target: { value: "genre.not" } });
+    fireEvent.change(within(add).getByRole("textbox"), { target: { value: "Documentary, Horror" } });
+    fireEvent.click(within(add).getByRole("button", { name: "Add" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Not has overlay" }));
+    expect(screen.getByText("Critic rating ≥ 7.5")).toBeInTheDocument();
+    expect(screen.getByText("Genre isn't: Horror, Documentary")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Kometa checked it, and it's saved.")).toBeInTheDocument();
+    expect((calls.find((c) => c.route === "POST /config/item")?.body as { value: unknown }).value).toEqual({
+      tmdb_collection: [556],
+      filters: { "year.gte": 2000, "genre.not": ["Horror", "Documentary"], "critic_rating.gte": 7.5 },
+    });
+  });
+
+  it("leaves several filter sets to Show Advanced", async () => {
+    mockApi({ ...routes, "GET /config/item?path=Movies.yml&section=collections&name=Heroes": () => ({ ...heroes, value: { tmdb_collection: [556], filters: [{ "year.gte": 2000 }, { genre: "Comedy" }] } }) });
+    renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+    expect(await screen.findByText(/1 more setting is set here/)).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Add a filter" })).toBeNull();
   });
 });
