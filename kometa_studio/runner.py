@@ -75,7 +75,7 @@ class Runner:
         self.flags: set[str] | None = None  # from kometa.py --help; None means "not known", so nothing is checked
         self.flags_error: str | None = None
         self.hooks: list = []  # run hooks (see RunHeld): the Maintainerr integration
-        self.extra_env: Callable[[], dict[str, str]] = dict  # more environment for Kometa: the TMDb DNS bypass (doh.py)
+        self.extra_env: Callable[[], dict[str, str]] = dict  # more environment for Kometa: Settings → Network's proxy and DNS (network.kometa_env)
         self._wake = asyncio.Event()
         self._active: Active | None = None
         self._task: asyncio.Task | None = None

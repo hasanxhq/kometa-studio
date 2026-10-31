@@ -1,57 +1,19 @@
-"""DNS bypass for TMDb (feedback round 1): look TMDb's hosts up through Cloudflare's DNS over HTTPS at
-1.1.1.1 instead of the system's resolver, for networks whose DNS blocks or misdirects TMDb.
+"""DNS over HTTPS lookups, for Settings → Network's DoH and its connection check (network.py).
 
-QUICK FIX, to be removed: the maintainer asked for this to go once Settings → Network's proxy
-(network.py) is in and proven to work. Until then network.kometa_env and NetworkTransport honour it
-alongside the Network page's own DNS over HTTPS.
-
-It's turned on with the TMDb key on Settings → Connect and kept for that key: ``SETTING`` holds a hash
-of the key it was saved with, so saving another key without the box ticked turns it off.
-
-- Studio's own TMDb calls connect to the address DoH gives, sending TMDb's name for TLS (SNI) and in
-  the Host header, so the certificate is still checked against TMDb's name.
-- Kometa's runs and checks get the same through network.kometa_env (TMDb's names, ``HOSTS``, are
-  answered over DoH by ``kometa_doh/sitecustomize.py``). Kometa's own code is untouched.
-
-It only helps where TMDb is blocked by DNS. A network that blocks TMDb's addresses still blocks it.
+``get`` connects to the address DoH gives, sending the real name for TLS (SNI) and in the Host header,
+so the certificate is still checked against that name.
 """
 
-import hashlib
-import sqlite3
-from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-from .config_sections import read_section
-from .db import delete_setting, get_setting, set_setting
-
 DOH_URL = "https://1.1.1.1/dns-query"
-HOSTS = ("themoviedb.org", "tmdb.org")  # api.themoviedb.org, image.tmdb.org, …
-SETTING = "tmdb.doh"  # {"key": sha256 of the TMDb key it was saved with}
 TIMEOUT = 10.0
 
 
 class DohProblem(Exception):
     pass
-
-
-def key_hash(key: str) -> str:
-    return hashlib.sha256(key.encode()).hexdigest()
-
-
-def remember(db: sqlite3.Connection, key: str, on: bool) -> None:
-    if on:
-        set_setting(db, SETTING, {"key": key_hash(key)})
-    else:
-        delete_setting(db, SETTING)
-
-
-def enabled(db: sqlite3.Connection, config: Path | None) -> bool:
-    """On for the TMDb key in config.yml, if it was saved with the box ticked."""
-    saved = get_setting(db, SETTING)
-    key = (read_section(config, "tmdb") or {}).get("apikey")
-    return bool(saved and key and saved.get("key") == key_hash(str(key)))
 
 
 async def resolve(http: httpx.AsyncClient, host: str, url: str = DOH_URL) -> str:

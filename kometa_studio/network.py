@@ -14,14 +14,14 @@ services' names over DoH and puts IPv4 first. A SOCKS5 proxy also needs PySocks 
 Studio copies its own (one module) into ``<data>/kometa-extras`` and adds that to the path, so
 nothing is installed into Kometa's environment.
 
-The proxy resolves names itself, so DoH only matters for connections that don't use it. TMDb's DNS
-bypass on Settings → Connect (doh.py) is a quick fix, honoured here too until it's removed.
+The proxy resolves names itself, so DoH only matters for connections that don't use it.
 """
 
 import asyncio
 import ipaddress
 import json
 import os
+import re
 import shutil
 import socket
 import sqlite3
@@ -32,7 +32,7 @@ from typing import Literal
 from urllib.parse import quote, urlsplit
 
 import httpx
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from . import doh
 from .config_sections import read_section
@@ -70,6 +70,22 @@ class NetworkSettings(BaseModel):
     doh_services: list[str] = Field(default_factory=list)
     prefer_ipv4: bool = False
 
+    @field_validator("no_proxy", mode="before")
+    @classmethod
+    def _one_per_entry(cls, value: object) -> object:
+        return split_entries(value) if isinstance(value, list) else value
+
+
+def split_entries(entries: list) -> list[str]:
+    """One host, domain or network per entry. Commas and spaces separate entries too, and a trailing dot is dropped."""
+    found: list[str] = []
+    for entry in entries:
+        for part in re.split(r"[,\s]+", str(entry)):
+            part = part.strip().rstrip(".")
+            if part and part not in found:
+                found.append(part)
+    return found
+
 
 def load(db: sqlite3.Connection) -> NetworkSettings:
     return NetworkSettings.model_validate(get_setting(db, SETTING) or {})
@@ -104,12 +120,9 @@ def direct(host: str, settings: NetworkSettings) -> bool:
     return any(_matches(host, entry) for entry in LOCAL + settings.no_proxy)
 
 
-def doh_domains(db: sqlite3.Connection, settings: NetworkSettings, config: Path | None) -> list[str]:
-    """The domains looked up over DoH: the ticked services', and TMDb's while its key's quick fix is on (``config`` given)."""
-    domains = [domain for name in settings.doh_services if name in SERVICES for domain in SERVICES[name][1]]
-    if config is not None and doh.enabled(db, config):  # the TMDb key's quick fix
-        domains += [domain for domain in doh.HOSTS if domain not in domains]
-    return domains
+def doh_domains(settings: NetworkSettings) -> list[str]:
+    """The domains looked up over DoH: the ticked services'."""
+    return [domain for name in settings.doh_services if name in SERVICES for domain in SERVICES[name][1]]
 
 
 def _covered(host: str, domains: list[str]) -> bool:
@@ -141,12 +154,12 @@ def socks_module(data_dir: Path) -> Path | None:
     return folder
 
 
-def kometa_env(db: sqlite3.Connection, box: SecretBox | None, config: Path | None, data_dir: Path) -> dict[str, str]:
+def kometa_env(db: sqlite3.Connection, box: SecretBox | None, data_dir: Path) -> dict[str, str]:
     """Extra environment for Kometa's runs and checks."""
     settings = load(db)
     env: dict[str, str] = {}
     paths: list[str] = []
-    domains = doh_domains(db, settings, config)
+    domains = doh_domains(settings)
     if domains or settings.prefer_ipv4:
         paths.append(str(WRAPPER))
         if domains:
@@ -201,8 +214,7 @@ class NetworkTransport(httpx.AsyncBaseTransport):
         host = request.url.host
         if proxy is not None and not direct(host, settings):
             return await proxy.handle_async_request(request)
-        # The Network page's DoH only: the TMDb quick fix is for Kometa, since Studio's own TMDb calls (key tests) say whether to bypass.
-        domains = doh_domains(self.db, settings, None)
+        domains = doh_domains(settings)
         if domains and not _is_address(host) and _covered(host, domains):
             failed: httpx.TransportError | None = None
             request.extensions = request.extensions | {"sni_hostname": host}
