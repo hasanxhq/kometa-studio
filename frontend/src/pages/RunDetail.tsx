@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Link, useParams } from "react-router";
 
 import { api, type RunEvent, type RunSummary } from "../api";
+import { RunAgain } from "../components/RunAgain";
 import { RunLog } from "../components/RunLog";
 import { Button, Card, Tag } from "../components/ui";
 import { describeRequest, formatDuration, formatTime, isActive, statusLabels, statusTones, triggerLabels } from "../runs";
@@ -85,6 +86,7 @@ export function RunDetail() {
                 Cancel
               </Button>
             )}
+            {!isActive(r.status) && <RunAgain run={r} />}
           </div>
         }
       >

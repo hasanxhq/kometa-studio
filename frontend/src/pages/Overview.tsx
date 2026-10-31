@@ -6,6 +6,7 @@ import { Link } from "react-router";
 
 import { api, type Backup, type Run, type Status } from "../api";
 import { CatchUpNotice } from "../components/CatchUpNotice";
+import { RunAgain } from "../components/RunAgain";
 import { Card, Tag } from "../components/ui";
 import { libraryPath, libraryTypeLabels, mergeLibraries } from "../libraries";
 import { describeRequest, formatDuration, formatRelative, formatTime, isActive, statusLabels, statusTones, triggerLabels } from "../runs";
@@ -215,9 +216,12 @@ function LastRunChanges({ run }: { run: Run }) {
     <Card
       title={`Last run: #${run.id}`}
       actions={
-        <Link className="min-h-11 content-center text-sm text-muted underline hover:text-text" to={`/activity/queue/${run.id}`}>
-          Open the run
-        </Link>
+        <span className="flex flex-wrap items-center gap-3">
+          {run.status !== "succeeded" && <RunAgain run={run} />}
+          <Link className="min-h-11 content-center text-sm text-muted underline hover:text-text" to={`/activity/queue/${run.id}`}>
+            Open the run
+          </Link>
+        </span>
       }
     >
       <div className="flex flex-col gap-4 text-sm">

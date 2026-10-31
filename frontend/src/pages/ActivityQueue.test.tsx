@@ -150,4 +150,25 @@ describe("A run's page", () => {
     expect(within(changed).getByText("New")).toBeInTheDocument();
     expect(FakeEventSource.latest().url).toBe("/api/v1/runs/5/stream");
   });
+
+  it("runs a failed run again with the same request, and opens the new run", async () => {
+    const failed: RunDetail = { ...run({ id: 6, status: "failed", error: "Config Error: tmdb sub-attribute apikey not found" }), events: [] };
+    const calls = mockApi({
+      "GET /runs/6": () => failed,
+      "POST /runs": () => run({ id: 7, status: "queued", started_at: null, finished_at: null }),
+      "GET /runs/7": (): RunDetail => ({ ...run({ id: 7, status: "queued", started_at: null, finished_at: null }), events: [] }),
+    });
+    renderAt("/activity/queue/6");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Run again" }));
+    expect(await screen.findByRole("heading", { name: "Run #7: Collections only · Movies" })).toBeInTheDocument();
+    expect(calls.find((call) => call.route === "POST /runs")?.body).toEqual(request);
+  });
+
+  it("has no Run again while a run is going", async () => {
+    mockApi({ "GET /runs/8": (): RunDetail => ({ ...run({ id: 8, status: "running", finished_at: null }), events: [] }) });
+    renderAt("/activity/queue/8");
+    expect(await screen.findByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run again" })).toBeNull();
+  });
 });
