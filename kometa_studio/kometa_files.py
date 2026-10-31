@@ -312,6 +312,17 @@ def _banner(text: str) -> tuple[str | None, str | None]:
     return title, url
 
 
+def setup_steps(document: dict) -> dict[str, bool]:
+    """What Kometa can't run without: Plex and TMDb (config-schema.json's required), and a library ("No libraries were found in config")."""
+
+    def has(section: str, *keys: str) -> bool:
+        block = document.get(section)
+        return isinstance(block, dict) and all(block.get(key) for key in keys)
+
+    libraries = document.get("libraries")
+    return {"plex": has("plex", "url", "token"), "tmdb": has("tmdb", "apikey"), "library": isinstance(libraries, dict) and bool(libraries)}
+
+
 def unavailable_sources(document: dict, library: str | None = None) -> dict[str, str]:
     """The sources a collection can't use yet, by the first word of their keys, each with the reason."""
     libraries = document.get("libraries")

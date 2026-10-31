@@ -67,6 +67,7 @@ export const pages: Page[] = sections.flatMap((section) => section.pages);
 
 // Pages reached from other pages rather than the sidebar; the header shows these titles.
 export const otherPages: { path: string; label: string }[] = [
+  { path: "/setup", label: "Set up" },
   { path: "/files", label: "Edit file" },
   { path: "/items", label: "Edit" },
 ];

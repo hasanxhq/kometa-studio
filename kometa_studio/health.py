@@ -18,8 +18,10 @@ from ruamel.yaml import YAMLError
 from . import arr, full_backup, plex, usage
 from .auth import auth_settings
 from .config_routes import FULL_CHECK
+from .config_sections import read_document
 from .db import get_setting
 from .kometa_config import read_plex
+from .kometa_files import setup_steps
 from .settings import Settings
 
 PLEX_CHECK_TTL = 300
@@ -94,12 +96,22 @@ class PlexCheck:
         return result
 
 
+def _listed(items: list[str]) -> str:
+    return items[0] if len(items) == 1 else f"{', '.join(items[:-1])} and {items[-1]}"
+
+
 def _config_checks(settings: Settings, flags_error: str | None) -> list[Check]:
     if settings.kometa_python is None or settings.kometa_entry is None or settings.kometa_config is None:
         return [Check("kometa", "error", "Studio doesn't know where Kometa is. Set STUDIO_KOMETA_PYTHON, STUDIO_KOMETA_ENTRY and STUDIO_KOMETA_CONFIG.")]
     checks = []
     if not settings.kometa_config.exists():
-        checks.append(Check("config", "warning", "Kometa's config.yml doesn't exist yet. Connect Plex to create it.", "/settings/plex"))
+        checks.append(Check("config", "warning", "Kometa's config.yml doesn't exist yet. Connect Plex to create it.", "/setup"))
+    else:
+        document = read_document(settings.kometa_config)
+        steps = setup_steps(document) if document is not None else {}
+        needs = [need for step, need in (("plex", "a Plex server"), ("tmdb", "a TMDb key"), ("library", "a library")) if step in steps and not steps[step]]
+        if needs:
+            checks.append(Check("setup", "error", f"Kometa can't run yet. It still needs {_listed(needs)}.", "/setup"))
     if flags_error:
         checks.append(Check("kometa", "error", f"Kometa doesn't start: {flags_error}"))
     return checks

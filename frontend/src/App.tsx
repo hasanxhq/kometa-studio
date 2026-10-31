@@ -27,6 +27,7 @@ import { SettingsNetwork } from "./pages/SettingsNetwork";
 import { SettingsNotifications } from "./pages/SettingsNotifications";
 import { SettingsPlex } from "./pages/SettingsPlex";
 import { SettingsUI } from "./pages/SettingsUI";
+import { Setup } from "./pages/Setup";
 import { SystemBackup } from "./pages/SystemBackup";
 import { SystemLogs } from "./pages/SystemLogs";
 import { SystemStatus } from "./pages/SystemStatus";
@@ -66,6 +67,7 @@ export function App({ queryClient = new QueryClient() }: { queryClient?: QueryCl
                 const Built = built[page.path];
                 return <Route key={page.path} path={page.path} element={Built ? <Built /> : <Placeholder page={page} />} />;
               })}
+              <Route path="/setup" element={<Setup />} />
               <Route path="/activity/queue/:id" element={<RunDetail />} />
               <Route path="/libraries/:name" element={<LibraryDetail />} />
               <Route path="/libraries/:name/collections/:key" element={<CollectionDetail />} />

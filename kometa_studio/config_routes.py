@@ -15,7 +15,7 @@ from .config_items import ItemProblem, read_item, schema_kind
 from .config_sections import add_library, new_file_for_library, new_playlist_file, read_document, read_section, set_library_default, set_library_variables, set_settings
 from .config_write import ConfigWriter, Edit, SaveRefused
 from .db import get_setting, set_setting
-from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets, settings_defaults, unavailable_sources
+from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets, settings_defaults, setup_steps, unavailable_sources
 from .runs_routes import get_db
 from .settings import Settings
 
@@ -362,6 +362,15 @@ class ItemIn(BaseModel):
     create: bool = False
     rename: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)] | None = None
     library: str | None = None
+
+
+@router.get("/config/setup")
+async def config_setup(request: Request) -> dict:
+    """What first-run setup still needs. A config.yml Studio can't read isn't a first run, so it asks for nothing."""
+    config = request.app.state.settings.kometa_config
+    document = {} if config is not None and not config.exists() else read_document(config)
+    steps = setup_steps(document) if document is not None else {"plex": True, "tmdb": True, "library": True}
+    return {**steps, "done": all(steps.values())}
 
 
 @router.get("/config/sources")
