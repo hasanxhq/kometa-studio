@@ -5,6 +5,8 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Relative asset paths: the server's <base href> puts them under the URL base, if one is set.
+  base: "./",
   build: {
     // FastAPI serves the built app from inside the Python package.
     outDir: "../kometa_studio/static",

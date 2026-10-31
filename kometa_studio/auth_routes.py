@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field, field_validator
 
-from . import auth
+from . import auth, reverse_proxy
 from .auth import Caller
 from .db import set_setting
 from .scheduler import utc_text
@@ -27,7 +27,7 @@ Db = Annotated[sqlite3.Connection, Depends(get_db)]
 
 
 def _caller(request: Request) -> Caller:
-    return Caller.from_scope(request.scope)
+    return Caller.from_scope(request.scope, reverse_proxy.load(request.app.state.db).trusted)
 
 
 @router.get("/auth")
@@ -55,7 +55,7 @@ class Login(BaseModel):
 async def login(body: Login, request: Request, response: Response, db: Db) -> dict:
     throttle: auth.LoginThrottle = request.app.state.login_throttle
     caller = _caller(request)
-    address = caller.client_host or "?"
+    address = caller.address or "?"
     if throttle.blocked(address):
         raise HTTPException(429, "Too many failed sign-ins. Wait a few minutes and try again.")
     settings = auth.auth_settings(db)
@@ -97,7 +97,16 @@ def general(request: Request, db: sqlite3.Connection) -> dict:
         "timezone": request.app.state.timezone,
         "host": settings.host,
         "port": settings.port,
+        "reverse_proxy": reverse_proxy.load(db).model_dump(),
+        "you": _you(_caller(request)),
     }
+
+
+def _you(caller: Caller) -> dict:
+    """How Studio sees the request that's asking: who the visitor is, and whether that counts as local."""
+    address, untrusted = reverse_proxy.visitor(caller.client_host, caller.headers, caller.trusted)
+    proxied = any(name in caller.headers for name in reverse_proxy.PROXY_HEADERS)
+    return {"address": address, "peer": caller.client_host, "proxied": proxied, "trusted_proxy": proxied and not untrusted, "local": caller.local}
 
 
 @router.get("/settings/general")
@@ -161,6 +170,29 @@ class TimezoneIn(BaseModel):
         except (ZoneInfoNotFoundError, ValueError):
             raise ValueError(f"Unknown timezone: {value}") from None
         return value
+
+
+class ReverseProxyIn(BaseModel):
+    url_base: str = Field(default="", max_length=100)
+    trusted: list[Annotated[str, Field(max_length=100)]] = Field(default_factory=list, max_length=50)
+
+
+@router.put("/settings/reverse-proxy")
+async def put_reverse_proxy(body: ReverseProxyIn, request: Request, db: Db) -> dict:
+    """The URL base and trusted proxies. Takes effect with the next request; Studio still answers without the base."""
+    try:
+        settings = reverse_proxy.ReverseProxySettings.model_validate(body.model_dump())
+    except ValueError as error:
+        raise HTTPException(422, _first_error(error)) from None
+    set_setting(db, reverse_proxy.SETTING, settings.model_dump())
+    return general(request, db)
+
+
+def _first_error(error: ValueError) -> str:
+    errors = getattr(error, "errors", None)
+    if callable(errors):
+        return str(errors()[0]["msg"]).removeprefix("Value error, ")
+    return str(error)
 
 
 @router.put("/settings/timezone")

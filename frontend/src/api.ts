@@ -1,5 +1,6 @@
 // Typed calls to the Studio API (/api/v1).
 
+import { urlBase } from "./base";
 import type { SchemaKind } from "./yaml/schema";
 
 export type HealthCheck = { source: string; level: "error" | "warning" | "info"; message: string; link: string | null };
@@ -33,7 +34,11 @@ export type GeneralSettings = {
   timezone: string;
   host: string;
   port: number;
+  reverse_proxy: ReverseProxy;
+  you: { address: string | null; peer: string | null; proxied: boolean; trusted_proxy: boolean; local: boolean }; // how Studio sees this browser
 };
+
+export type ReverseProxy = { url_base: string; trusted: string[] };
 
 export type AuthInput = { username: string; password: string | null; required: AuthRequired; current_password: string | null };
 
@@ -551,7 +556,7 @@ async function errorFrom(response: Response): Promise<ApiError> {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
+  const response = await fetch(`${urlBase}/api/v1${path}`, {
     method,
     headers: body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -575,6 +580,7 @@ export const api = {
     setAuth: (body: AuthInput) => request<GeneralSettings>("PUT", "/settings/auth", body),
     newApiKey: () => request<GeneralSettings>("POST", "/settings/api-key"),
     setTimezone: (timezone: string) => request<GeneralSettings>("PUT", "/settings/timezone", { timezone }),
+    setReverseProxy: (body: ReverseProxy) => request<GeneralSettings>("PUT", "/settings/reverse-proxy", body),
   },
   plex: {
     state: () => request<PlexState>("GET", "/plex"),
@@ -603,7 +609,7 @@ export const api = {
     collection: (key: string, ratingKey: string, start = 0, size = 100) =>
       request<PlexCollectionPage>("GET", `/plex/libraries/${encodeURIComponent(key)}/collections/${encodeURIComponent(ratingKey)}?start=${start}&size=${size}`),
     imageUrl: (path: string, width = 240, height = 360) =>
-      `/api/v1/plex/image?path=${encodeURIComponent(path)}&width=${width}&height=${height}`,
+      `${urlBase}/api/v1/plex/image?path=${encodeURIComponent(path)}&width=${width}&height=${height}`,
   },
   files: {
     open: (path: string) => request<EditableFile>("GET", `/config/edit?path=${encodeURIComponent(path)}`),
@@ -641,7 +647,7 @@ export const api = {
     list: () => request<{ files: LogFile[] }>("GET", "/logs"),
     read: (path: string, level: LogLevel, q: string) =>
       request<LogView>("GET", `/logs/file?${new URLSearchParams({ path, level, q }).toString()}`),
-    downloadUrl: (path: string) => `/api/v1/logs/download?path=${encodeURIComponent(path)}`,
+    downloadUrl: (path: string) => `${urlBase}/api/v1/logs/download?path=${encodeURIComponent(path)}`,
   },
   maintainerr: {
     get: () => request<MaintainerrState>("GET", "/settings/maintainerr"),
@@ -690,7 +696,7 @@ export const api = {
   fullBackups: {
     list: () => request<{ backups: FullBackup[] }>("GET", "/backups/full"),
     remove: (name: string) => request<void>("DELETE", `/backups/full/${encodeURIComponent(name)}`),
-    url: (name: string) => `/api/v1/backups/full/${encodeURIComponent(name)}`,
+    url: (name: string) => `${urlBase}/api/v1/backups/full/${encodeURIComponent(name)}`,
   },
   fullCheck: {
     last: () => request<{ last: FullCheck | null }>("GET", "/kometa/full-check"),
@@ -716,8 +722,8 @@ export const api = {
     get: (id: number) => request<RunDetail>("GET", `/runs/${id}`),
     create: (body: RunRequest) => request<Run>("POST", "/runs", body),
     cancel: (id: number) => request<Run>("POST", `/runs/${id}/cancel`),
-    logUrl: (id: number) => `/api/v1/runs/${id}/log`,
-    streamUrl: (id: number) => `/api/v1/runs/${id}/stream`,
+    logUrl: (id: number) => `${urlBase}/api/v1/runs/${id}/log`,
+    streamUrl: (id: number) => `${urlBase}/api/v1/runs/${id}/stream`,
   },
 };
 

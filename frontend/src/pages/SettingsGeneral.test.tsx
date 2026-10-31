@@ -12,6 +12,8 @@ const general: GeneralSettings = {
   timezone: "Asia/Kolkata",
   host: "0.0.0.0",
   port: 8484,
+  reverse_proxy: { url_base: "", trusted: [] },
+  you: { address: "127.0.0.1", peer: "127.0.0.1", proxied: true, trusted_proxy: false, local: false },
 };
 
 describe("Signing in", () => {
@@ -148,8 +150,50 @@ describe("Settings → General", () => {
     const select = await screen.findByLabelText("Schedules and tasks use");
     expect(within(select).getByRole("option", { name: /UTC \+05:30 \(Asia\/Kolkata\)/ })).toBeInTheDocument();
     fireEvent.change(select, { target: { value: "UTC" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(within(select.closest("form")!).getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(calls.find((c) => c.route === "PUT /settings/timezone")?.body).toEqual({ timezone: "UTC" }));
+  });
+});
+
+describe("Address behind a reverse proxy", () => {
+  it("saves a URL base and trusted proxies, and says how Studio sees this browser", async () => {
+    const after: GeneralSettings = {
+      ...general,
+      reverse_proxy: { url_base: "/kometa", trusted: ["127.0.0.1", "172.18.0.0/16"] },
+      you: { address: "192.168.1.20", peer: "127.0.0.1", proxied: true, trusted_proxy: true, local: true },
+    };
+    const calls = mockApi({ "GET /settings/general": () => general, "PUT /settings/reverse-proxy": () => after });
+    renderAt("/settings/general");
+
+    const form = await screen.findByRole("form", { name: "Reverse proxy" });
+    expect(screen.getByLabelText("How Studio sees you")).toHaveTextContent(
+      "Studio sees this browser as 127.0.0.1, a proxy Studio doesn't trust, so it can't tell who is behind it: not a local address.",
+    );
+    expect(within(form).getByRole("button", { name: "Save" })).toBeDisabled();
+    fireEvent.change(within(form).getByLabelText("URL base"), { target: { value: "kometa" } });
+    fireEvent.change(within(form).getByLabelText("Trusted proxies"), { target: { value: "127.0.0.1, 172.18.0.0/16\n" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(calls.find((c) => c.route === "PUT /settings/reverse-proxy")?.body).toEqual({ url_base: "kometa", trusted: ["127.0.0.1", "172.18.0.0/16"] }),
+    );
+    expect(await within(form).findByRole("link", { name: /\/kometa\/$/ })).toHaveAttribute("href", "/kometa/settings/general");
+    expect(within(form).getByLabelText("URL base")).toHaveValue("/kometa");
+    expect(screen.getByLabelText("How Studio sees you")).toHaveTextContent(
+      "Studio sees this browser as 192.168.1.20 through the trusted proxy 127.0.0.1: a local address.",
+    );
+  });
+
+  it("shows why a save was refused", async () => {
+    mockApi({
+      "GET /settings/general": () => general,
+      "PUT /settings/reverse-proxy": () => new Response(JSON.stringify({ detail: "0.0.0.0/0 would trust every address, so anyone could claim to be local" }), { status: 422 }),
+    });
+    renderAt("/settings/general");
+    const form = await screen.findByRole("form", { name: "Reverse proxy" });
+    fireEvent.change(within(form).getByLabelText("Trusted proxies"), { target: { value: "0.0.0.0/0" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+    expect(await within(form).findByRole("alert")).toHaveTextContent("would trust every address");
   });
 });

@@ -1,9 +1,10 @@
-// Settings → General: sign-in, the API key and the timezone (handoff v2 §8).
+// Settings → General: sign-in, the API key, the timezone, and the address behind a reverse proxy (handoff v2 §8).
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent } from "react";
 
 import { api, type AuthRequired, type GeneralSettings } from "../api";
+import { urlBase } from "../base";
 import { Button, Card, Field, inputClass } from "../components/ui";
 import { timezoneOptions } from "../timezones";
 
@@ -218,6 +219,104 @@ function Timezone({ settings }: { settings: GeneralSettings }) {
   );
 }
 
+function Address({ settings }: { settings: GeneralSettings }) {
+  const queryClient = useQueryClient();
+  const saved = settings.reverse_proxy;
+  const [base, setBase] = useState(saved.url_base);
+  const [trusted, setTrusted] = useState(saved.trusted.join("\n"));
+  const entries = trusted.split(/[\n,\s]+/).map((entry) => entry.trim()).filter(Boolean);
+  const changed = base.trim() !== saved.url_base || entries.join(",") !== saved.trusted.join(",");
+  const save = useMutation({
+    mutationFn: () => api.general.setReverseProxy({ url_base: base, trusted: entries }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(["general"], data);
+      setBase(data.reverse_proxy.url_base);
+      setTrusted(data.reverse_proxy.trusted.join("\n"));
+    },
+  });
+  const you = settings.you;
+  const newBase = save.data && save.data.reverse_proxy.url_base !== urlBase ? save.data.reverse_proxy.url_base : null;
+  return (
+    <Card title="Address">
+      <div className="flex flex-col gap-4">
+        <p className="text-sm text-muted">
+          Studio listens on port <span className="font-mono text-text">{settings.port}</span>. In Docker, choose the port people use in the
+          container's port mapping; outside Docker, set <code className="font-mono">STUDIO_HOST</code> and{" "}
+          <code className="font-mono">STUDIO_PORT</code>.
+        </p>
+        <form
+          className="flex flex-col gap-4"
+          aria-label="Reverse proxy"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (changed) save.mutate();
+          }}
+        >
+          <Field
+            label="URL base"
+            hint="For a reverse proxy that serves Studio under a path, such as /kometa. Studio answers with and without it, so the proxy may pass the path on or strip it."
+          >
+            <input className={`${inputClass} font-mono`} value={base} onChange={(e) => setBase(e.target.value)} placeholder="None" spellCheck={false} />
+          </Field>
+          <Field
+            label="Trusted proxies"
+            hint="Addresses or networks, one per line or separated by commas. Only for requests from these does Studio believe X-Forwarded-For about who is visiting, so local visitors through the proxy count as local for sign-in. Other proxied requests never do."
+          >
+            <textarea
+              className={`${inputClass} min-h-20 py-2 font-mono`}
+              value={trusted}
+              onChange={(e) => setTrusted(e.target.value)}
+              placeholder="e.g. 172.18.0.0/16"
+              spellCheck={false}
+            />
+          </Field>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" disabled={!changed || save.isPending}>
+              {save.isPending ? "Saving…" : "Save"}
+            </Button>
+            {save.isError && (
+              <span role="alert" className="text-sm text-err">
+                {save.error.message}
+              </span>
+            )}
+            {save.isSuccess && !newBase && (
+              <span role="status" className="text-sm text-ok">
+                Saved.
+              </span>
+            )}
+          </div>
+          {newBase !== null && (
+            <p role="status" className="text-sm text-ok">
+              Saved. Studio now answers at{" "}
+              <a className="underline" href={`${newBase}/settings/general`}>
+                {window.location.origin}
+                {newBase}/
+              </a>
+              {newBase === "" ? " with no URL base" : ""}.
+            </p>
+          )}
+        </form>
+        <p className="text-sm text-muted" aria-label="How Studio sees you">
+          Studio sees this browser as <span className="font-mono text-text">{you.address ?? "unknown"}</span>
+          {you.proxied ? (
+            you.trusted_proxy ? (
+              <>
+                {" "}
+                through the trusted proxy <span className="font-mono">{you.peer}</span>
+              </>
+            ) : (
+              <>
+                , a proxy Studio doesn't trust, so it can't tell who is behind it
+              </>
+            )
+          ) : null}
+          : {you.local ? "a local address." : "not a local address."}
+        </p>
+      </div>
+    </Card>
+  );
+}
+
 export function SettingsGeneral() {
   const general = useQuery({ queryKey: ["general"], queryFn: api.general.get });
   if (general.isPending) return <p className="text-muted">Loading…</p>;
@@ -233,13 +332,7 @@ export function SettingsGeneral() {
       <SignIn settings={settings} />
       <ApiKey settings={settings} />
       <Timezone settings={settings} />
-      <Card title="Address">
-        <p className="text-sm text-muted">
-          Studio listens on port <span className="font-mono text-text">{settings.port}</span>. In Docker, choose the port people use in the
-          container's port mapping; outside Docker, set <code className="font-mono">STUDIO_HOST</code> and{" "}
-          <code className="font-mono">STUDIO_PORT</code>.
-        </p>
-      </Card>
+      <Address settings={settings} />
     </div>
   );
 }

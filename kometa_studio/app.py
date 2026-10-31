@@ -8,8 +8,8 @@ from importlib.resources import files
 from pathlib import Path
 
 import httpx
-from fastapi import APIRouter, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -25,6 +25,7 @@ from .usage import router as usage_router
 from .wanted import WantedRecorder
 from .services import router as services_router
 from .auth import AuthMiddleware, LoginThrottle
+from .reverse_proxy import UrlBaseMiddleware
 from .auth_routes import TIMEZONE
 from .auth_routes import router as auth_router
 from .config_routes import router as config_router
@@ -93,13 +94,19 @@ def mount_frontend(app: FastAPI, static_dir: Path) -> None:
         app.mount("/assets", StaticFiles(directory=static_dir / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
-    def spa(path: str) -> FileResponse:
+    def spa(path: str, request: Request) -> Response:
         if path == "api" or path.startswith("api/"):
             raise HTTPException(status_code=404)
         candidate = (static_dir / path).resolve()
         if path and candidate.is_file() and candidate.is_relative_to(static_dir.resolve()):
             return FileResponse(candidate)
-        return FileResponse(index)
+        base = request.scope.get("state", {}).get("url_base", "")
+        if base and not request.scope.get("state", {}).get("under_url_base"):  # a page opened without the URL base
+            query = f"?{request.url.query}" if request.url.query else ""
+            return RedirectResponse(f"{base}/{path}{query}", status_code=307)
+        # The page's assets and links follow <base href>, so they work under the URL base (reverse_proxy.py).
+        html = index.read_text(encoding="utf-8").replace("<head>", f'<head>\n    <base href="{base}/" />', 1)
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
 
 def create_app(
@@ -164,6 +171,7 @@ def create_app(
     # One writer, so its lock keeps saves one at a time.
     app.state.writer = ConfigWriter(settings) if settings.kometa_config else None
     app.add_middleware(AuthMiddleware)
+    app.add_middleware(UrlBaseMiddleware)  # outermost: Auth and the routes see paths without the URL base
     app.include_router(api)
     app.include_router(auth_router)
     app.include_router(plex_router)
