@@ -43,16 +43,21 @@ beforeEach(() => {
 });
 
 describe("Activity → Queue", () => {
-  it("queues a collections run for the typed libraries", async () => {
+  it("queues a collections run for the libraries picked from config.yml", async () => {
     const calls = mockApi({
       "GET /runs": () => ({ runs: [], current: null }),
       "GET /kometa": () => ready,
+      "GET /config": () => ({ path: "/config/config.yml", libraries: [{ name: "Movies" }, { name: "TV Shows" }, { name: "Anime" }], playlist_files: [] }),
       "POST /runs": () => run({ id: 7, status: "queued" }),
     });
     renderAt("/activity/queue");
 
     fireEvent.click(await screen.findByRole("radio", { name: "Collections" }));
-    fireEvent.change(screen.getByLabelText("Libraries"), { target: { value: "Movies, TV Shows ," } });
+    expect(await screen.findByText("None picked: every library runs.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Movies" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Anime" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "TV Shows" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Anime" }));
     fireEvent.click(screen.getByRole("button", { name: "Run now" }));
 
     expect(await screen.findByRole("link", { name: "run #7" })).toHaveAttribute("href", "/activity/queue/7");
@@ -60,6 +65,22 @@ describe("Activity → Queue", () => {
       ...request,
       libraries: ["Movies", "TV Shows"],
     });
+  });
+
+  it("falls back to typing library names when config.yml can't be read", async () => {
+    const calls = mockApi({
+      "GET /runs": () => ({ runs: [], current: null }),
+      "GET /kometa": () => ready,
+      "POST /runs": () => run({ id: 7, status: "queued" }),
+    });
+    renderAt("/activity/queue");
+
+    fireEvent.change(await screen.findByLabelText("Libraries"), { target: { value: "Movies, TV Shows ," } });
+    expect(screen.getByLabelText("Libraries")).toHaveValue("Movies, TV Shows ,"); // what's typed stays as typed
+    fireEvent.click(screen.getByRole("button", { name: "Run now" }));
+
+    await screen.findByRole("link", { name: "run #7" });
+    expect(calls.find((c) => c.route === "POST /runs")?.body).toEqual({ ...request, mode: "all", libraries: ["Movies", "TV Shows"] });
   });
 
   it("follows the running run's log and can cancel it", async () => {

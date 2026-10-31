@@ -62,6 +62,7 @@ describe("System → Tasks", () => {
     const calls = mockApi({
       ...ready,
       "GET /schedules": () => listing({ schedules: [] }),
+      "GET /config": () => ({ path: "/config/config.yml", libraries: [{ name: "Movies" }, { name: "TV Shows" }], playlist_files: [] }),
       "POST /schedules": () => nightly,
     });
     renderAt("/system/tasks");
@@ -70,7 +71,7 @@ describe("System → Tasks", () => {
     const form = screen.getByRole("form", { name: "New schedule" });
     fireEvent.change(within(form).getByLabelText("Name"), { target: { value: "Weekday overlays" } });
     fireEvent.click(within(form).getByRole("radio", { name: "Overlays" }));
-    fireEvent.change(within(form).getByLabelText("Libraries"), { target: { value: "Movies" } });
+    fireEvent.click(await within(form).findByRole("checkbox", { name: "Movies" }));
     fireEvent.click(within(form).getByRole("button", { name: "Weekdays" }));
     fireEvent.change(within(form).getByLabelText("Time"), { target: { value: "04:30" } });
     fireEvent.click(within(form).getByRole("button", { name: "Add schedule" }));
@@ -85,6 +86,27 @@ describe("System → Tasks", () => {
       catch_up: "run_once",
       enabled: true,
     });
+  });
+
+  it("keeps a library that's gone from config.yml in a schedule, and says so", async () => {
+    const old = { ...nightly, request: { ...request, libraries: ["Movies", "Old 4K"] } };
+    const calls = mockApi({
+      ...ready,
+      "GET /schedules": () => listing({ schedules: [old] }),
+      "GET /config": () => ({ path: "/config/config.yml", libraries: [{ name: "Movies" }, { name: "TV Shows" }], playlist_files: [] }),
+      "PUT /schedules/1": () => old,
+    });
+    renderAt("/system/tasks");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+    const form = screen.getByRole("form", { name: "Edit Nightly collections" });
+    expect(await within(form).findByRole("checkbox", { name: /Old 4K/ })).toBeChecked();
+    expect(within(form).getByText("not in config.yml")).toBeInTheDocument();
+    expect(within(form).getByRole("checkbox", { name: "TV Shows" })).not.toBeChecked();
+    fireEvent.click(within(form).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(calls.some((c) => c.route === "PUT /schedules/1")).toBe(true));
+    expect((calls.find((c) => c.route === "PUT /schedules/1")?.body as { request: { libraries: string[] } }).request.libraries).toEqual(["Movies", "Old 4K"]);
   });
 
   it("keeps a schedule's advanced options when editing with Show Advanced off", async () => {
