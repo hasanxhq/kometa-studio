@@ -6,6 +6,14 @@ import { parse, stringify } from "yaml";
 import { controlFor, type JsonSchema } from "../../yaml/schema";
 import { inputClass } from "../ui";
 
+/** ``value`` with ``key`` set to ``next``, or taken out if ``next`` is undefined. */
+export function withKey(value: Record<string, unknown>, key: string, next: unknown): Record<string, unknown> {
+  const copy = { ...value };
+  if (next === undefined) delete copy[key];
+  else copy[key] = next;
+  return copy;
+}
+
 export function Problems({ messages }: { messages?: string[] }) {
   if (!messages?.length) return null;
   return (

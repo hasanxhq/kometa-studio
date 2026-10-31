@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router";
 
 import { api, type ArrKind } from "../api";
+import { withKey } from "./forms/fields";
 import { Card, Checkbox } from "./ui";
 
 type Value = Record<string, unknown>;
@@ -18,13 +19,6 @@ export const addMissingKeys = (app: ArrKind) => [`${app}_add_missing`, `${app}_s
 /** Which app gets a library's missing items: Radarr for movies, Sonarr for shows, none for music or photos. */
 export function missingApp(libraryType: string | undefined): ArrKind | null {
   return libraryType === "movie" ? "radarr" : libraryType === "show" ? "sonarr" : null;
-}
-
-function withKey(value: Value, key: string, next: unknown): Value {
-  const copy = { ...value };
-  if (next === undefined) delete copy[key];
-  else copy[key] = next;
-  return copy;
 }
 
 export function AddMissing({ app, value, setValue }: { app: ArrKind; value: Value; setValue: (value: Value) => void }) {

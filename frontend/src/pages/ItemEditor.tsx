@@ -10,7 +10,7 @@ import { useAdvanced } from "../advanced";
 import { api, saveRefusal, type ConfigLibrary, type FileReference, type ItemSection, type SaveResult, type Validation } from "../api";
 import { AddMissing, addMissingKeys, missingApp as missingAppFor } from "../components/AddMissing";
 import { FilterChips } from "../components/FilterChips";
-import { Problems, SettingField, YamlBox } from "../components/forms/fields";
+import { Problems, SettingField, YamlBox, withKey } from "../components/forms/fields";
 import { Button, Card, Field, inputClass } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
 import { useLibraryType } from "../libraries";
@@ -225,13 +225,6 @@ export function sourceGroups(allKeys: string[], unavailable: Record<string, stri
     ...bySource(keys.filter((key) => unavailable[source(key)])).map((group) => ({ label: `${name(group.prefix)} (${unavailable[group.prefix]})`, keys: group.keys, greyed: "setup" as const })),
     ...(limited.length ? [{ label: libraryLimit(limited[0], libraryType)!, keys: limited, greyed: "library" as const }] : []),
   ];
-}
-
-function withKey(value: Value, key: string, next: unknown): Value {
-  const copy = { ...value };
-  if (next === undefined) delete copy[key];
-  else copy[key] = next;
-  return copy;
 }
 
 function starting(root: JsonSchema, schema: JsonSchema): unknown {
