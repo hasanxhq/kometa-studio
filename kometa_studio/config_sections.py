@@ -89,7 +89,7 @@ def with_library(text: str | None, name: str) -> str:
     taken = {str(key) for key in libraries} | {str(body["library_name"]) for body in libraries.values() if isinstance(body, dict) and body.get("library_name")}
     if name in taken:
         raise ValueError(f"config.yml already has a library called {name}")
-    libraries[name] = None
+    libraries[name] = CommentedMap()  # `{}`, not blank: a blank library crashes Kometa (config.py: `"plex" in lib`)
     return render(text, document, indent)
 
 
@@ -100,7 +100,7 @@ def with_library_file(text: str, library: str, files: str, reference: str) -> st
     if not isinstance(libraries, CommentedMap) or library not in libraries:
         raise ValueError(f"config.yml has no library called {library}")
     body = libraries[library]
-    if body is None:
+    if not body:  # blank or `{}`: a new mapping, or what's added would stay on one line like `{}`
         body = CommentedMap()
         libraries[library] = body
     if not isinstance(body, CommentedMap):
@@ -187,7 +187,7 @@ def _library_body(document: CommentedMap, library: str) -> CommentedMap:
     if not isinstance(libraries, CommentedMap) or library not in libraries:
         raise ValueError(f"config.yml has no library called {library}")
     body = libraries[library]
-    if body is None:
+    if not body:  # blank or `{}`, as in with_library_file
         body = CommentedMap()
         libraries[library] = body
     if not isinstance(body, CommentedMap):
