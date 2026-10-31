@@ -28,7 +28,7 @@ def kometa(tmp_path) -> Settings:
     (entry.parent / "VERSION").write_text("2.5.3\n")
     config = tmp_path / "config" / "config.yml"
     config.parent.mkdir()
-    config.write_text(f"plex:\n  url: {REMOTE_URI}\n  token: {SERVER_TOKEN}\n")
+    config.write_text(f"plex:\n  url: {REMOTE_URI}\n  token: {SERVER_TOKEN}\ntmdb:\n  apikey: key\nlibraries:\n  Movies: {{}}\n")
     return Settings(data_dir=tmp_path / "data", kometa_python=Path("/usr/bin/python3"), kometa_entry=entry, kometa_config=config)
 
 
@@ -79,6 +79,19 @@ def test_the_plex_answer_is_remembered(db, kometa):
     kometa.kometa_config.write_text(f"plex:\n  url: {REMOTE_URI}/\n  token: {SERVER_TOKEN}\n")  # a new address: ask again
     check(db, kometa, fake, remembered)
     assert len(fake.requests) == 2
+
+
+def test_what_kometa_cant_run_without_is_an_error_that_links_to_setup(db, kometa):
+    kometa.kometa_config.write_text(f"plex:\n  url: {REMOTE_URI}\n  token: {SERVER_TOKEN}\nlibraries: {{}}\n")
+    [problem] = [c for c in check(db, kometa) if c["source"] == "setup"]
+    assert (problem["level"], problem["link"]) == ("error", "/setup")
+    assert problem["message"] == "Kometa can't run yet. It still needs a TMDb key and a library."
+
+    kometa.kometa_config.write_text("libraries: [unclosed\n")  # not a first run: nothing here to set up
+    assert not [c for c in check(db, kometa) if c["source"] == "setup"]
+
+    kometa.kometa_config.unlink()
+    assert [c["link"] for c in check(db, kometa) if c["source"] == "config"] == ["/setup"]
 
 
 def test_setup_problems(db, kometa, tmp_path):

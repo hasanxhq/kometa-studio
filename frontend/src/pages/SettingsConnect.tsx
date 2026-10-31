@@ -549,7 +549,7 @@ function MaintainerrForm({ current }: { current: MaintainerrState }) {
 
 // --- TMDb and MDBList --------------------------------------------------------------
 
-const services: { name: ServiceName; label: string; hint: ReactNode; required: boolean }[] = [
+export const services: { name: ServiceName; label: string; hint: ReactNode; required: boolean }[] = [
   {
     name: "tmdb",
     label: "TMDb",
@@ -572,7 +572,7 @@ const services: { name: ServiceName; label: string; hint: ReactNode; required: b
   },
 ];
 
-function ServiceForm({
+export function ServiceForm({
   name,
   label,
   hint,
@@ -590,6 +590,7 @@ function ServiceForm({
   const test = useMutation({ mutationFn: () => api.services.test(name, apikey || null) });
   const done = (data: Awaited<ReturnType<typeof api.services.get>>) => {
     queryClient.setQueryData(["services"], data);
+    queryClient.invalidateQueries({ queryKey: ["config", "setup"] });
     setApikey("");
     test.reset();
   };

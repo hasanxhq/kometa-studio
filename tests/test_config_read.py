@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from kometa_studio.app import create_app
-from kometa_studio.kometa_files import ConfigReader, _is_builder, mask_secrets, unavailable_sources, unmask_secrets
+from kometa_studio.kometa_files import ConfigReader, _is_builder, mask_secrets, setup_steps, unavailable_sources, unmask_secrets
 from kometa_studio.settings import Settings
 
 CONFIG = """\
@@ -362,3 +362,26 @@ def test_history_lists_changes_newest_first_and_filters(tmp_path, kometa):
     assert len(page["events"]) == 2 and page["next"] is not None
     assert [e["collection"] or e["message"] for e in rest["events"]] == ["Popular_50%", "Trending"]
     assert rest["next"] is None
+
+
+def test_setup_needs_plex_tmdb_and_a_library():
+    assert setup_steps({}) == {"plex": False, "tmdb": False, "library": False}
+    half = {"plex": {"url": "http://plex:32400", "token": None}, "tmdb": {"apikey": ""}, "libraries": {}}
+    assert setup_steps(half) == {"plex": False, "tmdb": False, "library": False}
+    assert setup_steps({"plex": {"url": "u", "token": "t"}, "tmdb": {"apikey": "k"}, "libraries": {"Movies": None}}) == {"plex": True, "tmdb": True, "library": True}
+
+
+def test_the_setup_route_follows_config_yml_and_leaves_an_unreadable_one_alone(tmp_path):
+    config = tmp_path / "config.yml"
+    app = create_app(Settings(data_dir=tmp_path / "data", kometa_config=config), static_dir=tmp_path / "no-static")
+    with TestClient(app, client=("127.0.0.1", 50000)) as client:
+        fresh = client.get("/api/v1/config/setup").json()
+        config.write_text("plex:\n  url: http://plex:32400\n  token: t\nlibraries: {}\n")
+        partial = client.get("/api/v1/config/setup").json()
+        config.write_text("plex:\n  url: http://plex:32400\n  token: t\ntmdb:\n  apikey: k\nlibraries:\n  Movies: {}\n")
+        ready = client.get("/api/v1/config/setup").json()
+        config.write_text("libraries: [unclosed\n")
+        broken = client.get("/api/v1/config/setup").json()
+    assert fresh == {"plex": False, "tmdb": False, "library": False, "done": False}
+    assert partial == {"plex": True, "tmdb": False, "library": False, "done": False}
+    assert ready["done"] is True and broken["done"] is True

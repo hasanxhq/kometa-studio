@@ -419,6 +419,7 @@ export function SettingsPlex() {
   function refresh() {
     queryClient.invalidateQueries({ queryKey: ["plex"], exact: true });
     queryClient.invalidateQueries({ queryKey: ["plex", "connection"] });
+    queryClient.invalidateQueries({ queryKey: ["config", "setup"] });
   }
   const onSaved = () => {
     setListing(false);

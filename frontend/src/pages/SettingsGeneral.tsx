@@ -8,7 +8,7 @@ import { urlBase } from "../base";
 import { Button, Card, Field, inputClass } from "../components/ui";
 import { timezoneOptions } from "../timezones";
 
-function SignIn({ settings }: { settings: GeneralSettings }) {
+export function SignIn({ settings }: { settings: GeneralSettings }) {
   const queryClient = useQueryClient();
   const { configured } = settings.auth;
   const [username, setUsername] = useState(settings.auth.username ?? "");

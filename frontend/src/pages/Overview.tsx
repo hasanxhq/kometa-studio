@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, Navigate } from "react-router";
 
 import { api, type Backup, type Run, type Status } from "../api";
 import { CatchUpNotice } from "../components/CatchUpNotice";
@@ -333,6 +333,13 @@ function LibrarySummary() {
 }
 
 export function Overview() {
+  // Until Kometa has what it needs to run, there's nothing to show here: first-run setup comes first.
+  const setup = useQuery({ queryKey: ["config", "setup"], queryFn: api.config.setup, retry: false });
+  if (setup.data && !setup.data.done) return <Navigate to="/setup" replace />;
+  return <Dashboard />;
+}
+
+function Dashboard() {
   const queryClient = useQueryClient();
   const status = useQuery({ queryKey: ["status"], queryFn: api.status, refetchInterval: 30_000 });
   const runs = useQuery({
