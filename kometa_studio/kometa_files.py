@@ -6,6 +6,7 @@ every .yml/.yaml in it, ``default`` names a file in Kometa's own defaults folder
 ``git`` and ``repo`` are remote, so Studio lists them without fetching them.
 """
 
+import ast
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -390,3 +391,48 @@ def unmask_secrets(text: str, secrets: list[str]) -> str:
                 "or replace it completely with the new value."
             )
     return restored
+
+
+def settings_defaults(kometa_root: Path | None) -> dict[str, Any]:
+    """What Kometa uses for each ``settings:`` key that config.yml leaves out, read from the installed Kometa's modules/config.py.
+
+    Its schema has no defaults, but every setting is read with ``check_for_attribute(self.data, "<key>", parent="settings", default=…)``.
+    The source is parsed, never imported. A default that isn't a plain value (or isn't there) is left out.
+    """
+    source = kometa_root / "modules" / "config.py" if kometa_root else None
+    if source is None or not source.is_file():
+        return {}
+    return _settings_defaults(source, source.stat().st_mtime_ns)
+
+
+_defaults_cache: dict[tuple[Path, int], dict[str, Any]] = {}
+
+
+def _settings_defaults(source: Path, mtime: int) -> dict[str, Any]:
+    if (source, mtime) in _defaults_cache:
+        return _defaults_cache[(source, mtime)]
+    found: dict[str, Any] = {}
+    try:
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+    except (OSError, SyntaxError, UnicodeDecodeError):
+        tree = None
+    for node in ast.walk(tree) if tree else []:
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "check_for_attribute" and len(node.args) >= 2):
+            continue
+        if ast.unparse(node.args[0]) != "self.data":  # the global settings, not a library's own
+            continue
+        keywords = {k.arg: k.value for k in node.keywords if k.arg}
+        parent, key = keywords.get("parent"), node.args[1]
+        if not (isinstance(parent, ast.Constant) and parent.value == "settings" and isinstance(key, ast.Constant) and isinstance(key.value, str)):
+            continue
+        if key.value in found:
+            continue
+        if "default" in keywords:
+            try:
+                found[key.value] = ast.literal_eval(keywords["default"])
+            except ValueError:
+                continue
+        elif isinstance(keywords.get("default_is_none"), ast.Constant) and keywords["default_is_none"].value is True:
+            found[key.value] = None
+    _defaults_cache[(source, mtime)] = found
+    return found

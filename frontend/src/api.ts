@@ -526,6 +526,9 @@ export type FileEdit = { path: string; text: string; base_hash: string | null };
 
 export type SaveResult = { backup: string; files: { path: string; hash: string }[]; validation: Validation };
 
+// Kometa's own settings: block, and the installed Kometa's default for each key it leaves out.
+export type KometaSettings = { values: Record<string, unknown>; defaults: Record<string, unknown> };
+
 export type SaveRefusal = { message: string; path: string | null; validation: Validation | null };
 
 export type Backup = { id: string; created: string | null; reason: string; files: string[]; new_files: string[] };
@@ -612,6 +615,8 @@ export const api = {
   kometa: () => request<KometaInfo>("GET", "/kometa"),
   config: {
     overview: () => request<{ path: string; libraries: LibraryCounts[]; playlist_files: FileReference[] }>("GET", "/config"),
+    settings: () => request<KometaSettings>("GET", "/config/settings"),
+    saveSettings: (base: Record<string, unknown>, values: Record<string, unknown>) => request<SaveResult>("PUT", "/config/settings", { base, values }),
     library: (name: string) => request<ConfigLibrary>("GET", `/config/libraries/${encodeURIComponent(name)}`),
     file: (path: string) => request<{ path: string; text: string }>("GET", `/config/file?path=${encodeURIComponent(path)}`),
     addLibrary: (name: string) => request<SaveResult>("POST", "/config/libraries", { name }),

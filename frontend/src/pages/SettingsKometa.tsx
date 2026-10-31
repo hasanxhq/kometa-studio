@@ -1,9 +1,10 @@
 // Settings → Kometa: where Kometa is, how runs are limited, and the flags this Kometa has (handoff v2 §8).
-// All set by the container's environment, so this page shows them rather than editing them.
+// Those are set by the container's environment, so this page shows them; Kometa's own settings: block is a form.
 
 import { useQuery } from "@tanstack/react-query";
 
 import { api } from "../api";
+import { KometaSettings } from "../components/KometaSettings";
 import { Card } from "../components/ui";
 
 function Row({ label, value, env }: { label: string; value: string | null | undefined; env: string }) {
@@ -40,6 +41,7 @@ export function SettingsKometa() {
           {problem}
         </p>
       )}
+      <KometaSettings />
       <Card title="Where Kometa is">
         <p className="mb-2 text-sm text-muted">The Docker image sets these. Outside Docker, set the environment variables named under each.</p>
         <dl>

@@ -56,7 +56,7 @@ export const sections: Section[] = [
       { label: "Connect", path: "/settings/connect", summary: "Radarr, Sonarr, Maintainerr, TMDb and MDBList, each tested before it is saved." },
       { label: "Notifications", path: "/settings/notifications", summary: "Notifiarr, Gotify, ntfy and Apprise, and which Kometa events go where." },
       { label: "Network", path: "/settings/network", summary: "A proxy, DNS over HTTPS and IPv4 first, for Studio and Kometa, and a connection check." },
-      { label: "Kometa", path: "/settings/kometa", summary: "Kometa's paths and the flags every run uses." },
+      { label: "Kometa", path: "/settings/kometa", summary: "Kometa's own settings, its paths and the flags every run uses." },
       { label: "UI", path: "/settings/ui", summary: "Show Advanced by default, and other display options." },
     ],
   },

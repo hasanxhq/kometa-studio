@@ -1,6 +1,6 @@
 // Kometa's verdict on a change: new problems block a save; problems already in the files don't.
 
-import type { Validation } from "../api";
+import { saveRefusal, type Validation } from "../api";
 
 function List({ title, items, className }: { title: string; items: string[]; className: string }) {
   if (items.length === 0) return null;
@@ -43,5 +43,17 @@ export function ValidationReport({ validation, saved, verdict: given }: { valida
         </details>
       )}
     </section>
+  );
+}
+
+/** Why a save didn't happen: Kometa's report when it refused the change, else the message. */
+export function SaveError({ error }: { error: Error | null }) {
+  if (!error) return null;
+  const refusal = saveRefusal(error);
+  if (refusal?.validation) return <ValidationReport validation={refusal.validation} saved={false} />;
+  return (
+    <p role="alert" className="text-sm text-err">
+      {refusal?.message ?? error.message}
+    </p>
   );
 }
