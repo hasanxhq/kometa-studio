@@ -366,7 +366,7 @@ class ItemIn(BaseModel):
 
 @router.get("/config/sources")
 async def config_sources(request: Request, library: str | None = None) -> dict:
-    """Sources the collection form greys out. An unreadable config.yml greys out nothing: Kometa has the last word on a save."""
+    """Sources the collection form greys out, because a run would fail on them (Kometa's save check doesn't catch it). An unreadable config.yml greys out nothing."""
     settings: Settings = request.app.state.settings
     document = read_document(settings.kometa_config)
     return {"unavailable": unavailable_sources(document, library) if document is not None else {}}

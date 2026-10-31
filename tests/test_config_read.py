@@ -173,15 +173,15 @@ def test_sources_are_unavailable_until_config_yml_has_what_they_need():
     }
     unavailable = unavailable_sources(document, "TV Shows")
     assert unavailable == {
-        "trakt": "Kometa no longer supports Trakt",
-        "flicklist": "needs FlickList",
-        "floppy": "needs Floppy",
-        "mal": "needs MyAnimeList",
-        "mdblist": "needs MDBList",
-        "radarr": "needs Radarr",
-        "serializd": "needs Serializd",
-        "tautulli": "needs Tautulli",
-        "wetrakr": "needs WeTrakr",
+        "trakt": "no longer supported by Kometa",
+        "flicklist": "not set up",
+        "floppy": "not set up",
+        "mal": "not set up",
+        "mdblist": "not set up",
+        "radarr": "not set up",
+        "serializd": "not set up",
+        "tautulli": "not set up",
+        "wetrakr": "not set up",
     }
     # A library's own block counts for that library, and only for the sources Kometa reads per library.
     assert "radarr" not in unavailable_sources(document, "Movies")
@@ -200,7 +200,7 @@ def test_the_sources_route_greys_out_nothing_when_config_yml_cant_be_read(tmp_pa
         fine = client.get("/api/v1/config/sources", params={"library": "Movies"}).json()["unavailable"]
         config.write_text("libraries: [unclosed\n")
         broken = client.get("/api/v1/config/sources").json()["unavailable"]
-    assert "tmdb" not in fine and fine["radarr"] == "needs Radarr"
+    assert "tmdb" not in fine and fine["radarr"] == "not set up"
     assert broken == {}
 
 

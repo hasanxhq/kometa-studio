@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type { Item, Validation } from "../api";
 import { mockApi, renderAt } from "../test-utils";
-import { isBuilder } from "./ItemEditor";
+import { isBuilder, sourceGroups } from "./ItemEditor";
 
 // A small schema shaped like Kometa's collection and overlay schemas.
 const collectionSchema = {
@@ -367,28 +367,24 @@ describe("Adding a collection's missing items", () => {
 });
 
 describe("The source list", () => {
-  const options = () => within(screen.getByText("Add a source").closest("label")!).getAllByRole("option") as HTMLOptionElement[];
-
-  it("greys out sources whose service isn't set up, saying what each needs", async () => {
-    const calls = mockApi({ ...routes, "GET /config/sources?library=Movies": () => ({ unavailable: { mal: "needs MyAnimeList" } }) });
+  it("groups sources by service and greys out the ones that aren't set up", async () => {
+    mockApi({ ...routes, "GET /config/sources?library=Movies": () => ({ unavailable: { mal: "not set up" } }) });
     renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
 
-    const greyed = await screen.findByRole("option", { name: "mal_id (needs MyAnimeList)" });
-    expect(greyed).toBeDisabled();
-    expect(greyed.closest("optgroup")).toHaveAttribute("label", "Not set up yet");
-    expect(screen.getByRole("option", { name: "mdblist_list" })).toBeEnabled();
-    // The available ones come first.
-    const names = options().map((o) => o.textContent);
-    expect(names.indexOf("mdblist_list")).toBeLessThan(names.indexOf("mal_id (needs MyAnimeList)"));
+    await screen.findByRole("option", { name: "mal_id" });
+    await waitFor(() => expect(screen.getByRole("option", { name: "mal_id" })).toBeDisabled()); // it moves group once Studio knows
+    expect(screen.getByRole("option", { name: "mal_id" }).closest("optgroup")).toHaveAttribute("label", "MyAnimeList (not set up)");
+    const usable = screen.getByRole("option", { name: "mdblist_list" });
+    expect(usable).toBeEnabled();
+    expect(usable.closest("optgroup")).toHaveAttribute("label", "Most used");
     expect(screen.getByRole("link", { name: "Settings → Connect" })).toHaveAttribute("href", "/settings/connect");
-    expect(calls.some((c) => c.route === "GET /config/sources?library=Movies")).toBe(true);
   });
 
   it("leaves a source that's already in the collection alone", async () => {
-    mockApi({ ...routes, "GET /config/sources?library=Movies": () => ({ unavailable: { tmdb: "needs TMDb" } }) });
+    mockApi({ ...routes, "GET /config/sources?library=Movies": () => ({ unavailable: { tmdb: "not set up" } }) });
     renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
 
-    expect(await screen.findByRole("option", { name: "tmdb_trending_weekly (needs TMDb)" })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("option", { name: "tmdb_trending_weekly" })).toBeDisabled());
     expect(screen.getByLabelText("tmdb_collection")).toHaveValue("- 556");
   });
 
@@ -398,6 +394,18 @@ describe("The source list", () => {
 
     expect(await screen.findByRole("option", { name: "mal_id" })).toBeEnabled();
     expect(screen.queryByText(/Greyed-out sources/)).toBeNull();
+  });
+
+  it("puts the most used first, then services by name, then the ones that can't be used", () => {
+    const keys = ["tmdb_collection", "imdb_list", "tmdb_actor", "anilist_id", "mal_id", "tmdb_list", "trakt_description", "mojo_world"];
+    expect(sourceGroups(keys, { mal: "not set up", trakt: "no longer supported by Kometa" })).toEqual([
+      { label: "Most used", keys: ["tmdb_collection", "imdb_list", "tmdb_list"], disabled: false },
+      { label: "AniList", keys: ["anilist_id"], disabled: false },
+      { label: "Box Office Mojo", keys: ["mojo_world"], disabled: false },
+      { label: "TMDb", keys: ["tmdb_actor"], disabled: false },
+      { label: "MyAnimeList (not set up)", keys: ["mal_id"], disabled: true },
+      { label: "Trakt (no longer supported by Kometa)", keys: ["trakt_description"], disabled: true },
+    ]);
   });
 });
 

@@ -17,20 +17,20 @@ from ruamel.yaml.error import YAMLError
 
 FILE_LISTS = ("collection_files", "overlay_files", "metadata_files")
 REFERENCE_KINDS = ("default", "pmm", "file", "folder", "url", "git", "repo")
-# What a source needs in config.yml: its name, and the keys Kometa can't do without (modules/config.py; builder.py's
-# "requires ... to be configured"). Sources not listed need nothing: Plex, IMDb, Letterboxd, AniList, TVDb and the like.
-SOURCE_NEEDS: dict[str, tuple[str, tuple[str, ...]]] = {
-    "anidb": ("AniDB", ()),
-    "flicklist": ("FlickList", ("api_key",)),
-    "floppy": ("Floppy", ("url",)),
-    "mal": ("MyAnimeList", ("client_id", "client_secret")),
-    "mdblist": ("MDBList", ("apikey",)),
-    "radarr": ("Radarr", ("url", "token")),
-    "serializd": ("Serializd", ("email", "password")),
-    "sonarr": ("Sonarr", ("url", "token")),
-    "tautulli": ("Tautulli", ("url", "apikey")),
-    "tmdb": ("TMDb", ("apikey",)),
-    "wetrakr": ("WeTrakr", ()),
+# What a source needs in config.yml: the keys Kometa can't do without (modules/config.py; builder.py's "requires ...
+# to be configured"). Sources not listed need nothing: Plex, IMDb, Letterboxd, AniList, TVDb and the like.
+SOURCE_NEEDS: dict[str, tuple[str, ...]] = {
+    "anidb": (),
+    "flicklist": ("api_key",),
+    "floppy": ("url",),
+    "mal": ("client_id", "client_secret"),
+    "mdblist": ("apikey",),
+    "radarr": ("url", "token"),
+    "serializd": ("email", "password"),
+    "sonarr": ("url", "token"),
+    "tautulli": ("url", "apikey"),
+    "tmdb": ("apikey",),
+    "wetrakr": (),
 }
 # These three can also be set up in one library's own block, over the shared one (config.py: `"radarr" in lib`).
 PER_LIBRARY_SOURCES = {"radarr", "sonarr", "tautulli"}
@@ -317,13 +317,13 @@ def unavailable_sources(document: dict, library: str | None = None) -> dict[str,
     libraries = document.get("libraries")
     body = libraries.get(library) if isinstance(libraries, dict) else None
     own = body if isinstance(body, dict) else {}
-    unavailable = {"trakt": "Kometa no longer supports Trakt"}  # util.remove_trakt: 2.5 retired it
-    for source, (name, keys) in SOURCE_NEEDS.items():
+    unavailable = {"trakt": "no longer supported by Kometa"}  # util.remove_trakt: 2.5 retired it
+    for source, keys in SOURCE_NEEDS.items():
         blocks = [document, *([own] if source in PER_LIBRARY_SOURCES else [])]
         present = [block[source] for block in blocks if source in block]
         values = {key: value for block in present if isinstance(block, dict) for key, value in block.items() if value}
         if not present or not all(key in values for key in keys):
-            unavailable[source] = f"needs {name}"
+            unavailable[source] = "not set up"
     return unavailable
 
 
