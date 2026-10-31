@@ -108,9 +108,9 @@ def apply_item(text: str, section: str, name: str, value: dict | None, *, create
 
 
 def new_file(section: str, name: str, value: dict) -> str:
-    """The text of a new file holding one collection or overlay."""
-    if section not in FILE_LISTS:
-        raise ItemProblem(422, f"A new file starts with collections or overlays, not {section}")
+    """The text of a new file holding one collection, overlay or playlist."""
+    if section not in FILE_LISTS and section != "playlists":
+        raise ItemProblem(422, f"A new file starts with collections, overlays or playlists, not {section}")
     return render(None, CommentedMap([(section, CommentedMap([(name, value)]))]), TEMPLATE_INDENT)
 
 

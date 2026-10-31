@@ -12,7 +12,7 @@ from pydantic import BaseModel, StringConstraints
 
 from . import backups
 from .config_items import ItemProblem, read_item, schema_kind
-from .config_sections import add_library, new_file_for_library, read_section, set_library_default, set_library_variables, set_settings
+from .config_sections import add_library, new_file_for_library, new_playlist_file, read_section, set_library_default, set_library_variables, set_settings
 from .config_write import ConfigWriter, Edit, SaveRefused
 from .db import get_setting, set_setting
 from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets, settings_defaults
@@ -388,6 +388,10 @@ async def config_item(path: str, section: str, name: str, writer: Writer) -> dic
 
 @router.post("/config/item")
 async def save_config_item(body: ItemIn, writer: Writer) -> dict:
+    if body.base_hash is None and body.section == "playlists":
+        if not (body.create and body.value is not None):
+            raise HTTPException(422, "A new file needs a new playlist")
+        return await _write_call(new_playlist_file(writer, body.path, body.name, body.value))
     if body.base_hash is None:
         if not (body.create and body.library and body.value is not None):
             raise HTTPException(422, "A new file needs a new item and the library it's for")

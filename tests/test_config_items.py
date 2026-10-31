@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from kometa_studio.app import create_app
 from kometa_studio.config_items import ItemProblem, apply_item, new_file, read_item, schema_kind
-from kometa_studio.config_sections import with_library, with_library_file
+from kometa_studio.config_sections import with_library, with_library_file, with_playlist_file
 from kometa_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
@@ -243,3 +243,26 @@ def test_a_collection_in_a_new_file_is_one_checked_save(tmp_path, kometa):
     assert broken.status_code == 422 and not (kometa / "config" / "Broken.yml").exists()
     assert "Broken.yml" not in (kometa / "config" / "config.yml").read_text()
     assert no_library.status_code == 422
+
+
+def test_a_playlist_file_goes_in_playlist_files():
+    text = "libraries:\n  Movies: {}\n"
+    once = with_playlist_file(text, "config/Playlists.yml")
+    assert once == text + "playlist_files:\n  - file: config/Playlists.yml\n"
+    assert with_playlist_file(once, "config/More.yml").endswith("  - file: config/Playlists.yml\n  - file: config/More.yml\n")
+    single = "playlist_files:\n  file: config/Old.yml\n"
+    assert with_playlist_file(single, "config/New.yml") == "playlist_files:\n  - file: config/Old.yml\n  - file: config/New.yml\n"
+
+
+def test_a_playlist_in_a_new_file_needs_no_library(tmp_path, kometa):
+    item = {"path": "Playlists.yml", "base_hash": None, "section": "playlists", "name": "Heroes Marathon", "value": {"libraries": "Movies", "tmdb_collection": 556}, "create": True}
+    with make_client(tmp_path, kometa) as client:
+        saved = client.post("/api/v1/config/item", json=item)
+        overview = client.get("/api/v1/config").json()
+        backups = client.get("/api/v1/backups").json()["backups"]
+    assert saved.status_code == 200, saved.text
+    assert (kometa / "config" / "Playlists.yml").read_text() == "playlists:\n  Heroes Marathon:\n    libraries: Movies\n    tmdb_collection: 556\n"
+    assert "playlist_files:\n  - file: " in (kometa / "config" / "config.yml").read_text()
+    files = [f for reference in overview["playlist_files"] for f in reference["files"]]
+    assert [(f["path"], [p["name"] for p in f["playlists"]]) for f in files] == [("Playlists.yml", ["Heroes Marathon"])]
+    assert backups[0]["reason"] == "Added the playlist 'Heroes Marathon' in a new file, Playlists.yml"

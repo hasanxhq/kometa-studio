@@ -7,7 +7,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router";
 
 import { useAdvanced } from "../advanced";
-import { api, saveRefusal, type ConfigLibrary, type ItemSection, type SaveResult, type Validation } from "../api";
+import { api, saveRefusal, type ConfigLibrary, type FileReference, type ItemSection, type SaveResult, type Validation } from "../api";
 import { FilterChips } from "../components/FilterChips";
 import { Problems, SettingField, YamlBox } from "../components/forms/fields";
 import { Button, Card, Field, inputClass } from "../components/ui";
@@ -55,6 +55,14 @@ const DESIGNED: Record<string, { key: string; label: string; hint?: string }[]> 
     { key: "schedule", label: "Schedule", hint: "e.g. daily, weekly(sunday)" },
   ],
   overlays: [],
+  playlists: [
+    { key: "libraries", label: "Libraries", hint: "The libraries it takes items from, as named in config.yml, separated by commas." },
+    { key: "summary", label: "Summary" },
+    { key: "sync_to_users", label: "Share with", hint: "Plex users who get a copy: all, or names separated by commas." },
+    { key: "exclude_users", label: "But not with", hint: "Users left out when sharing with all." },
+    { key: "sync_mode", label: "Sync mode", hint: "sync removes items the source no longer lists; append only adds." },
+    { key: "schedule", label: "Schedule", hint: "e.g. daily, weekly(sunday)" },
+  ],
 };
 
 const OVERLAY_FIELDS: { key: string; label: string }[] = [
@@ -76,20 +84,21 @@ const OFFSET_KEYS = new Set(["horizontal_offset", "vertical_offset"]);
 
 const NEW_FILE = "\u0000new"; // the file picker's "A new file" choice
 
-/** The library's own files a new item can go in: collection files for collections, overlay files for overlays. */
-function ownFiles(library: ConfigLibrary | undefined, section: ItemSection): string[] {
-  const references = (section === "overlays" ? library?.overlay_files : library?.collection_files) ?? [];
+/** The files a new item can go in: the library's collection or overlay files, or config.yml's playlist files. */
+function ownFiles(library: ConfigLibrary | undefined, section: ItemSection, playlistFiles: FileReference[] | undefined): string[] {
+  const references = (section === "playlists" ? playlistFiles : section === "overlays" ? library?.overlay_files : library?.collection_files) ?? [];
   return references
     .filter((r) => r.kind === "file" || r.kind === "folder")
     .flatMap((r) => r.files.map((f) => f.path))
     .filter((path) => !path.startsWith("/"));
 }
 
-/** A name for the new file that none of the library's files has yet. */
-function suggestedName(library: string, section: ItemSection, taken: string[]): string {
-  const base = library.replace(/[\\/:*?"<>|]+/g, " ").trim() || "Collections";
-  const candidates = section === "overlays" ? [`${base} Overlays.yml`] : [`${base}.yml`, `${base} Collections.yml`];
-  for (let n = 2; candidates.length < 12; n++) candidates.push(`${base} ${section === "overlays" ? "Overlays" : "Collections"} ${n}.yml`);
+/** A name for the new file that none of the library's (or the playlist) files has yet. */
+function suggestedName(library: string | null, section: ItemSection, taken: string[]): string {
+  const base = section === "playlists" ? "Playlists" : (library ?? "").replace(/[\\/:*?"<>|]+/g, " ").trim() || "Collections";
+  const word = section === "overlays" ? "Overlays" : section === "playlists" ? "" : "Collections";
+  const candidates = section === "overlays" ? [`${base} Overlays.yml`] : section === "playlists" ? [`${base}.yml`] : [`${base}.yml`, `${base} Collections.yml`];
+  for (let n = 2; candidates.length < 12; n++) candidates.push(`${base}${word ? ` ${word}` : ""} ${n}.yml`);
   const lower = new Set(taken.map((t) => t.toLowerCase()));
   return candidates.find((c) => !lower.has(c.toLowerCase()))!;
 }
@@ -120,6 +129,7 @@ function Sources({
   root,
   problems,
   onValidity,
+  single = false,
 }: {
   value: Value;
   setValue: (value: Value) => void;
@@ -127,13 +137,14 @@ function Sources({
   root: JsonSchema | null;
   problems: Map<string, string[]>;
   onValidity: (key: string, ok: boolean) => void;
+  single?: boolean; // a playlist: Kometa takes one source
 }) {
   const present = Object.keys(value).filter(isBuilder);
   const available = [...new Set([...COMMON_BUILDERS, ...[...keys.keys()].filter(isBuilder).sort()])].filter((key) => keys.has(key) && !present.includes(key));
   return (
     <Card title="Where the items come from">
       <p className="mb-3 text-sm text-muted">
-        Kometa combines every source: anything any of them finds goes in. Comments in your file stay as they are for every setting you don't change
+        {single ? "A playlist takes its items from one source." : "Kometa combines every source: anything any of them finds goes in."} Comments in your file stay as they are for every setting you don't change
         here; to keep comments inside a setting you're changing, use the YAML editor.
       </p>
       <div className="flex flex-col gap-4">
@@ -282,25 +293,27 @@ export default function ItemEditor() {
   const original = params.get("name") ?? "";
   const library = params.get("library");
   const creating = params.get("new") === "1";
-  const newFile = creating && !path; // a new file, added to the library's list in config.yml when it's saved
-  const noun = section === "overlays" ? "overlay" : "collection";
+  const newFile = creating && !path; // a new file, added to the library's list (or playlist_files) in config.yml when it's saved
+  const playlist = section === "playlists"; // playlists aren't per library: their files are config.yml's playlist_files
+  const noun = section === "overlays" ? "overlay" : playlist ? "playlist" : "collection";
   const libraryConfig = useQuery({ queryKey: ["config", "library", library], queryFn: () => api.config.library(library!), enabled: creating && !!library });
-  const files = ownFiles(libraryConfig.data, section);
+  const overview = useQuery({ queryKey: ["config"], queryFn: api.config.overview, enabled: creating && playlist, retry: false });
+  const files = ownFiles(libraryConfig.data, section, overview.data?.playlist_files);
   const [fileName, setFileName] = useState<string | null>(null);
-  const newName = fileName ?? (library ? suggestedName(library, section, files) : "");
+  const newName = fileName ?? (library || playlist ? suggestedName(library, section, files) : "");
 
   const item = useQuery({
     queryKey: ["item", path, section, original, creating],
     queryFn: async () => {
       if (!creating) return api.items.get(path, section, original);
-      if (!path) return { path: "", hash: "", section, name: "", value: {}, kind: (section === "overlays" ? "overlay" : "collection") as SchemaKind };
+      if (!path) return { path: "", hash: "", section, name: "", value: {}, kind: (section === "overlays" ? "overlay" : section === "playlists" ? "playlist" : "collection") as SchemaKind };
       const file = await api.files.open(path);
       return { path, hash: file.hash, section, name: "", value: {}, kind: file.kind };
     },
     staleTime: Infinity,
     gcTime: 0,
   });
-  const kind = (item.data?.kind ?? (section === "overlays" ? "overlay" : "collection")) as SchemaKind;
+  const kind = (item.data?.kind ?? (section === "overlays" ? "overlay" : section === "playlists" ? "playlist" : "collection")) as SchemaKind;
   const schema = useQuery({ queryKey: ["schema", kind], queryFn: () => loadSchema(kind), staleTime: Infinity });
 
   const [edited, setEdited] = useState<Value | null>(null);
@@ -351,7 +364,7 @@ export default function ItemEditor() {
         value,
         create: creating,
         rename: !creating && currentName !== original ? currentName : null,
-        ...(newFile ? { library } : {}),
+        ...(newFile && !playlist ? { library } : {}),
       }),
     onMutate: () => setVerdict(null),
     onSuccess: (result) => {
@@ -367,7 +380,7 @@ export default function ItemEditor() {
     mutationFn: () => api.items.save({ path, base_hash: item.data!.hash, section, name: original, value: null }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["config"] });
-      navigate(library ? `/libraries/${encodeURIComponent(library)}` : "/libraries");
+      navigate(playlist ? "/playlists" : library ? `/libraries/${encodeURIComponent(library)}` : "/libraries");
     },
   });
   const run = useMutation({
@@ -394,18 +407,18 @@ export default function ItemEditor() {
     );
 
   // One set of filters is edited as chips; several sets (a list, any of which may match) stay under Show Advanced.
-  const chips = section === "collections" && (value.filters === undefined || (typeof value.filters === "object" && value.filters !== null && !Array.isArray(value.filters)));
+  const chips = (section === "collections" || playlist) && (value.filters === undefined || (typeof value.filters === "object" && value.filters !== null && !Array.isArray(value.filters)));
   const designed = new Set([...(DESIGNED[section] ?? []).map((d) => d.key), ...(section === "overlays" ? ["overlay"] : []), ...(chips ? ["filters"] : [])]);
   const present = Object.keys(value);
   const advanced = present.filter((key) => !designed.has(key) && !isBuilder(key) && keys.has(key));
   const unknown = present.filter((key) => !keys.has(key) && !isBuilder(key) && !designed.has(key));
   const addable = [...keys.keys()].filter((key) => !present.includes(key) && !designed.has(key) && !isBuilder(key)).sort();
   const hiddenCount = advanced.length + unknown.length;
-  const back = library ? `/libraries/${encodeURIComponent(library)}${section === "overlays" ? "?tab=overlays" : ""}` : "/libraries";
+  const back = playlist ? "/playlists" : library ? `/libraries/${encodeURIComponent(library)}${section === "overlays" ? "?tab=overlays" : ""}` : "/libraries";
 
   const designedPart: ReactNode = (
     <>
-      <Sources value={value} setValue={setEdited} keys={keys} root={root} problems={problems} onValidity={validity} />
+      <Sources value={value} setValue={setEdited} keys={keys} root={root} problems={problems} onValidity={validity} single={playlist} />
       {chips && <FilterChips filters={value.filters as Record<string, unknown> | undefined} onChange={(next) => setEdited(withKey(value, "filters", next))} />}
       {section === "overlays" && <OverlayDesign value={value} setValue={setEdited} root={root} name={currentName} problems={problems} />}
       {(DESIGNED[section] ?? []).length > 0 && (
@@ -498,14 +511,14 @@ export default function ItemEditor() {
   return (
     <div className="flex max-w-4xl flex-col gap-4">
       <Link to={back} className="min-h-11 content-center text-sm text-muted underline">
-        ← {library ?? "Libraries"}
+        ← {playlist ? "Playlists" : (library ?? "Libraries")}
       </Link>
       <Card title={newFile ? `New ${noun} in a new file` : creating ? `New ${noun} in ${path}` : `${currentName || original}`}>
         <div className="flex flex-col gap-3">
           <Field label="Name">
-            <input className={inputClass} value={currentName} onChange={(e) => setName(e.target.value)} placeholder={section === "overlays" ? "e.g. 4K" : "e.g. Pixar"} />
+            <input className={inputClass} value={currentName} onChange={(e) => setName(e.target.value)} placeholder={section === "overlays" ? "e.g. 4K" : playlist ? "e.g. Marvel in order" : "e.g. Pixar"} />
           </Field>
-          {creating && library && (
+          {creating && (library || playlist) && (
             <Field label="File">
               <select
                 className={inputClass}
@@ -529,12 +542,16 @@ export default function ItemEditor() {
           {newFile && (
             <Field
               label="New file's name"
-              hint={`In Kometa's config folder. Saving creates it and adds it to ${library}'s ${section === "overlays" ? "overlay_files" : "collection_files"} in config.yml.`}
+              hint={
+                playlist
+                  ? "In Kometa's config folder. Saving creates it and adds it to playlist_files in config.yml."
+                  : `In Kometa's config folder. Saving creates it and adds it to ${library}'s ${section === "overlays" ? "overlay_files" : "collection_files"} in config.yml.`
+              }
             >
               <input className={`${inputClass} font-mono`} value={newName} onChange={(e) => setFileName(e.target.value)} />
             </Field>
           )}
-          {newFile && !library && (
+          {newFile && !library && !playlist && (
             <p role="alert" className="text-sm text-err">
               A new file needs a library. Start from the library's page.
             </p>
@@ -556,7 +573,7 @@ export default function ItemEditor() {
         <Button
           variant="primary"
           onClick={() => save.mutate()}
-          disabled={!dirty || !currentName.trim() || badYaml.size > 0 || save.isPending || (newFile && (!library || !newName.trim()))}
+          disabled={!dirty || !currentName.trim() || badYaml.size > 0 || save.isPending || (newFile && ((!library && !playlist) || !newName.trim()))}
         >
           {save.isPending ? "Kometa is checking…" : creating ? `Add ${noun}` : "Save"}
         </Button>

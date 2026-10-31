@@ -142,6 +142,32 @@ async def new_file_for_library(writer: ConfigWriter, relative: str, library: str
     return await writer.save([Edit(writer.relative(path), text, None), config], f"Added {name!r} in a new file, {writer.relative(path)}, for {library}")
 
 
+def with_playlist_file(text: str, reference: str) -> str:
+    """``text`` with ``- file: reference`` added to config.yml's playlist_files (playlists aren't per library)."""
+    document, indent = _parse(text)
+    entry = CommentedMap([("file", reference)])
+    current = document.get("playlist_files")
+    if current is None:
+        document["playlist_files"] = CommentedSeq([entry])
+    elif isinstance(current, list):
+        current.append(entry)
+    else:  # a single entry, which Kometa also accepts
+        document["playlist_files"] = CommentedSeq([current, entry])
+    return render(text, document, indent)
+
+
+async def new_playlist_file(writer: ConfigWriter, relative: str, name: str, value: dict) -> dict:
+    """Start a new file with one playlist, and add it to config.yml's playlist_files: one save, checked by Kometa."""
+    path = writer.resolve(relative)
+    if path.exists():
+        raise SaveRefused(409, f"{relative} already exists. Choose it from the list, or pick another name.", path=relative)
+    if not writer.config_path.exists():
+        raise SaveRefused(409, "config.yml doesn't exist yet")
+    text = new_file("playlists", name, value)
+    config = _config_edit(writer, lambda current: with_playlist_file(current or "", writer.reference(path)))
+    return await writer.save([Edit(writer.relative(path), text, None), config], f"Added the playlist {name!r} in a new file, {writer.relative(path)}")
+
+
 # --- Kometa's defaults in a library -------------------------------------------------------
 
 

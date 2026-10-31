@@ -18,6 +18,7 @@ import { Overlays } from "./pages/Overlays";
 import { Overview } from "./pages/Overview";
 import { LibraryDetail } from "./pages/LibraryDetail";
 import { Placeholder } from "./pages/Placeholder";
+import { Playlists } from "./pages/Playlists";
 import { RunDetail } from "./pages/RunDetail";
 import { SettingsConnect } from "./pages/SettingsConnect";
 import { SettingsGeneral } from "./pages/SettingsGeneral";
@@ -37,6 +38,7 @@ const built: Record<string, ComponentType> = {
   "/": Overview,
   "/libraries": Libraries,
   "/overlays": Overlays,
+  "/playlists": Playlists,
   "/activity/queue": ActivityQueue,
   "/activity/history": ActivityHistory,
   "/system/status": SystemStatus,
