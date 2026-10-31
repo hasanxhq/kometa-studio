@@ -65,3 +65,17 @@ export const otherPages: { path: string; label: string }[] = [
   { path: "/files", label: "Edit file" },
   { path: "/items", label: "Edit" },
 ];
+
+// Pages inside a sidebar page, named for what they show. Plex's words: a library holds collections.
+const nestedPages: { pattern: RegExp; label: string }[] = [
+  { pattern: /^\/libraries\/[^/]+\/collections\/[^/]+\/?$/, label: "Collection" },
+  { pattern: /^\/libraries\/[^/]+\/?$/, label: "Library" },
+  { pattern: /^\/activity\/queue\/[^/]+\/?$/, label: "Run" },
+];
+
+/** The header's title for a path. */
+export function pageTitle(pathname: string): string {
+  const nested = nestedPages.find((page) => page.pattern.test(pathname));
+  if (nested) return nested.label;
+  return [...pages, ...otherPages].find((page) => pathname.startsWith(page.path))?.label ?? "Kometa Studio";
+}

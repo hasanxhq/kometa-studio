@@ -96,9 +96,15 @@ export function CollectionDetail() {
   }, [items, search, order]);
 
   const back = (
-    <Link to={libraryPath(name)} className="min-h-11 content-center text-sm text-muted underline">
-      ← {name}
-    </Link>
+    <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-2 text-sm text-muted">
+      <Link to="/libraries" className="min-h-11 content-center underline hover:text-text">
+        Libraries
+      </Link>
+      <span aria-hidden="true">›</span>
+      <Link to={libraryPath(name)} className="min-h-11 content-center underline hover:text-text">
+        {name}
+      </Link>
+    </nav>
   );
   if (plexList.isPending || overview.isPending) return <p className="text-muted">Loading…</p>;
   if (plexKey === null) {
