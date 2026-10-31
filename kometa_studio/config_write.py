@@ -114,7 +114,7 @@ class ConfigWriter:
         # Studio's own rules on top of Kometa's check: (config.yml path, Kometa's folder) → problems.
         # A save is refused only for problems it adds. Set by the Maintainerr integration.
         self.guard: Callable[[Path, Path], list[str]] | None = None
-        self.extra_env: Callable[[], dict[str, str]] = dict  # more environment for Kometa: the TMDb DNS bypass (doh.py)
+        self.extra_env: Callable[[], dict[str, str]] = dict  # more environment for Kometa: Settings → Network's proxy and DNS (network.kometa_env)
 
     # --- Which files ----------------------------------------------------------------
 

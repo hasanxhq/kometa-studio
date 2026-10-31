@@ -40,7 +40,6 @@ def state(request: Request, db: sqlite3.Connection) -> dict:
         "local": network.LOCAL,
         "services": [{"id": key, "name": name, "domains": list(domains)} for key, (name, domains) in network.SERVICES.items()],
         "providers": [{"id": key, "name": name} for key, (name, _) in network.PROVIDERS.items()],
-        "tmdb_quick_fix": doh.enabled(db, request.app.state.settings.kometa_config),
     }
 
 
@@ -79,7 +78,7 @@ def _proxy(db: sqlite3.Connection, request: Request, body: ProxyIn) -> tuple[net
         password = box.encrypt(body.password) if body.password else None
     else:
         password = saved.proxy_password
-    entered = saved.model_copy(update={"proxy_url": url, "proxy_username": username, "proxy_password": password, "no_proxy": [e.strip() for e in body.no_proxy if e.strip()]})
+    entered = saved.model_copy(update={"proxy_url": url, "proxy_username": username, "proxy_password": password, "no_proxy": network.split_entries(body.no_proxy)})
     return entered, network.proxy_with_login(entered, box)
 
 

@@ -4,7 +4,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Link } from "react-router";
 
 import {
   api,
@@ -587,29 +586,25 @@ function ServiceForm({
   hint,
   required,
   saved,
-  savedBypass,
 }: {
   name: ServiceName;
   label: string;
   hint: ReactNode;
   required: boolean;
   saved: string | null;
-  savedBypass?: boolean; // TMDb only: the DNS bypass is on for the saved key
 }) {
   const queryClient = useQueryClient();
   const [apikey, setApikey] = useState("");
-  const [bypass, setBypass] = useState(savedBypass ?? false);
-  const test = useMutation({ mutationFn: () => api.services.test(name, apikey || null, bypass) });
+  const test = useMutation({ mutationFn: () => api.services.test(name, apikey || null) });
   const done = (data: Awaited<ReturnType<typeof api.services.get>>) => {
     queryClient.setQueryData(["services"], data);
     setApikey("");
     test.reset();
   };
-  const save = useMutation({ mutationFn: () => api.services.save(name, apikey || null, bypass), onSuccess: done });
+  const save = useMutation({ mutationFn: () => api.services.save(name, apikey || null), onSuccess: done });
   const remove = useMutation({ mutationFn: () => api.services.remove(name), onSuccess: done });
   const tested = test.data?.ok === true;
-  // Something to save: a new key, or the DNS bypass switched for the saved one.
-  const changed = apikey !== "" || saved === null || bypass !== (savedBypass ?? false);
+  const changed = apikey !== "" || saved === null;
   const reset = () => {
     test.reset();
     save.reset();
@@ -618,59 +613,21 @@ function ServiceForm({
     event.preventDefault();
     if (tested && changed) save.mutate();
   };
-  const keyInput = (
-    <input
-      className={inputClass}
-      type="password"
-      autoComplete="off"
-      value={apikey}
-      onChange={(e) => {
-        setApikey(e.target.value);
-        reset();
-      }}
-      placeholder={saved ? `Saved (${saved}), leave empty to keep it` : required ? "Kometa needs this to run" : ""}
-    />
-  );
   return (
     <form className="flex flex-col gap-3" onSubmit={submit} aria-label={label}>
-      {savedBypass === undefined ? (
-        <Field label={`${label} API key`} hint={hint}>
-          {keyInput}
-        </Field>
-      ) : (
-        <div className="flex flex-wrap items-start gap-x-4">
-          <div className="min-w-0 flex-1 basis-56">
-            <Field label={`${label} API key`} hint={hint}>
-              {keyInput}
-            </Field>
-          </div>
-          <label
-            className="flex min-h-11 items-center gap-2 text-sm sm:mt-[1.625rem]"
-            title="Look TMDb up through Cloudflare's DNS over HTTPS (1.1.1.1) instead of this network's DNS, for Studio's and Kometa's calls with this key."
-          >
-            <input
-              type="checkbox"
-              className="size-4 accent-accent"
-              checked={bypass}
-              onChange={(e) => {
-                setBypass(e.target.checked);
-                reset();
-              }}
-            />
-            DNS bypass <span className="text-xs text-muted">(quick fix)</span>
-          </label>
-        </div>
-      )}
-      {bypass && (
-        <p className="text-xs text-muted">
-          TMDb is looked up through Cloudflare's DNS over HTTPS (1.1.1.1) instead of this network's DNS, for Studio's and Kometa's calls with this key. It helps
-          when the network's DNS blocks TMDb, not when TMDb's addresses are blocked. A quick fix: it goes once a proxy on{" "}
-          <Link className="underline" to="/settings/network">
-            Settings → Network
-          </Link>{" "}
-          is proven to work.
-        </p>
-      )}
+      <Field label={`${label} API key`} hint={hint}>
+        <input
+          className={inputClass}
+          type="password"
+          autoComplete="off"
+          value={apikey}
+          onChange={(e) => {
+            setApikey(e.target.value);
+            reset();
+          }}
+          placeholder={saved ? `Saved (${saved}), leave empty to keep it` : required ? "Kometa needs this to run" : ""}
+        />
+      </Field>
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => test.mutate()} disabled={test.isPending || (!apikey && !saved)}>
           {test.isPending ? "Testing…" : "Test"}
@@ -684,14 +641,14 @@ function ServiceForm({
         {test.data &&
           (test.data.ok ? (
             <Outcome ok>
-              {label} accepted the key{bypass ? " (looked up over DNS over HTTPS)" : ""}
+              {label} accepted the key
               {typeof test.data.used === "number" && typeof test.data.limit === "number" ? `: ${test.data.used} of ${test.data.limit} requests used today.` : "."}
             </Outcome>
           ) : (
             <Outcome ok={false}>{test.data.error}</Outcome>
           ))}
         {test.isError && <Outcome ok={false}>{test.error.message}</Outcome>}
-        {save.isSuccess && <Outcome ok>Saved{bypass ? ", with the DNS bypass for this key" : ""}.</Outcome>}
+        {save.isSuccess && <Outcome ok>Saved.</Outcome>}
         {save.isError && <Outcome ok={false}>{save.error.message}</Outcome>}
         {remove.isError && <Outcome ok={false}>{remove.error.message}</Outcome>}
       </div>
@@ -763,12 +720,7 @@ export function SettingsConnect() {
           ) : (
             services.map((service) => (
               <Section key={service.name} title={service.label}>
-                <ServiceForm
-                  key={JSON.stringify(keys.data[service.name])}
-                  {...service}
-                  saved={keys.data[service.name].apikey}
-                  savedBypass={service.name === "tmdb" ? (keys.data.tmdb.bypass_dns ?? false) : undefined}
-                />
+                <ServiceForm key={JSON.stringify(keys.data[service.name])} {...service} saved={keys.data[service.name].apikey} />
               </Section>
             ))
           )}

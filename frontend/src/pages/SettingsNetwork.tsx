@@ -4,7 +4,6 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Link } from "react-router";
 
 import { api, type NetworkCheck, type NetworkState, type ProxyInput } from "../api";
 import { Button, Card, Field, Tag, inputClass } from "../components/ui";
@@ -38,7 +37,7 @@ function ProxyForm({ state }: { state: NetworkState }) {
     url: kind === "none" ? null : `${kind}://${address.trim()}`,
     username: kind !== "none" && login ? username || null : null,
     password: kind !== "none" && login ? password || null : null,
-    no_proxy: noProxy.split("\n").map((line) => line.trim()).filter(Boolean),
+    no_proxy: noProxy.split(/[\n,]+/).map((entry) => entry.trim()).filter(Boolean),
   });
   const test = useMutation({ mutationFn: () => api.network.testProxy(body()) });
   const save = useMutation({ mutationFn: () => api.network.saveProxy(body()), onSuccess: (data) => queryClient.setQueryData(["network"], data) });
@@ -104,7 +103,7 @@ function ProxyForm({ state }: { state: NetworkState }) {
               </div>
             </div>
           )}
-          <Field label="Don't use the proxy for" hint={`One per line: a host, a domain (.example.com) or a network (100.64.0.0/10). Always direct: ${state.local.join(", ")}.`}>
+          <Field label="Don't use the proxy for" hint={`One per line, or separated by commas: a host, a domain (.example.com) or a network (100.64.0.0/10). Always direct: ${state.local.join(", ")}.`}>
             <textarea className={`${inputClass} min-h-20 py-2`} value={noProxy} onChange={(e) => changed(setNoProxy)(e.target.value)} spellCheck={false} />
           </Field>
         </>
@@ -154,15 +153,6 @@ function DohForm({ state }: { state: NetworkState }) {
         Look the ticked services up through DNS over HTTPS instead of this network's DNS, for Studio's calls and Kometa's. Calls that go through the proxy
         don't need it.
       </p>
-      {state.tmdb_quick_fix && (
-        <p className="text-sm text-info">
-          TMDb's DNS bypass, the quick fix on{" "}
-          <Link className="underline" to="/settings/connect">
-            Settings → Connect
-          </Link>
-          , is also on for Kometa.
-        </p>
-      )}
       <Field label="Provider">
         <select
           className={`${inputClass} w-56`}

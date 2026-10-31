@@ -63,9 +63,20 @@ def test_what_goes_direct():
         assert not network.direct(host, settings), host
 
 
+def test_no_proxy_entries_typed_with_commas_are_split(tmp_path, db):
+    # As saved before entries were split: one line holding a comma-separated list, with a sentence's full stop.
+    set_setting(db, network.SETTING, {"proxy_url": "http://proxy.lan:3128", "no_proxy": ["nas, 100.64.0.0/10, .example.com."]})
+    settings = network.load(db)
+    assert settings.no_proxy == ["nas", "100.64.0.0/10", ".example.com"]
+    assert network.direct("media.example.com", settings) and network.direct("100.64.1.1", settings) and network.direct("nas", settings)
+    assert network.split_entries(["a.lan b.lan", "", "a.lan,,c.lan"]) == ["a.lan", "b.lan", "c.lan"]
+    env = network.kometa_env(db, None, tmp_path / "data")
+    assert env["NO_PROXY"].endswith(",.local,nas,100.64.0.0/10,.example.com")
+
+
 def test_kometa_gets_the_proxy_doh_and_ipv4_first_in_its_environment(tmp_path, db):
     box = SecretBox.load_or_create(tmp_path / "data")
-    assert network.kometa_env(db, box, None, tmp_path / "data") == {}
+    assert network.kometa_env(db, box, tmp_path / "data") == {}
     set_setting(
         db,
         network.SETTING,
@@ -79,14 +90,14 @@ def test_kometa_gets_the_proxy_doh_and_ipv4_first_in_its_environment(tmp_path, d
             "prefer_ipv4": True,
         },
     )
-    env = network.kometa_env(db, box, None, tmp_path / "data")
+    env = network.kometa_env(db, box, tmp_path / "data")
     assert env["HTTPS_PROXY"] == env["http_proxy"] == "http://hasan:p%40ss%3Aword@proxy.lan:3128"
     assert env["NO_PROXY"].endswith(",.local,.example.com") and env["NO_PROXY"].startswith("localhost,127.0.0.0/8")
     assert (env["STUDIO_DOH_HOSTS"], env["STUDIO_DOH_URL"], env["STUDIO_PREFER_IPV4"]) == ("mdblist.com", "https://8.8.8.8/resolve", "1")
     assert env["PYTHONPATH"].split(os.pathsep)[0] == str(network.WRAPPER)
 
     set_setting(db, network.SETTING, {"proxy_url": "socks5://proxy.lan:1080"})
-    env = network.kometa_env(db, box, None, tmp_path / "data")
+    env = network.kometa_env(db, box, tmp_path / "data")
     extras = tmp_path / "data" / "kometa-extras"
     assert env["HTTPS_PROXY"] == "socks5://proxy.lan:1080"
     assert env["PYTHONPATH"] == str(extras) and (extras / "socks.py").is_file()  # PySocks for Kometa's Python, from Studio's own
@@ -202,7 +213,7 @@ def test_dns_over_https_is_saved_only_after_each_ticked_service_resolves(tmp_pat
     assert bad.status_code == 422 and "has no address for imdb.com" in bad.json()["detail"]
     assert unknown.status_code == 422
     assert saved["doh_services"] == ["tmdb", "mdblist"] and ipv4["prefer_ipv4"] is True
-    assert [s["id"] for s in saved["services"]][:2] == ["tmdb", "mdblist"] and saved["tmdb_quick_fix"] is False
+    assert [s["id"] for s in saved["services"]][:2] == ["tmdb", "mdblist"]
 
 
 def test_the_connection_check_spots_a_dns_block(tmp_path, monkeypatch):
@@ -253,8 +264,8 @@ def test_an_address_that_resets_is_skipped_for_the_next(tmp_path, db):
         async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as plain:
             from kometa_studio import doh
 
-            through_quick_fix = (await doh.get(plain, "https://api.themoviedb.org/3/")).status_code
-        return through_studio, through_quick_fix
+            through_doh_get = (await doh.get(plain, "https://api.themoviedb.org/3/")).status_code
+        return through_studio, through_doh_get
 
     assert asyncio.run(scenario()) == (401, 401)
     assert tried == ["3.175.86.50", "3.175.86.67", "3.175.86.50", "3.175.86.67"]

@@ -21,7 +21,6 @@ const state: NetworkState = {
     { id: "cloudflare", name: "Cloudflare (1.1.1.1)" },
     { id: "google", name: "Google (8.8.8.8)" },
   ],
-  tmdb_quick_fix: true,
 };
 
 describe("Settings → Network", () => {
@@ -39,7 +38,7 @@ describe("Settings → Network", () => {
     fireEvent.click(within(form).getByLabelText("The proxy asks for a login"));
     fireEvent.change(within(form).getByLabelText("Username"), { target: { value: "hasan" } });
     fireEvent.change(within(form).getByLabelText("Password"), { target: { value: "secret" } });
-    fireEvent.change(within(form).getByLabelText("Don't use the proxy for"), { target: { value: "nas\n\n.example.com " } });
+    fireEvent.change(within(form).getByLabelText("Don't use the proxy for"), { target: { value: "nas\n\n.example.com, 100.64.0.0/10 " } });
     expect(within(form).getByRole("button", { name: "Save" })).toBeDisabled();
     fireEvent.click(within(form).getByRole("button", { name: "Test" }));
     expect(await within(form).findByText("Works: the internet sees Studio as 203.0.113.9.")).toBeInTheDocument();
@@ -50,12 +49,12 @@ describe("Settings → Network", () => {
         url: "socks5://proxy.lan:1080",
         username: "hasan",
         password: "secret",
-        no_proxy: ["nas", ".example.com"],
+        no_proxy: ["nas", ".example.com", "100.64.0.0/10"],
       }),
     );
   });
 
-  it("tests DNS over HTTPS for the ticked services before saving, and says the TMDb quick fix is on", async () => {
+  it("tests DNS over HTTPS for the ticked services before saving", async () => {
     const calls = mockApi({
       "GET /settings/network": () => state,
       "POST /settings/network/doh/test": () => ({ ok: true, found: { tmdb: "13.224.0.10" } }),
@@ -64,7 +63,6 @@ describe("Settings → Network", () => {
     renderAt("/settings/network");
 
     const form = await screen.findByRole("form", { name: "DNS over HTTPS" });
-    expect(within(form).getByText(/TMDb's DNS bypass, the quick fix on/)).toBeInTheDocument();
     fireEvent.change(within(form).getByLabelText("Provider"), { target: { value: "google" } });
     fireEvent.click(within(form).getByLabelText("TMDb"));
     expect(within(form).getByRole("button", { name: "Save" })).toBeDisabled();

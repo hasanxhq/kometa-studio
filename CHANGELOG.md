@@ -99,9 +99,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Apply now** runs overlays for that library.
   - **Add** sets up a daily overlay pass.
   - **Turn overlays off** has Kometa put the original posters back (with "Leave Maintainerr overlays alone" on, Maintainerr puts its posters back first and draws again over the originals), and Kometa draws none until they're turned on again. It's refused without an Original Posters backup.
-- Settings → Connect: a **DNS bypass (quick fix)** checkbox next to the TMDb key. When ticked, TMDb is looked up through Cloudflare's DNS over HTTPS (1.1.1.1) instead of the network's DNS, for networks whose DNS blocks TMDb. It's tested and saved with the key and applies to every call with that key, Studio's and Kometa's. Saving another key without it ticked turns it off. It's a quick fix, to be removed once the proxy on Settings → Network is proven to work.
 - Settings → Network, for Studio's calls and Kometa's alike:
-  - **Proxy:** HTTP, HTTPS or SOCKS5, with an optional login and a list of what to reach directly (local addresses always are). It's saved only after a test shows it works and which address the internet sees. Kometa needs nothing installed for SOCKS5.
+  - **Proxy:** HTTP, HTTPS or SOCKS5, with an optional login and a list of what to reach directly (local addresses always are), one per line or separated by commas. It's saved only after a test shows it works and which address the internet sees. Kometa needs nothing installed for SOCKS5.
   - **DNS over HTTPS** (Cloudflare or Google) for ticked services: TMDb, MDBList, IMDb, TheTVDB, plex.tv, Letterboxd, GitHub. It's saved only after each one resolves.
   - **IPv4 first**, for networks with broken IPv6.
   - **Connection check:** for each service Studio and Kometa use, what this network's DNS says and what DNS over HTTPS says, whether it connects and how fast, and a verdict, such as "Blocked by this network's DNS".

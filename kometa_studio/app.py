@@ -128,7 +128,7 @@ def create_app(
         maintainerr = Maintainerr(app.state.db, app.state.http, app.state.secrets, settings.kometa_config, settings.kometa_entry.parent if settings.kometa_entry else None)
         app.state.maintainerr = maintainerr
         maintainerr.runner = runner
-        runner.extra_env = lambda: network.kometa_env(app.state.db, app.state.secrets, settings.kometa_config, settings.data_dir)
+        runner.extra_env = lambda: network.kometa_env(app.state.db, app.state.secrets, settings.data_dir)
         if app.state.writer is not None:
             app.state.writer.extra_env = runner.extra_env
         runner.hooks.append(maintainerr)
