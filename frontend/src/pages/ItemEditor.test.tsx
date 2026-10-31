@@ -200,6 +200,77 @@ describe("The collection form", () => {
   });
 });
 
+describe("Where a collection shows", () => {
+  const heroesWith = (value: Record<string, unknown>) => ({
+    ...routes,
+    "GET /config/item?path=Movies.yml&section=collections&name=Heroes": () => ({ ...heroes, value: { ...heroes.value, ...value } }),
+    "POST /config/item": () => ({ backup: "b", files: [], validation: passed }),
+  });
+  const open = () => renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
+  const saved = async (calls: { route: string; body: unknown }[]) => {
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /config/item")).toBe(true));
+    return (calls.find((c) => c.route === "POST /config/item")?.body as { value: Record<string, unknown> }).value;
+  };
+
+  it("ticks a box to show it", async () => {
+    const calls = mockApi(heroesWith({}));
+    open();
+    const home = await screen.findByRole("checkbox", { name: "My home" });
+    expect(home).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Friends' home" })).toBeInTheDocument();
+
+    fireEvent.click(home);
+
+    expect((await saved(calls)).visible_home).toBe(true);
+  });
+
+  it("writes false when a saved yes is unticked, so Kometa changes Plex", async () => {
+    const calls = mockApi(heroesWith({ visible_home: true }));
+    open();
+    const home = await screen.findByRole("checkbox", { name: "My home" });
+    expect(home).toBeChecked();
+
+    fireEvent.click(home);
+
+    expect((await saved(calls)).visible_home).toBe(false);
+  });
+
+  it("goes back to not set when a box that was never set is ticked and unticked", async () => {
+    const calls = mockApi(heroesWith({}));
+    open();
+    const home = await screen.findByRole("checkbox", { name: "My home" });
+
+    fireEvent.click(home);
+    fireEvent.click(home);
+
+    expect(home).not.toBeChecked();
+    expect(await saved(calls)).not.toHaveProperty("visible_home");
+  });
+
+  it("keeps a schedule as YAML, and the others as boxes", async () => {
+    const calls = mockApi(heroesWith({ visible_home: "weekly(sunday)" }));
+    open();
+
+    expect(await screen.findByLabelText("My home")).toHaveValue("weekly(sunday)");
+    expect(screen.queryByRole("checkbox", { name: "My home" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Friends' home" }));
+
+    expect(await saved(calls)).toMatchObject({ visible_home: "weekly(sunday)", visible_shared: true });
+  });
+
+  it("offers YAML for all of them under Show Advanced", async () => {
+    localStorage.setItem("studio.showAdvanced", "true");
+    mockApi(heroesWith({ visible_home: true }));
+    open();
+
+    expect(await screen.findByLabelText(/My home/)).toHaveValue("true"); // yes or no as a control, since the schema's shapes allow it
+    expect(screen.getByLabelText(/Friends' home/)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "My home" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Turn on Show Advanced/)).not.toBeInTheDocument();
+  });
+});
+
 describe("Leaving the form", () => {
   async function editHeroes() {
     renderAt("/items?path=Movies.yml&section=collections&name=Heroes&library=Movies");
