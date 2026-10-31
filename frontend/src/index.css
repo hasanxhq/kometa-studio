@@ -17,6 +17,17 @@
   --color-err: #f29b8a;
   --color-info: #9dc2f7;
 
+  /* The Defaults gallery's cards, one colour per category. */
+  --color-banner-chart: #3b2a1e;
+  --color-banner-award: #4a3c14;
+  --color-banner-streaming: #2a2f5c;
+  --color-banner-genre: #1e3a33;
+  --color-banner-studio: #3a1e30;
+  --color-banner-people: #33264a;
+  --color-banner-time: #1e2e45;
+  --color-banner-media: #1a3a42;
+  --color-banner-plain: #262a30;
+
   --font-display: "Space Grotesk Variable", system-ui, sans-serif;
   --font-sans: "Inter Variable", system-ui, sans-serif;
   --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;

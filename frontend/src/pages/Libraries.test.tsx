@@ -163,8 +163,10 @@ describe("A library", () => {
   it("shows defaults with their template variables, and operations", async () => {
     mockApi(api);
     renderAt("/libraries/Movies?tab=defaults");
-    expect(await screen.findByText("Basic Charts Collections")).toBeInTheDocument();
-    expect(screen.getByText("sep_style: purple")).toBeInTheDocument();
+    const basic = await screen.findByRole("listitem", { name: "Basic Charts Collections" }); // in use, even with no catalogue to show the rest
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    fireEvent.click(within(basic).getByRole("button", { name: /^Customize/ }));
+    expect(screen.getByLabelText("What this writes to config.yml")).toHaveTextContent("sep_style: purple");
 
     fireEvent.click(screen.getByRole("tab", { name: "Operations" }));
     await waitFor(() => expect(screen.getByText("mass_genre_update")).toBeInTheDocument());

@@ -97,6 +97,7 @@ export function SettingField({
   problems,
   hint,
   unset = "Not set",
+  optionLabels,
 }: {
   name: string;
   label?: string;
@@ -108,6 +109,7 @@ export function SettingField({
   problems?: string[];
   hint?: string;
   unset?: string; // what an empty field means, e.g. Kometa's default
+  optionLabels?: Record<string, string>; // an enum's options in words
 }) {
   const id = useId();
   const control = root && schema ? controlFor(root, schema) : { kind: "yaml" as const };
@@ -122,11 +124,11 @@ export function SettingField({
     );
   } else if (control.kind === "enum") {
     input = (
-      <select id={id} className={inputClass} value={value === undefined ? "" : String(value)} onChange={(e) => onChange(e.target.value || undefined)}>
+      <select id={id} className={`${inputClass} ${optionLabels ? "font-sans!" : ""}`} value={value === undefined ? "" : String(value)} onChange={(e) => onChange(e.target.value || undefined)}>
         <option value="">{unset}</option>
         {control.options.map((option) => (
           <option key={option} value={option}>
-            {option}
+            {optionLabels?.[option] ?? option}
           </option>
         ))}
       </select>

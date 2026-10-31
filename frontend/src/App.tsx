@@ -13,6 +13,7 @@ import { FileEditor } from "./pages/FileEditor";
 
 // The form editor brings Kometa's schema checking; load it when it's opened.
 const ItemEditor = lazy(() => import("./pages/ItemEditor"));
+import { Defaults } from "./pages/Defaults";
 import { Libraries } from "./pages/Libraries";
 import { Overlays } from "./pages/Overlays";
 import { Overview } from "./pages/Overview";
@@ -38,6 +39,7 @@ import { SystemUpdates } from "./pages/SystemUpdates";
 const built: Record<string, ComponentType> = {
   "/": Overview,
   "/libraries": Libraries,
+  "/defaults": Defaults,
   "/overlays": Overlays,
   "/playlists": Playlists,
   "/activity/queue": ActivityQueue,
