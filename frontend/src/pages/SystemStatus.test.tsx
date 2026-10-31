@@ -16,6 +16,7 @@ const status: Status = {
     { source: "plex", level: "error", message: "Can't reach Plex at the address in config.yml: No answer within 5 s", link: "/settings/plex" },
     { source: "updates", level: "info", message: "Kometa 2.6.0 is out (you have 2.5.3).", link: "/system/updates" },
   ],
+  runs: { current: null, queued: 0, next_scheduled: null },
 };
 
 describe("Health", () => {

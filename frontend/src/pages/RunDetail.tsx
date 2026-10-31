@@ -18,7 +18,7 @@ function Stat({ label, value, tone }: { label: string; value: number | undefined
   );
 }
 
-function Summary({ summary }: { summary: RunSummary }) {
+export function Summary({ summary }: { summary: RunSummary }) {
   return (
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
       <Stat label="Collections created" value={summary.collections_created} />

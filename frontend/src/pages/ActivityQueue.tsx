@@ -11,7 +11,7 @@ import { RunRequestFields, emptyDraft, requestFromDraft, type RunDraft } from ".
 import { Button, Card, Tag } from "../components/ui";
 import { describeRequest, formatDuration, formatTime, isActive, statusLabels, statusTones, triggerLabels } from "../runs";
 
-function RunForm({ kometa, onQueued }: { kometa: KometaInfo | undefined; onQueued: () => void }) {
+export function RunForm({ kometa, onQueued }: { kometa: KometaInfo | undefined; onQueued: () => void }) {
   const { showAdvanced } = useAdvanced();
   const [draft, setDraft] = useState<RunDraft>(emptyDraft);
   const create = useMutation({ mutationFn: (body: RunRequest) => api.runs.create(body), onSuccess: onQueued });

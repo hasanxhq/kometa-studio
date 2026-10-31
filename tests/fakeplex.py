@@ -60,6 +60,7 @@ class FakePlex:
         ],
         "2": [],
     }
+    SIZES = {"1": 812, "2": 64}  # movies, shows
     LABELS = {"1": [{"key": "33517", "title": "Kometa"}, {"key": "40", "title": "PMM"}, {"key": "41", "title": "Favourites"}], "2": []}
     LABELLED = {"33517": ["101"], "40": ["103"], "41": ["102"]}
     # What /library/metadata/<collection> and /library/collections/<key>/children give (Plex 1.41, trimmed).
@@ -97,6 +98,8 @@ class FakePlex:
                 return httpx.Response(200, json={"MediaContainer": {"Metadata": self.COLLECTIONS[key]}})
             if what == "label":
                 return httpx.Response(200, json={"MediaContainer": {"Directory": self.LABELS[key]}})
+            if what == "all" and request.url.params.get("type") in ("1", "2") and "addedAt>>" not in request.url.params:
+                return httpx.Response(200, json={"MediaContainer": {"size": 0, "totalSize": self.SIZES.get(key, 0), "Metadata": []}})
             if what == "all" and request.url.params.get("type") in ("1", "4"):  # how many were added since, as Plex's addedAt>>= filter
                 since = int(request.url.params.get("addedAt>>", "0"))
                 count = len([at for at in self.added.get(key, []) if at >= since])

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Suspense, lazy, type ComponentType } from "react";
-import { Navigate, Route, Routes } from "react-router";
+import { Route, Routes } from "react-router";
 
 import { AdvancedProvider } from "./advanced";
 import { AuthGate } from "./components/AuthGate";
@@ -15,6 +15,7 @@ import { FileEditor } from "./pages/FileEditor";
 const ItemEditor = lazy(() => import("./pages/ItemEditor"));
 import { Libraries } from "./pages/Libraries";
 import { Overlays } from "./pages/Overlays";
+import { Overview } from "./pages/Overview";
 import { LibraryDetail } from "./pages/LibraryDetail";
 import { Placeholder } from "./pages/Placeholder";
 import { RunDetail } from "./pages/RunDetail";
@@ -33,6 +34,7 @@ import { SystemUpdates } from "./pages/SystemUpdates";
 
 // Pages that exist so far; every other nav entry shows a placeholder.
 const built: Record<string, ComponentType> = {
+  "/": Overview,
   "/libraries": Libraries,
   "/overlays": Overlays,
   "/activity/queue": ActivityQueue,
@@ -58,7 +60,6 @@ export function App({ queryClient = new QueryClient() }: { queryClient?: QueryCl
         <AuthGate>
           <Routes>
             <Route element={<Layout />}>
-              <Route index element={<Navigate to="/libraries" replace />} />
               {pages.map((page) => {
                 const Built = built[page.path];
                 return <Route key={page.path} path={page.path} element={Built ? <Built /> : <Placeholder page={page} />} />;

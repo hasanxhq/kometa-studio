@@ -13,6 +13,10 @@ export type Section = {
 
 export const sections: Section[] = [
   {
+    label: "Overview",
+    pages: [{ label: "Overview", path: "/", summary: "What's running, the last and next run, health, unapplied changes and Run now." }],
+  },
+  {
     label: "Libraries",
     pages: [
       {
@@ -77,5 +81,6 @@ const nestedPages: { pattern: RegExp; label: string }[] = [
 export function pageTitle(pathname: string): string {
   const nested = nestedPages.find((page) => page.pattern.test(pathname));
   if (nested) return nested.label;
-  return [...pages, ...otherPages].find((page) => pathname.startsWith(page.path))?.label ?? "Kometa Studio";
+  if (pathname === "/") return "Overview";
+  return [...pages, ...otherPages].find((page) => page.path !== "/" && pathname.startsWith(page.path))?.label ?? "Kometa Studio";
 }

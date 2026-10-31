@@ -14,10 +14,12 @@ describe("App shell", () => {
     }
   });
 
-  it("sends / to Libraries", async () => {
+  it("opens on the Overview", async () => {
     mockApi({});
     renderAt("/");
-    await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Libraries"));
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Overview"));
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Libraries" })).not.toHaveAttribute("aria-current");
   });
 
   it("shows versions on System → Status", async () => {

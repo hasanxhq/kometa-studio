@@ -10,6 +10,7 @@ describe("The header's title", () => {
     expect(pageTitle("/activity/queue/12")).toBe("Run");
     expect(pageTitle("/activity/queue")).toBe("Queue");
     expect(pageTitle("/items")).toBe("Edit");
+    expect(pageTitle("/")).toBe("Overview");
     expect(pageTitle("/nowhere")).toBe("Kometa Studio");
   });
 });

@@ -34,7 +34,7 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
     <nav aria-label="Main" className="flex flex-col gap-5 p-3">
       {sections.map((section) =>
         section.pages.length === 1 ? (
-          <NavLink key={section.label} to={section.pages[0].path} className={navLinkClass} onClick={onNavigate}>
+          <NavLink key={section.label} to={section.pages[0].path} end className={navLinkClass} onClick={onNavigate}>
             {section.label}
           </NavLink>
         ) : (
