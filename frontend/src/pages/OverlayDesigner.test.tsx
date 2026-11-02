@@ -57,7 +57,8 @@ const configSchema = {
         vertical_offset: { type: ["string", "integer"] },
         horizontal_position: { type: "string" },
         vertical_position: { type: "string" },
-        rating1: { type: "string", enum: ["none", "imdb", "tmdb"] },
+        rating1: { type: "string", enum: ["none", "imdb", "tmdb", "critic"] },
+        rating1_image: { type: "string", enum: ["imdb", "tmdb", "rt_tomato"] },
         builder_level: { type: "string", enum: ["show", "season", "episode"] },
         use_resolution: { type: "boolean" },
         use_edition: { type: "boolean" },
@@ -143,7 +144,9 @@ describe("The overlay designer", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Bottom right" }));
     expect(within(settings()).getByLabelText("What this writes to config.yml")).toHaveTextContent("horizontal_position: right vertical_position: bottom");
     expect(screen.queryByLabelText("Offset X")).not.toBeInTheDocument();
-    await within(settings()).findByRole("combobox", { name: /Rating 1/ });
+    fireEvent.change(await within(settings()).findByRole("combobox", { name: /^Rating 1 \(/ }), { target: { value: "critic" } });
+    fireEvent.change(within(settings()).getByRole("combobox", { name: /Rating 1 logo/ }), { target: { value: "rt_tomato" } });
+    expect(within(settings()).getByLabelText("What this writes to config.yml")).toHaveTextContent("rating1: critic rating1_image: rt_tomato");
   });
 
   it("offers what a default can choose under Show when, and says so when it has nothing", async () => {

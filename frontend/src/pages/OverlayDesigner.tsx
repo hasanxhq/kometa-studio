@@ -28,7 +28,13 @@ const titleOf = (reference: FileReference, entry: DefaultEntry | undefined) => s
 /** The controls this default has, besides the anchor. */
 function controls(name: string, moved: "align" | "position" | undefined, libraryType: string | null): Featured[] {
   return [
-    ...(name === "ratings" ? [1, 2, 3].flatMap((n) => [{ key: `rating${n}`, label: `Rating ${n}` }]) : []),
+    ...(name === "ratings"
+      ? [1, 2, 3].flatMap((n) => [
+          { key: `rating${n}`, label: `Rating ${n}` },
+          // Kometa works it out from sources such as IMDb and TMDb; critic, audience and user ratings don't say whose they are.
+          { key: `rating${n}_image`, label: `Rating ${n} logo`, hint: "Needed for critic, audience and user ratings." },
+        ])
+      : []),
     ...(name === "ratings" ? [{ key: "rating_alignment", label: "Ratings run" }] : []),
     ...(name === "resolution"
       ? [
