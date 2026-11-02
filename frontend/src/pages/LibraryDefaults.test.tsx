@@ -233,6 +233,166 @@ describe("The Defaults gallery", () => {
     expect(within(await card("retired")).getByRole("checkbox", { name: "Enabled" })).toBeChecked();
   });
 
+  describe("with unsaved changes in the panel", () => {
+    const dialog = () => screen.findByRole("alertdialog");
+    const noDialog = () => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    const editStreaming = async () => {
+      await pick("Streaming Collections");
+      const form = await screen.findByRole("form", { name: "Variables for Streaming Collections" });
+      fireEvent.click(within(form).getByRole("checkbox", { name: "Disney+" }));
+      expect(within(form).getByRole("checkbox", { name: "Disney+" })).not.toBeChecked();
+    };
+    const disney = () => within(screen.getByRole("form", { name: "Variables for Streaming Collections" })).getByRole("checkbox", { name: "Disney+" });
+
+    it("asks before picking another card, and stays or moves as told", async () => {
+      mockApi(routes);
+      renderAt("/defaults");
+      await editStreaming();
+
+      await pick("Oscars Collections");
+      fireEvent.click(within(await dialog()).getByRole("button", { name: "Stay here" }));
+      noDialog();
+      expect(disney()).not.toBeChecked();
+
+      await pick("Oscars Collections");
+      fireEvent.click(within(await dialog()).getByRole("button", { name: "Leave without saving" }));
+      expect(await screen.findByRole("form", { name: "Variables for Oscars Collections" })).toBeInTheDocument();
+      noDialog();
+
+      await pick("Streaming Collections"); // nothing unsaved now, so no question, and the edit is gone
+      noDialog();
+      await waitFor(() => expect(disney()).toBeChecked());
+    });
+
+    it("doesn't ask when nothing changed, or for the card already open", async () => {
+      mockApi(routes);
+      renderAt("/defaults");
+      await pick("Streaming Collections");
+      await screen.findByRole("form", { name: "Variables for Streaming Collections" });
+      await pick("Oscars Collections");
+      await screen.findByRole("form", { name: "Variables for Oscars Collections" });
+      noDialog();
+
+      await pick("Streaming Collections");
+      await screen.findByRole("form", { name: "Variables for Streaming Collections" });
+      fireEvent.click(disney());
+      await pick("Streaming Collections");
+      noDialog();
+      expect(disney()).not.toBeChecked();
+    });
+
+    it("stops asking once the changes are undone", async () => {
+      mockApi(routes);
+      renderAt("/defaults");
+      await editStreaming();
+      fireEvent.click(screen.getByRole("button", { name: "Undo my changes" }));
+      await pick("Oscars Collections");
+      await screen.findByRole("form", { name: "Variables for Oscars Collections" });
+      noDialog();
+    });
+
+    it("asks before Close", async () => {
+      mockApi(routes);
+      renderAt("/defaults");
+      await editStreaming();
+      fireEvent.click(screen.getByRole("button", { name: "Close" }));
+      fireEvent.click(within(await dialog()).getByRole("button", { name: "Leave without saving" }));
+      expect(await screen.findByRole("form", { name: "Variables for Movies" })).toBeInTheDocument();
+    });
+
+    it("keeps the edits through the filters, which leave the panel alone", async () => {
+      mockApi(routes);
+      renderAt("/defaults");
+      await editStreaming();
+      fireEvent.click(screen.getByRole("button", { name: "Overlays" }));
+      fireEvent.click(screen.getByRole("button", { name: "Collections" }));
+      fireEvent.click(screen.getByRole("button", { name: "Award" }));
+      noDialog();
+      expect(disney()).not.toBeChecked();
+    });
+
+    it("asks before Apply to moves to another library", async () => {
+      mockApi(routes);
+      renderAt("/defaults");
+      await editStreaming();
+
+      fireEvent.change(screen.getByLabelText("Apply to"), { target: { value: "TV Shows" } });
+      fireEvent.click(within(await dialog()).getByRole("button", { name: "Stay here" }));
+      expect(screen.getByLabelText("Apply to")).toHaveValue("Movies");
+      expect(disney()).not.toBeChecked();
+
+      fireEvent.change(screen.getByLabelText("Apply to"), { target: { value: "TV Shows" } });
+      fireEvent.click(within(await dialog()).getByRole("button", { name: "Leave without saving" }));
+      await waitFor(() => expect(screen.getByLabelText("Apply to")).toHaveValue("TV Shows"));
+    });
+
+    it("asks before leaving the tab of a library's page, or the page", async () => {
+      mockApi(routes);
+      renderAt("/libraries/Movies?tab=defaults");
+      await editStreaming();
+
+      fireEvent.click(screen.getByRole("tab", { name: "Overlays" }));
+      fireEvent.click(within(await dialog()).getByRole("button", { name: "Stay here" }));
+      expect(disney()).not.toBeChecked();
+
+      fireEvent.click(screen.getByRole("link", { name: "Overview" }));
+      expect(await dialog()).toBeInTheDocument();
+    });
+
+    it("warns when the browser tab closes", async () => {
+      mockApi(routes);
+      renderAt("/defaults");
+      await pick("Streaming Collections");
+      await screen.findByRole("form", { name: "Variables for Streaming Collections" });
+      const closing = () => {
+        const event = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      };
+      expect(closing()).toBe(false);
+      fireEvent.click(disney());
+      expect(closing()).toBe(true);
+    });
+
+    it("covers the library's own variables too", async () => {
+      mockApi(routes);
+      renderAt("/defaults");
+      const form = await screen.findByRole("form", { name: "Variables for Movies" });
+      await waitFor(() => expect(within(form).getByRole("combobox", { name: /Separator style/ })).toHaveValue("purple"));
+      fireEvent.change(within(form).getByRole("combobox", { name: /Separator style/ }), { target: { value: "blue" } });
+      await pick("Oscars Collections");
+      expect(await dialog()).toBeInTheDocument();
+      expect(screen.getByRole("form", { name: "Variables for Movies" })).toBeInTheDocument();
+    });
+
+    it("asks before turning off the default being edited, but not another one", async () => {
+      const calls = mockApi({
+        ...routes,
+        "GET /config/libraries/Movies": () => ({ ...movies, collection_files: [ref("streaming", { region: "GB", use_netflix: false }), ref("oscars")] }),
+        "DELETE /config/libraries/Movies/defaults/collection/streaming": () => saved,
+        "DELETE /config/libraries/Movies/defaults/collection/oscars": () => saved,
+      });
+      renderAt("/defaults");
+      await editStreaming();
+
+      const oscars = await card("Oscars Collections");
+      fireEvent.click(within(oscars).getByRole("checkbox", { name: "Enabled" }));
+      fireEvent.click(within(oscars).getByRole("button", { name: "Turn off Oscars Collections" }));
+      await waitFor(() => expect(calls.some((c) => c.route === "DELETE /config/libraries/Movies/defaults/collection/oscars")).toBe(true));
+      noDialog();
+
+      const streaming = await card("Streaming Collections");
+      fireEvent.click(within(streaming).getByRole("checkbox", { name: "Enabled" }));
+      fireEvent.click(within(streaming).getByRole("button", { name: "Turn off Streaming Collections" }));
+      fireEvent.click(within(await dialog()).getByRole("button", { name: "Stay here" }));
+      expect(calls.some((c) => c.route === "DELETE /config/libraries/Movies/defaults/collection/streaming")).toBe(false);
+
+      fireEvent.click(within(streaming).getByRole("button", { name: "Turn off Streaming Collections" }));
+      fireEvent.click(within(await dialog()).getByRole("button", { name: "Leave without saving" }));
+      await waitFor(() => expect(calls.some((c) => c.route === "DELETE /config/libraries/Movies/defaults/collection/streaming")).toBe(true));
+    });
+  });
+
   it("sets the library's own variables when no card is picked, and shows Kometa's refusal", async () => {
     const refusal = { message: "Kometa found problems, so nothing was saved.", validation: { ...saved.validation, ok: false, errors: ["config.yml: sep_style must be one of …"] } };
     const calls = mockApi({ ...routes, "PUT /config/libraries/Movies/template-variables": () => new Response(JSON.stringify({ detail: refusal }), { status: 422 }) });
