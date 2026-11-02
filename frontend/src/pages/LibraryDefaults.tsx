@@ -8,6 +8,7 @@ import { stringify } from "yaml";
 
 import { api, type ConfigLibrary, type DefaultEntry, type DefaultKind, type DefaultToggle, type FileReference, type SaveResult } from "../api";
 import { Problems, SettingField, YamlBox } from "../components/forms/fields";
+import { LeaveDialog, LeaveGuard } from "../components/LeaveGuard";
 import { Button, Checkbox, ConfirmButton, inputClass } from "../components/ui";
 import { SaveError } from "../components/ValidationReport";
 import { categories, categoryOf, describeDefault, shortTitle } from "../defaults";
@@ -68,6 +69,7 @@ function VariablesEditor({
   toggles = [],
   togglesLegend = "",
   preview,
+  onUnsaved,
 }: {
   label: string;
   root: JsonSchema | null;
@@ -81,6 +83,7 @@ function VariablesEditor({
   toggles?: DefaultToggle[];
   togglesLegend?: string;
   preview?: (values: Values) => string;
+  onUnsaved?: (unsaved: boolean) => void;
 }) {
   const [values, setValues] = useState<Values>(saved);
   const [badYaml, setBadYaml] = useState<Set<string>>(new Set());
@@ -95,6 +98,12 @@ function VariablesEditor({
     .sort((a, b) => (COMMON.includes(a) === COMMON.includes(b) ? a.localeCompare(b) : COMMON.includes(a) ? -1 : 1));
   const others = Object.entries(values).filter(([key]) => !handled.has(key));
   const dirty = JSON.stringify(values) !== JSON.stringify(saved);
+  // YAML that doesn't parse never reaches `values`, but it's still typing that would be lost.
+  const unsaved = dirty || badYaml.size > 0;
+  useEffect(() => {
+    onUnsaved?.(unsaved);
+    return () => onUnsaved?.(false);
+  }, [unsaved, onUnsaved]);
   const set = (key: string, value: unknown) =>
     setValues((current) => {
       const next = { ...current };
@@ -244,7 +253,21 @@ type Listed = DefaultEntry & { kind: DefaultKind; reference?: FileReference };
 const idOf = (item: Pick<Listed, "kind" | "name">) => `${item.kind}/${item.name}`;
 const titleOf = (item: Listed) => item.title ?? item.name;
 
-function Customize({ library, item, root, libraryType, onClose }: { library: string; item: Listed; root: JsonSchema | null; libraryType: string | null; onClose: () => void }) {
+function Customize({
+  library,
+  item,
+  root,
+  libraryType,
+  onClose,
+  onUnsaved,
+}: {
+  library: string;
+  item: Listed;
+  root: JsonSchema | null;
+  libraryType: string | null;
+  onClose: () => void;
+  onUnsaved: (unsaved: boolean) => void;
+}) {
   const save = useSave((values: Values) => api.config.useDefault(library, item.kind, item.name, values));
   const title = shortTitle(titleOf(item));
   const variables = (item.reference?.template_variables ?? {}) as Values;
@@ -283,6 +306,7 @@ function Customize({ library, item, root, libraryType, onClose }: { library: str
         toggles={toggles}
         togglesLegend={legend}
         preview={preview}
+        onUnsaved={onUnsaved}
       />
       {save.isSuccess && (
         <p role="status" className="text-sm text-ok">
@@ -353,10 +377,15 @@ export function DefaultsGallery({ config, libraryType }: { config: ConfigLibrary
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [changing, setChanging] = useState<string | null>(null);
   const [added, setAdded] = useState<string | null>(null);
+  const [unsaved, setUnsaved] = useState(false); // in whichever editor the panel holds
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
   const panel = useRef<HTMLElement>(null);
   const add = useSave((item: Listed) => api.config.useDefault(library, item.kind, item.name, {}));
   const drop = useSave((item: Listed) => api.config.dropDefault(library, item.kind, item.name));
   const libraryVariables = useSave((values: Values) => api.config.setLibraryVariables(library, values));
+
+  // Runs something that replaces the panel's editor, asking first if that would lose edits.
+  const leaveEditor = (action: () => void) => (unsaved ? setLeaving(() => action) : action());
 
   // Below the grid on a narrow screen, so picking a card has to bring it into view.
   useEffect(() => {
@@ -391,6 +420,17 @@ export function DefaultsGallery({ config, libraryType }: { config: ConfigLibrary
 
   return (
     <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
+      {/* The query string is the library, or the library page's tab. */}
+      <LeaveGuard dirty={unsaved} query />
+      {leaving && (
+        <LeaveDialog
+          onStay={() => setLeaving(null)}
+          onLeave={() => {
+            leaving();
+            setLeaving(null);
+          }}
+        />
+      )}
       <div className="flex min-w-0 flex-1 flex-col gap-5">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Filter defaults">
           {(["collection", "overlay"] as const).map((k) => (
@@ -437,7 +477,7 @@ export function DefaultsGallery({ config, libraryType }: { config: ConfigLibrary
                 item={item}
                 library={library}
                 selected={idOf(item) === selectedId}
-                onSelect={() => setSelectedId(idOf(item))}
+                onSelect={() => idOf(item) !== selectedId && leaveEditor(() => setSelectedId(idOf(item)))}
                 busy={changing === idOf(item) && (add.isPending || drop.isPending)}
                 onAdd={() => {
                   setChanging(idOf(item));
@@ -445,8 +485,13 @@ export function DefaultsGallery({ config, libraryType }: { config: ConfigLibrary
                   add.mutate(item);
                 }}
                 onDrop={() => {
-                  setChanging(idOf(item));
-                  drop.mutate(item);
+                  const turnOff = () => {
+                    setChanging(idOf(item));
+                    drop.mutate(item);
+                  };
+                  // Its variables go with it, so the panel's edits would too.
+                  if (idOf(item) === selectedId) leaveEditor(turnOff);
+                  else turnOff();
                 }}
               />
             ))}
@@ -456,7 +501,7 @@ export function DefaultsGallery({ config, libraryType }: { config: ConfigLibrary
 
       <aside ref={panel} aria-label="Customize" className="flex scroll-mt-4 flex-col gap-[18px] rounded-card border border-border bg-surface p-5 xl:sticky xl:top-0 xl:max-h-[calc(100dvh-7.5rem)] xl:w-[380px] xl:shrink-0 xl:overflow-y-auto">
         {selected ? (
-          <Customize key={idOf(selected)} library={library} item={selected} root={root} libraryType={type} onClose={() => setSelectedId(null)} />
+          <Customize key={idOf(selected)} library={library} item={selected} root={root} libraryType={type} onClose={() => leaveEditor(() => setSelectedId(null))} onUnsaved={setUnsaved} />
         ) : (
           <>
             <div>
@@ -475,6 +520,7 @@ export function DefaultsGallery({ config, libraryType }: { config: ConfigLibrary
               onSave={(values) => libraryVariables.mutate(values)}
               saving={libraryVariables.isPending}
               error={libraryVariables.error}
+              onUnsaved={setUnsaved}
             />
           </>
         )}
