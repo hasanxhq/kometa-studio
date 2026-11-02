@@ -352,13 +352,23 @@ function Pill({ pressed, onClick, children }: { pressed: boolean; onClick: () =>
 function Tile({ item, library, selected, onSelect, busy, onAdd, onDrop }: { item: Listed; library: string; selected: boolean; onSelect: () => void; busy: boolean; onAdd: () => void; onDrop: () => void }) {
   const [asking, setAsking] = useState(false);
   const title = titleOf(item);
+  const [noCover, setNoCover] = useState(item.kind !== "collection"); // overlays have no real artwork of their own to show
   return (
     <li aria-label={title} className={`flex flex-col overflow-hidden rounded-card bg-surface ${selected ? "border-2 border-accent" : "border border-border"}`}>
       <button type="button" aria-pressed={selected} aria-label={`Customize ${title} for ${library}`} onClick={onSelect} className="flex grow flex-col text-left">
-        <span aria-hidden="true" className={`flex h-[110px] w-full items-end p-3 font-display text-lg leading-snug font-semibold ${categoryOf(item.kind, item).banner}`}>
-          {shortTitle(title)}
-        </span>
-        <span className="px-3.5 pt-3.5 text-[13px] text-muted">{describeDefault(item.kind, item)}</span>
+        {noCover ? (
+          <span aria-hidden="true" className={`flex h-[110px] w-full items-end p-3 font-display text-lg leading-snug font-semibold ${categoryOf(item.kind, item).banner}`}>
+            {shortTitle(title)}
+          </span>
+        ) : (
+          <>
+            <img src={api.config.defaultCoverUrl(item.name)} alt="" loading="lazy" onError={() => setNoCover(true)} className={`aspect-[720/248] w-full object-cover ${categoryOf(item.kind, item).banner}`} />
+            <span aria-hidden="true" className="px-3.5 pt-3 font-display text-base leading-snug font-semibold">
+              {shortTitle(title)}
+            </span>
+          </>
+        )}
+        <span className={`px-3.5 text-[13px] text-muted ${noCover ? "pt-3.5" : "pt-1"}`}>{describeDefault(item.kind, item)}</span>
       </button>
       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 pt-1 pb-2">
         {asking ? (

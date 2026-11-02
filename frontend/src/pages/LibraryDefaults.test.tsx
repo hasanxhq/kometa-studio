@@ -105,6 +105,23 @@ describe("The Defaults gallery", () => {
     expect(within(await card("Streaming Collections")).getByRole("checkbox", { name: "Enabled" })).not.toBeChecked();
   });
 
+  it("shows a collection's cover, and keeps the colour banner if it can't be had", async () => {
+    mockApi(routes);
+    renderAt("/defaults");
+    const tile = await card("Basic Charts Collections");
+    const cover = tile.querySelector("img");
+    expect(cover).toHaveAttribute("src", expect.stringContaining("/api/v1/config/defaults/basic/cover"));
+    expect(cover).toHaveAttribute("loading", "lazy");
+    expect(within(tile).getByText("Basic Charts")).toBeInTheDocument();
+
+    fireEvent.error(cover!);
+    expect(tile.querySelector("img")).toBeNull();
+    expect(within(tile).getByText("Basic Charts")).toHaveClass("bg-banner-chart");
+
+    fireEvent.click(screen.getByRole("button", { name: "Overlays" }));
+    expect((await card("Resolution Overlays")).querySelector("img")).toBeNull();
+  });
+
   it("says so when config.yml has no library to apply them to", async () => {
     mockApi({ ...routes, "GET /config": () => ({ path: "/config/config.yml", libraries: [], playlist_files: [] }) });
     renderAt("/defaults");
