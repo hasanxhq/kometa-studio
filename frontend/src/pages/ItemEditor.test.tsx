@@ -386,17 +386,40 @@ describe("The overlay form", () => {
 
     const preview = await screen.findByLabelText("Poster preview");
     expect(preview).toHaveTextContent("4K");
-    await screen.findByRole("option", { name: "right" });
-    fireEvent.change(screen.getByLabelText(/Horizontal \(horizontal_align\)/), { target: { value: "right" } });
-    expect((preview.firstChild as HTMLElement).style.left).toBe("70%"); // 1000 − 300 wide, at the right edge
+    fireEvent.click(screen.getByRole("button", { name: "Top right" }));
+    expect(screen.getByRole("button", { name: "Top right" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(preview).getByText("4K").style.left).toBe("70%"); // 1000 − 300 wide, at the right edge
     expect(screen.queryByRole("button", { name: "Run just this collection" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(calls.some((c) => c.route === "POST /config/item")).toBe(true));
     expect((calls.find((c) => c.route === "POST /config/item")?.body as { value: unknown }).value).toEqual({
-      overlay: { name: "4K", horizontal_align: "right" },
+      overlay: { name: "4K", horizontal_align: "right", vertical_align: "top" },
       plex_search: { all: { resolution: "4K" } },
     });
+  });
+});
+
+describe("The overlay form's anchor", () => {
+  it("clears when the cell that's on is pressed again, and previews on the library's posters", async () => {
+    const calls = mockApi({
+      "GET /config/schemas/overlay": () => ({ type: "object", properties: { overlays: { type: "object" } } }),
+      "GET /config/item?path=overlays.yml&section=overlays&name=4K": () => ({ path: "overlays.yml", hash: "h", section: "overlays", name: "4K", value: { overlay: { name: "4K", horizontal_align: "left", vertical_align: "bottom" } }, kind: "overlay" }),
+      "GET /plex/libraries": () => ({ libraries: [{ key: "1", title: "Movies", type: "movie", collections: 0, managed: 0 }] }),
+      "GET /config": () => ({ path: "/config/config.yml", libraries: [{ name: "Movies", plex_name: "Movies" }], playlist_files: [] }),
+      "GET /plex/libraries/1/items": () => ({ items: [{ rating_key: "5", title: "Dune", type: "movie", year: 2021, thumb: "/library/metadata/5/thumb/1", ids: {}, content_rating: null, audience_rating: null, episodes: null, added_at: null }], start: 0, total: 1 }),
+      "POST /config/item": () => ({ backup: "b", files: [], validation: passed }),
+    });
+    const { container } = renderAt("/items?path=overlays.yml&section=overlays&name=4K&library=Movies");
+    const cell = await screen.findByRole("button", { name: "Bottom left" });
+    expect(cell).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(container.querySelector("figure img")?.getAttribute("src")).toContain("thumb%2F1"));
+
+    fireEvent.click(cell);
+    expect(cell).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /config/item")).toBe(true));
+    expect((calls.find((c) => c.route === "POST /config/item")?.body as { value: unknown }).value).toEqual({ overlay: { name: "4K" } });
   });
 });
 

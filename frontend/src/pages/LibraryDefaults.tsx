@@ -3,21 +3,23 @@
 // schema. Every change is one save of config.yml that Kometa checks, as any edit is. Used by Defaults and by a library's Defaults tab.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { stringify } from "yaml";
 
 import { api, type ConfigLibrary, type DefaultEntry, type DefaultKind, type DefaultToggle, type FileReference, type SaveResult } from "../api";
 import { Problems, SettingField, YamlBox } from "../components/forms/fields";
-import { LeaveDialog, LeaveGuard } from "../components/LeaveGuard";
+import { LeaveGuard, useLeaveEditor } from "../components/LeaveGuard";
 import { Button, Checkbox, ConfirmButton, inputClass } from "../components/ui";
 import { SaveError } from "../components/ValidationReport";
 import { categories, categoryOf, describeDefault, shortTitle } from "../defaults";
 import { defaultVariablesSchema, keySchema, loadSchema, mappingKeys, type JsonSchema } from "../yaml/schema";
 
-type Values = Record<string, unknown>;
+export type Values = Record<string, unknown>;
+
+export type Featured = { key: string; label: string; switchOn?: boolean; hint?: string; options?: Record<string, string> };
 
 // The variables worth a control of their own, where a default has them. The rest are under "More variables".
-const FEATURED: { key: string; label: string; switchOn?: boolean; hint?: string; options?: Record<string, string> }[] = [
+const FEATURED: Featured[] = [
   { key: "originals_only", label: "Originals only", switchOn: false },
   { key: "use_separator", label: "Separator collection", switchOn: true },
   { key: "region", label: "Watch region", hint: "A two-letter country code, such as IN or US." },
@@ -30,7 +32,7 @@ const FEATURED: { key: string; label: string; switchOn?: boolean; hint?: string;
 // Variables most people reach for first in the list of the rest.
 const COMMON = ["use_all", "collection_section", "sort_prefix", "visible_home", "visible_library", "visible_shared", "schedule", "minimum_items", "style"];
 
-function useSave<T = void>(mutation: (arg: T) => Promise<SaveResult>, onSaved?: () => void) {
+export function useSave<T = void>(mutation: (arg: T) => Promise<SaveResult>, onSaved?: () => void) {
   const queryClient = useQueryClient();
   return useMutation<SaveResult, Error, T>({
     mutationFn: mutation,
@@ -56,7 +58,7 @@ function Switch({ label, checked, onChange }: { label: string; checked: boolean;
  * Template variables as controls: a default's toggles, the featured ones, and under "More variables" anything else, from the
  * schema where it knows them and as YAML where it doesn't (use_<key> and the like).
  */
-function VariablesEditor({
+export function VariablesEditor({
   label,
   root,
   schema,
@@ -70,6 +72,11 @@ function VariablesEditor({
   togglesLegend = "",
   preview,
   onUnsaved,
+  onValues,
+  featured: featuredList = FEATURED,
+  designed = [],
+  noToggles,
+  top,
 }: {
   label: string;
   root: JsonSchema | null;
@@ -84,14 +91,19 @@ function VariablesEditor({
   togglesLegend?: string;
   preview?: (values: Values) => string;
   onUnsaved?: (unsaved: boolean) => void;
+  onValues?: (values: Values) => void; // for a live preview
+  featured?: Featured[];
+  designed?: string[]; // variables `top` has its own controls for
+  noToggles?: ReactNode; // said in place of the toggles when there are none
+  top?: (values: Values, set: (key: string, value: unknown) => void) => ReactNode;
 }) {
   const [values, setValues] = useState<Values>(saved);
   const [badYaml, setBadYaml] = useState<Set<string>>(new Set());
   const [custom, setCustom] = useState("");
   const { keys, patterns } = useMemo(() => (root ? mappingKeys(root, schema) : { keys: [], patterns: [] }), [root, schema]);
   const known = new Map(keys.map((k) => [k.name, k]));
-  const featured = FEATURED.filter((f) => known.has(f.key));
-  const handled = new Set([...featured.map((f) => f.key), ...toggles.map((t) => `use_${t.key}`)]);
+  const featured = featuredList.filter((f) => known.has(f.key));
+  const handled = new Set([...designed, ...featured.map((f) => f.key), ...toggles.map((t) => `use_${t.key}`)]);
   const addable = keys
     .map((k) => k.name)
     .filter((name) => !(name in values) && !handled.has(name))
@@ -104,6 +116,7 @@ function VariablesEditor({
     onUnsaved?.(unsaved);
     return () => onUnsaved?.(false);
   }, [unsaved, onUnsaved]);
+  useEffect(() => onValues?.(values), [values, onValues]);
   const set = (key: string, value: unknown) =>
     setValues((current) => {
       const next = { ...current };
@@ -130,6 +143,8 @@ function VariablesEditor({
         if ((dirty || alwaysSave) && badYaml.size === 0) onSave(values);
       }}
     >
+      {top?.(values, set)}
+      {toggles.length <= 1 && noToggles}
       {toggles.length > 1 && (
         <fieldset className="flex flex-col gap-1">
           <legend className="mb-1 text-sm font-semibold">{togglesLegend}</legend>
@@ -378,14 +393,11 @@ export function DefaultsGallery({ config, libraryType }: { config: ConfigLibrary
   const [changing, setChanging] = useState<string | null>(null);
   const [added, setAdded] = useState<string | null>(null);
   const [unsaved, setUnsaved] = useState(false); // in whichever editor the panel holds
-  const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  const { leave: leaveEditor, dialog: leaveDialog } = useLeaveEditor(unsaved);
   const panel = useRef<HTMLElement>(null);
   const add = useSave((item: Listed) => api.config.useDefault(library, item.kind, item.name, {}));
   const drop = useSave((item: Listed) => api.config.dropDefault(library, item.kind, item.name));
   const libraryVariables = useSave((values: Values) => api.config.setLibraryVariables(library, values));
-
-  // Runs something that replaces the panel's editor, asking first if that would lose edits.
-  const leaveEditor = (action: () => void) => (unsaved ? setLeaving(() => action) : action());
 
   // Below the grid on a narrow screen, so picking a card has to bring it into view.
   useEffect(() => {
@@ -422,15 +434,7 @@ export function DefaultsGallery({ config, libraryType }: { config: ConfigLibrary
     <div className="flex flex-col gap-6 xl:flex-row xl:items-start">
       {/* The query string is the library, or the library page's tab. */}
       <LeaveGuard dirty={unsaved} query />
-      {leaving && (
-        <LeaveDialog
-          onStay={() => setLeaving(null)}
-          onLeave={() => {
-            leaving();
-            setLeaving(null);
-          }}
-        />
-      )}
+      {leaveDialog}
       <div className="flex min-w-0 flex-1 flex-col gap-5">
         <div className="flex flex-wrap gap-2" role="group" aria-label="Filter defaults">
           {(["collection", "overlay"] as const).map((k) => (

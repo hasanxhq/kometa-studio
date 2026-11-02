@@ -77,6 +77,7 @@ export const otherPages: { path: string; label: string }[] = [
 const nestedPages: { pattern: RegExp; label: string }[] = [
   { pattern: /^\/libraries\/[^/]+\/collections\/[^/]+\/?$/, label: "Collection" },
   { pattern: /^\/libraries\/[^/]+\/?$/, label: "Library" },
+  { pattern: /^\/overlays\/designer\/?$/, label: "Overlay designer" },
   { pattern: /^\/activity\/queue\/[^/]+\/?$/, label: "Run" },
 ];
 
