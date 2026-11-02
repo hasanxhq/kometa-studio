@@ -88,6 +88,15 @@ class FakePlex:
         "103": [{"ratingKey": "401", "type": "show", "title": "An Old Show", "year": 1999, "leafCount": 61, "Guid": [{"id": "tvdb://74852"}]}],
     }
 
+    # What /library/sections/<key>/all gives for movies, newest first (trimmed).
+    TITLES = {
+        "1": [
+            {"ratingKey": "501", "type": "movie", "title": "Dune", "year": 2021, "thumb": "/library/metadata/501/thumb/1700000005", "Media": [{"videoResolution": "4k", "audioCodec": "truehd"}]},
+            {"ratingKey": "502", "type": "movie", "title": "Dune Messiah", "year": 2026, "thumb": "/library/metadata/502/thumb/1700000006", "Media": [{"videoResolution": "1080", "audioCodec": "eac3"}]},
+            {"ratingKey": "503", "type": "movie", "title": "Heat", "year": 1995},
+        ]
+    }
+
     def library(self, request: httpx.Request) -> httpx.Response:
         parts = request.url.path.strip("/").split("/")  # library, sections, <key>, <what>
         if parts == ["library", "sections"]:
@@ -99,6 +108,11 @@ class FakePlex:
             if what == "label":
                 return httpx.Response(200, json={"MediaContainer": {"Directory": self.LABELS[key]}})
             if what == "all" and request.url.params.get("type") in ("1", "2") and "addedAt>>" not in request.url.params:
+                if request.url.params.get("X-Plex-Container-Size", "0") != "0":  # a page of titles
+                    title = request.url.params.get("title", "").lower()
+                    found = [m for m in self.TITLES.get(key, []) if title in m["title"].lower()]
+                    start, size = int(request.url.params.get("X-Plex-Container-Start", "0")), int(request.url.params["X-Plex-Container-Size"])
+                    return httpx.Response(200, json={"MediaContainer": {"size": len(found[start : start + size]), "totalSize": len(found), "offset": start, "Metadata": found[start : start + size]}})
                 return httpx.Response(200, json={"MediaContainer": {"size": 0, "totalSize": self.SIZES.get(key, 0), "Metadata": []}})
             if what == "all" and request.url.params.get("type") in ("1", "4"):  # how many were added since, as Plex's addedAt>>= filter
                 since = int(request.url.params.get("addedAt>>", "0"))

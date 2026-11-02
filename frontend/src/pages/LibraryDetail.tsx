@@ -321,7 +321,17 @@ function CollectionsTab({
 
 function OverlaysTab({ config }: { config: ConfigLibrary }) {
   return (
-    <Card title="Overlay files" actions={<NewFileLink section="overlays" library={config.name} />}>
+    <Card
+      title="Overlay files"
+      actions={
+        <span className="flex flex-wrap items-center gap-4">
+          <Link className="min-h-11 content-center text-sm text-accent underline" to={`/overlays/designer?library=${encodeURIComponent(config.name)}`}>
+            Open in the overlay designer
+          </Link>
+          <NewFileLink section="overlays" library={config.name} />
+        </span>
+      }
+    >
       {config.overlay_files.length === 0 && <p className="text-sm text-muted">This library has no overlay files.</p>}
       <ul className="flex flex-col gap-4">
         {config.overlay_files.map((reference, index) => (

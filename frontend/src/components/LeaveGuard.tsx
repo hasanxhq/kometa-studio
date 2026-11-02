@@ -1,6 +1,6 @@
 // Asks before losing unsaved changes: closing the tab, or going anywhere else in Studio.
 
-import { useEffect, type RefObject } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { useBlocker } from "react-router";
 
 import { Button } from "./ui";
@@ -25,6 +25,25 @@ export function LeaveDialog({ onStay, onLeave }: { onStay: () => void; onLeave: 
       </div>
     </div>
   );
+}
+
+/**
+ * For a page that swaps one editor for another: `leave` runs what would replace the editor, after asking if that would lose
+ * edits, and `dialog` goes somewhere in the page.
+ */
+export function useLeaveEditor(unsaved: boolean) {
+  const [leaving, setLeaving] = useState<(() => void) | null>(null);
+  const leave = (action: () => void) => (unsaved ? setLeaving(() => action) : action());
+  const dialog = leaving && (
+    <LeaveDialog
+      onStay={() => setLeaving(null)}
+      onLeave={() => {
+        leaving();
+        setLeaving(null);
+      }}
+    />
+  );
+  return { leave, dialog };
 }
 
 /**

@@ -453,6 +453,13 @@ export type DefaultEntry = {
   title: string | null;
   docs_url: string | null;
   toggles: DefaultToggle[]; // what `use_<key>` turns on or off in it
+  layout?: OverlayLayout; // overlay defaults: where it starts, from its file
+};
+
+export type OverlayLayout = {
+  moved_by: "align" | "position"; // horizontal_align and vertical_align with offsets, or horizontal_position and vertical_position
+  variables: Record<string, string | number>;
+  conditionals: Record<string, { default: unknown; conditions: Record<string, unknown>[] }>;
 };
 
 export type DefaultToggle = { key: string; label: string; on: boolean; types: string[] };
@@ -489,6 +496,8 @@ export type PlexItem = {
   audience_rating: number | null;
   episodes: number | null; // shows only
   added_at: number | null;
+  video_resolution?: string | null; // from Plex's media info, where it's listed
+  audio_codec?: string | null;
 };
 
 export type PlexCollectionPage = { collection: PlexCollection; items: PlexItem[]; start: number; total: number };
@@ -637,6 +646,7 @@ export const api = {
       request<SaveResult>("PUT", `/config/libraries/${encodeURIComponent(library)}/defaults/${kind}/${encodeURIComponent(name)}`, { template_variables: variables }),
     dropDefault: (library: string, kind: DefaultKind, name: string) =>
       request<SaveResult>("DELETE", `/config/libraries/${encodeURIComponent(library)}/defaults/${kind}/${encodeURIComponent(name)}`),
+    setOverlayOrder: (library: string, names: string[]) => request<SaveResult>("PUT", `/config/libraries/${encodeURIComponent(library)}/overlay-order`, { names }),
     setLibraryVariables: (library: string, variables: Record<string, unknown>) =>
       request<SaveResult>("PUT", `/config/libraries/${encodeURIComponent(library)}/template-variables`, { template_variables: variables }),
   },
@@ -649,6 +659,7 @@ export const api = {
       ),
     collection: (key: string, ratingKey: string, start = 0, size = 100) =>
       request<PlexCollectionPage>("GET", `/plex/libraries/${encodeURIComponent(key)}/collections/${encodeURIComponent(ratingKey)}?start=${start}&size=${size}`),
+    items: (key: string, q = "") => request<{ items: PlexItem[]; start: number; total: number }>("GET", `/plex/libraries/${encodeURIComponent(key)}/items${q ? `?q=${encodeURIComponent(q)}` : ""}`),
     imageUrl: (path: string, width = 240, height = 360) =>
       `${urlBase}/api/v1/plex/image?path=${encodeURIComponent(path)}&width=${width}&height=${height}`,
   },

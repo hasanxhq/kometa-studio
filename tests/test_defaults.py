@@ -4,10 +4,11 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from ruamel.yaml import YAML
 
 from kometa_studio.app import create_app
-from kometa_studio.config_sections import with_library_default, with_library_variables
-from kometa_studio.kometa_files import ConfigReader
+from kometa_studio.config_sections import with_library_default, with_library_variables, with_overlay_order
+from kometa_studio.kometa_files import ConfigReader, _overlay_layout
 from kometa_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
@@ -95,6 +96,12 @@ def test_overlays_without_one_list_of_switches_have_no_toggles(kometa, overlays)
     assert catalogue["overlays"][1]["toggles"] == []
 
 
+def test_overlays_on_kometas_standard_template_have_toggles(kometa):
+    (kometa / "defaults" / "overlays" / "resolution.yml").write_text("overlays:\n  Airing:\n    variables: {key: airing, weight: 100}\n    template: [name: standard, name: status]\n")
+    catalogue = ConfigReader(kometa / "config" / "config.yml", kometa).catalogue()
+    assert [(t["key"], t["label"]) for t in catalogue["overlays"][1]["toggles"]] == [("airing", "Airing")]
+
+
 def test_a_long_list_of_toggles_is_left_out(kometa):
     data = "".join(f"      k{n}: Name {n}\n" for n in range(61))
     (kometa / "defaults" / "both" / "streaming.yml").write_text(f"dynamic_collections:\n  Many:\n    type: custom\n    template: [shared]\n    data:\n{data}")
@@ -176,3 +183,105 @@ def test_the_gallery_through_the_api(tmp_path, kometa):
     assert "- default: basic" not in text and "      - default: streaming\n" in text and "region: GB   # where we are" in text
     assert "    template_variables:\n      collection_mode: hide\n" in text
     assert [backup["reason"] for backup in backups][:3] == ["Set the template variables for Movies", "Turned off the basic default for Movies", "Set the resolution default for TV Shows"]
+
+
+# --- the overlay designer -----------------------------------------------------------
+
+ALIGNED = """
+external_templates:
+  default: templates
+  template_variables:
+    default:
+      horizontal_align: center
+      vertical_align: top
+      style: compact
+    conditionals:
+      vertical_offset:
+        default: 15
+        conditions:
+          - vertical_align: center
+            value: 0
+      back_height:
+        default: 105
+    group: audio_codec
+    back_color: "#00000099"
+    back_width: <<width>>
+
+overlays:
+  a: {}
+"""
+
+POSITIONED = """
+templates:
+  Rating:
+    default:
+      back_color: "#00000099"
+      back_radius: 30
+      horizontal_position: left
+      vertical_position: center
+
+overlays:
+  a: {}
+"""
+
+
+def test_an_overlay_default_says_where_it_starts_and_what_moves_it():
+    layout = _overlay_layout(ALIGNED)
+    assert layout["moved_by"] == "align"
+    assert layout["variables"] == {"horizontal_align": "center", "vertical_align": "top", "back_color": "#00000099"}  # <<width>> isn't a value
+    assert layout["conditionals"] == {
+        "vertical_offset": {"default": 15, "conditions": [{"vertical_align": "center", "value": 0}]},
+        "back_height": {"default": 105, "conditions": []},
+    }
+
+
+def test_ratings_place_themselves_from_position_variables():
+    layout = _overlay_layout(POSITIONED)
+    assert layout["moved_by"] == "position"
+    assert layout["variables"] == {"horizontal_position": "left", "vertical_position": "center", "back_color": "#00000099", "back_radius": 30}
+
+
+def test_a_default_with_no_layout_still_lists():
+    assert _overlay_layout("not: [valid") == {"moved_by": "align", "variables": {}, "conditionals": {}}
+
+
+OVERLAYS = """libraries:
+  Movies:
+    overlay_files:
+      - default: resolution  # first
+        template_variables:
+          horizontal_align: right
+      - file: config/mine.yml
+      - default: ribbon
+      - default: ratings
+"""
+
+
+def test_overlay_order_moves_only_the_defaults():
+    moved = with_overlay_order(OVERLAYS, "Movies", ["ratings", "resolution", "ribbon"])
+    data = YAML(typ="safe").load(moved)["libraries"]["Movies"]["overlay_files"]
+    assert [entry.get("default") or entry["file"] for entry in data] == ["ratings", "config/mine.yml", "resolution", "ribbon"]
+    assert data[2]["template_variables"] == {"horizontal_align": "right"}
+
+
+def test_overlay_order_keeps_a_default_listed_twice_together():
+    text = "libraries:\n  Movies:\n    overlay_files:\n      - default: ratings\n      - default: ribbon\n      - default: ratings\n"
+    data = YAML(typ="safe").load(with_overlay_order(text, "Movies", ["ribbon", "ratings"]))["libraries"]["Movies"]["overlay_files"]
+    assert [entry["default"] for entry in data] == ["ribbon", "ratings", "ratings"]
+
+
+@pytest.mark.parametrize("names", [["ratings", "ribbon"], ["ratings", "resolution", "ribbon", "status"], ["ratings", "ratings", "ribbon"]])
+def test_overlay_order_refuses_a_list_that_isnt_the_librarys(names):
+    with pytest.raises(ValueError, match="have changed"):
+        with_overlay_order(OVERLAYS, "Movies", names)
+
+
+def test_overlay_order_through_the_api(tmp_path, kometa):
+    config = kometa / "config" / "config.yml"
+    config.write_text("libraries:\n  Movies:\n    overlay_files:\n      - default: resolution\n      - default: ribbon\n")
+    with make_client(tmp_path, kometa) as client:
+        assert client.put("/api/v1/config/libraries/Movies/overlay-order", json={"names": ["ribbon", "resolution"]}).status_code == 200
+        assert YAML(typ="safe").load(config.read_text())["libraries"]["Movies"]["overlay_files"] == [{"default": "ribbon"}, {"default": "resolution"}]
+        stale = client.put("/api/v1/config/libraries/Movies/overlay-order", json={"names": ["ribbon"]})
+        assert stale.status_code == 409
+        assert "have changed" in stale.text

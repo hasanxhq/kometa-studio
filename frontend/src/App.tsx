@@ -15,6 +15,7 @@ import { FileEditor } from "./pages/FileEditor";
 const ItemEditor = lazy(() => import("./pages/ItemEditor"));
 import { Defaults } from "./pages/Defaults";
 import { Libraries } from "./pages/Libraries";
+import { OverlayDesigner } from "./pages/OverlayDesigner";
 import { Overlays } from "./pages/Overlays";
 import { Overview } from "./pages/Overview";
 import { LibraryDetail } from "./pages/LibraryDetail";
@@ -73,6 +74,7 @@ export function App({ queryClient = new QueryClient() }: { queryClient?: QueryCl
               <Route path="/activity/queue/:id" element={<RunDetail />} />
               <Route path="/libraries/:name" element={<LibraryDetail />} />
               <Route path="/libraries/:name/collections/:key" element={<CollectionDetail />} />
+              <Route path="/overlays/designer" element={<OverlayDesigner />} />
               <Route path="/files" element={<FileEditor />} />
               <Route
                 path="/items"

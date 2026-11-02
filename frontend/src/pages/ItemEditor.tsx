@@ -12,9 +12,11 @@ import { AddMissing, addMissingKeys, missingApp as missingAppFor } from "../comp
 import { FilterChips } from "../components/FilterChips";
 import { LeaveGuard } from "../components/LeaveGuard";
 import { Problems, SettingField, YamlBox, withKey } from "../components/forms/fields";
+import { AnchorGrid, OffsetInput, OverlayPoster, SamplePicker, useSamples } from "../components/OverlayPreview";
 import { Button, Card, Checkbox, Field, StickyActions, inputClass } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
 import { useLibraryType } from "../libraries";
+import { place, type Box } from "../overlayLayout";
 import { itemProblems } from "../yaml/check";
 import { controlFor, knownKeys, loadSchema, type JsonSchema, type KeyInfo, type SchemaKind } from "../yaml/schema";
 
@@ -80,9 +82,7 @@ const VISIBILITY: { key: string; label: string }[] = [
 
 const OVERLAY_FIELDS: { key: string; label: string }[] = [
   { key: "name", label: "Image or text" },
-  { key: "horizontal_align", label: "Horizontal" },
   { key: "horizontal_offset", label: "Horizontal offset" },
-  { key: "vertical_align", label: "Vertical" },
   { key: "vertical_offset", label: "Vertical offset" },
   { key: "back_color", label: "Background colour" },
   { key: "back_width", label: "Background width" },
@@ -331,50 +331,27 @@ function Sources({
 
 // --- Overlay position --------------------------------------------------------------
 
-function OffsetInput({ value, onChange, label }: { value: unknown; onChange: (v: unknown) => void; label: string }) {
-  return (
-    <input
-      aria-label={label}
-      className={inputClass}
-      value={value === undefined ? "" : String(value)}
-      placeholder="e.g. 30 or 5%"
-      onChange={(e) => {
-        const text = e.target.value.trim();
-        onChange(text === "" ? undefined : /^-?\d+$/.test(text) ? Number(text) : text);
-      }}
-    />
-  );
-}
-
-/** Where the badge sits on a poster, at Kometa's 1000×1500 poster size. */
-function PosterPreview({ spec }: { spec: Value }) {
-  const px = (v: unknown, size: number) => (typeof v === "string" && v.endsWith("%") ? (Number(v.slice(0, -1)) / 100) * size : Number(v ?? 0) || 0);
+/** Where the badge sits on a poster from the library, at Kometa's 1000×1500 poster size. */
+function PosterPreview({ spec, library }: { spec: Value; library: string | null }) {
+  const samples = useSamples(library);
   const width = Number(spec.back_width ?? 300);
   const height = Number(spec.back_height ?? 105);
-  const h = String(spec.horizontal_align ?? "left");
-  const v = String(spec.vertical_align ?? "top");
-  const x = h === "left" ? px(spec.horizontal_offset, 1000) : h === "right" ? 1000 - width - px(spec.horizontal_offset, 1000) : (1000 - width) / 2 + px(spec.horizontal_offset, 1000);
-  const y = v === "top" ? px(spec.vertical_offset, 1500) : v === "bottom" ? 1500 - height - px(spec.vertical_offset, 1500) : (1500 - height) / 2 + px(spec.vertical_offset, 1500);
   const label = String(spec.text ?? spec.name ?? "").replace(/^text\((.*)\)$/, "$1");
+  const box: Box = {
+    key: "overlay",
+    label,
+    ...place(spec, width, height),
+    width,
+    height,
+    color: typeof spec.back_color === "string" ? spec.back_color : "rgba(0,0,0,0.6)",
+    radius: Number(spec.back_radius) || 0,
+    textColor: typeof spec.font_color === "string" ? spec.font_color : undefined,
+  };
   return (
-    <figure className="flex flex-col items-center gap-2">
-      <div className="relative aspect-[2/3] w-40 overflow-hidden rounded-control border border-border bg-gradient-to-b from-surface-2 to-bg" aria-label="Poster preview">
-        <div
-          className="absolute flex items-center justify-center overflow-hidden text-center font-display text-[10px] font-semibold"
-          style={{
-            left: `${(x / 1000) * 100}%`,
-            top: `${(y / 1500) * 100}%`,
-            width: `${(width / 1000) * 100}%`,
-            height: `${(height / 1500) * 100}%`,
-            background: typeof spec.back_color === "string" ? spec.back_color : "rgba(0,0,0,0.6)",
-            color: typeof spec.font_color === "string" ? spec.font_color : "#fff",
-            borderRadius: spec.back_radius ? `${(Number(spec.back_radius) / 1000) * 160}px` : undefined,
-          }}
-        >
-          {label}
-        </div>
-      </div>
+    <figure className="flex w-52 shrink-0 flex-col items-center gap-2">
+      <OverlayPoster item={samples.sample} boxes={[box]} label="Poster preview" className="w-40 border border-border" />
       <figcaption className="text-xs text-muted">Placement only; Kometa draws the real overlay.</figcaption>
+      {library && samples.found.length > 0 && <SamplePicker samples={samples} />}
     </figure>
   );
 }
@@ -385,26 +362,50 @@ function OverlayDesign({
   root,
   name,
   problems,
+  library,
 }: {
   value: Value;
   setValue: (value: Value) => void;
   root: JsonSchema | null;
   name: string;
   problems: Map<string, string[]>;
+  library: string | null;
 }) {
   const raw = value.overlay;
   const spec: Value = typeof raw === "string" ? { name: raw } : raw && typeof raw === "object" ? (raw as Value) : {};
   const specKeys = new Map((root ? knownKeys(root, ["overlays", name || "_", "overlay"]) : []).map((k) => [k.name, k]));
-  const set = (key: string, next: unknown) => {
-    const updated = withKey(spec, key, next);
+  const setAll = (changes: [string, unknown][]) => {
+    const updated = changes.reduce((current, [key, next]) => withKey(current, key, next), spec);
     // Keep Kometa's shorthand (`overlay: 4K`) while only the name is set.
     setValue({ ...value, overlay: Object.keys(updated).length === 1 && "name" in updated && typeof raw === "string" ? updated.name : updated });
   };
+  const set = (key: string, next: unknown) => setAll([[key, next]]);
+  const anchored = (horizontal: string, vertical: string) => spec.horizontal_align === horizontal && spec.vertical_align === vertical;
   return (
     <Card title="The overlay">
       <div className="flex flex-col gap-6 md:flex-row">
-        <PosterPreview spec={spec} />
-        <div className="grid flex-1 gap-4 sm:grid-cols-2">
+        <PosterPreview spec={spec} library={library} />
+        <div className="grid flex-1 content-start gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <AnchorGrid
+              horizontal={String(spec.horizontal_align ?? "")}
+              vertical={String(spec.vertical_align ?? "")}
+              onChange={(horizontal, vertical) =>
+                // The cell that's already on clears it, back to Kometa's own.
+                setAll(
+                  anchored(horizontal, vertical)
+                    ? [
+                        ["horizontal_align", undefined],
+                        ["vertical_align", undefined],
+                      ]
+                    : [
+                        ["horizontal_align", horizontal],
+                        ["vertical_align", vertical],
+                      ],
+                )
+              }
+            />
+          </div>
           {OVERLAY_FIELDS.map(({ key, label }) =>
             OFFSET_KEYS.has(key) ? (
               <Field key={key} label={`${label} (${key})`}>
@@ -623,7 +624,7 @@ export default function ItemEditor() {
     <>
       <Sources value={value} setValue={setEdited} keys={keys} root={root} problems={problems} onValidity={validity} single={playlist} library={library} libraryType={libraryType} />
       {chips && <FilterChips filters={value.filters as Record<string, unknown> | undefined} onChange={(next) => setEdited(withKey(value, "filters", next))} />}
-      {section === "overlays" && <OverlayDesign value={value} setValue={setEdited} root={root} name={currentName} problems={problems} />}
+      {section === "overlays" && <OverlayDesign value={value} setValue={setEdited} root={root} name={currentName} problems={problems} library={library} />}
       {(DESIGNED[section] ?? []).length > 0 && (
         <Card title="Settings">
           <div className="grid gap-4 sm:grid-cols-2">

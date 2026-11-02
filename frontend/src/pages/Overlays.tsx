@@ -170,6 +170,9 @@ function LibraryCard({ library, schedules, arr }: { library: OverlayLibrary; sch
           </p>
         )}
         <Files library={library} />
+        <Link className="min-h-11 content-center self-start text-sm text-accent underline" to={`/overlays/designer?library=${encodeURIComponent(library.library)}`}>
+          Design {library.library}'s overlays
+        </Link>
         <dl className="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[10rem_1fr]">
           <dt className="text-muted">Last overlay pass</dt>
           <dd>
@@ -265,6 +268,9 @@ export function Overlays() {
   if (overlays.data.libraries.length === 0) return <p className="text-muted">No libraries in config.yml yet.</p>;
   return (
     <div className="flex max-w-3xl flex-col gap-4">
+      <Link className="inline-flex min-h-11 items-center self-start rounded-control bg-accent px-4 text-sm font-medium text-on-accent hover:brightness-110" to="/overlays/designer">
+        Open the overlay designer
+      </Link>
       <p className="text-sm text-muted">
         Kometa's overlays, library by library. A pass only redraws posters whose overlay changed, but it reads every item, which takes a while against a
         remote Plex. Overlay runs never touch collections.
