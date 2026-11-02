@@ -33,8 +33,8 @@ export function SamplePicker({ samples }: { samples: ReturnType<typeof useSample
   const { found, sample, search, setSearch, setPicked } = samples;
   const titles = sample && !found.some((item) => item.rating_key === sample.rating_key) ? [sample, ...found] : found;
   return (
-    <div className="flex flex-wrap items-end gap-2 text-[13px] text-muted">
-      <label className="flex items-center gap-2">
+    <div className="flex flex-wrap items-end justify-center gap-2 text-[13px] text-muted">
+      <label className="flex items-center gap-2 whitespace-nowrap">
         Preview on
         <select
           className={`${inputClass} w-52 max-w-full`}
@@ -57,7 +57,23 @@ export function SamplePicker({ samples }: { samples: ReturnType<typeof useSample
 }
 
 /** A poster with its overlays placed on it. With `onPick`, each overlay is a button; sizes follow the poster's own width. */
-export function OverlayPoster({ item, boxes, selected, onPick, label, className = "w-full max-w-[340px]" }: { item: PlexItem | null; boxes: Box[]; selected?: string | null; onPick?: (box: Box) => void; label: string; className?: string }) {
+export function OverlayPoster({
+  item,
+  boxes,
+  selected,
+  onPick,
+  label,
+  className = "w-full max-w-[340px]",
+  fontSize = "3.6cqw",
+}: {
+  item: PlexItem | null;
+  boxes: Box[];
+  selected?: string | null;
+  onPick?: (box: Box) => void;
+  label: string;
+  className?: string;
+  fontSize?: string; // relative to the poster, so a thumbnail can use a bigger share of it
+}) {
   const [failed, setFailed] = useState<string | null>(null);
   const thumb = item?.thumb && failed !== item.thumb ? item.thumb : null;
   return (
@@ -76,7 +92,7 @@ export function OverlayPoster({ item, boxes, selected, onPick, label, className 
           background: box.color,
           color: box.textColor,
           borderRadius: `${(box.radius / POSTER_WIDTH) * 100}cqw`,
-          fontSize: "3.6cqw",
+          fontSize,
         };
         const look = `absolute flex items-center justify-center overflow-hidden px-[1cqw] text-center font-display leading-none font-semibold text-white ${selected === box.key.replace(/-\d+$/, "") ? "outline-2 outline-accent" : ""}`;
         return onPick ? (

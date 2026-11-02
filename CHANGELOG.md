@@ -11,8 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Defaults** in the sidebar: the Defaults gallery as a page of its own, with an "Apply to" library picker. Until now it was only a tab inside each library.
 
+- **Overlay designer** (Overlays → Open the overlay designer): the overlay defaults a library uses, as layers, on a real poster from that library. A nine-cell anchor and offsets move a layer, with its colour, radius and what Kometa's default lets you choose under Show when, all written as that default's template variables. Pick the title to preview on, see the same layers on others, add and turn off layers, and change the order Kometa draws them in. It's placement only: Kometa draws the real overlays on the next overlay run. Every change is one save that Kometa checks.
+
 ### Changed
 
+- The overlay form has the same anchor grid and previews on a poster from the library.
+- Customize lists what more overlay defaults can turn on or off, such as Ribbon's awards and Audio Codec's formats.
 - A run that worked now says **Succeeded** instead of Finished.
 - A run's log can show only warnings and errors, and runs count their warnings on the Queue, the Overview and the run's page. Runs from before this update show none.
 - Save stays in view at the bottom of the page on the collection, overlay, playlist and file editors and Settings → Kometa.

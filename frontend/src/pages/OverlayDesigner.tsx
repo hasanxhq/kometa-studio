@@ -101,7 +101,13 @@ function Properties({
         onUnsaved={onUnsaved}
         featured={controls(name, layout?.moved_by, libraryType)}
         designed={PLACEMENT}
-        noToggles={<p className="text-[13px] text-muted">Show when: Kometa decides this from each title's own details, and this default has no choices to make there. For your own rules, use an overlay file.</p>}
+        noToggles={
+          <p className="text-[13px] text-muted">
+            {name === "resolution"
+              ? "Show when: Kometa picks the badge from each title's own resolution and edition. Turn either kind off below."
+              : "Show when: Kometa decides this from each title's own details, and this default has no choices to make there. For your own rules, use an overlay file."}
+          </p>
+        }
         top={(values, set) => {
           const vars = resolveLayout(layout, { ...libraryVariables, ...values });
           const horizontalKey = position ? "horizontal_position" : "horizontal_align";
@@ -199,7 +205,9 @@ function Designer({ config, libraryType, status }: { config: ConfigLibrary; libr
                 onClick={() => select(layer.name)}
                 className={`flex min-h-11 min-w-0 flex-1 items-center justify-between gap-2 rounded-control border px-2.5 text-left text-sm ${layer.name === selected?.name ? "border-accent bg-surface-2" : "border-transparent text-muted hover:bg-surface-2"}`}
               >
-                <span className="min-w-0 truncate">{layer.title}</span>
+                <span className="min-w-0 truncate" title={layer.title}>
+                  {layer.title}
+                </span>
                 <span className="shrink-0 text-xs text-muted">{whereItIs(layer.entry?.layout, variablesOf(layer))}</span>
               </button>
               <button type="button" aria-label={`Draw ${layer.title} earlier`} disabled={index === 0 || order.isPending} onClick={() => move(index, -1)} className="size-9 rounded-control text-muted hover:bg-surface-2 disabled:opacity-30">
@@ -233,7 +241,7 @@ function Designer({ config, libraryType, status }: { config: ConfigLibrary; libr
           </select>
         </label>
         <SaveError error={add.error ?? drop.error ?? order.error} />
-        <p className="pt-2 text-xs text-muted">Kometa draws layers in this order, so a lower one lands on top where they overlap. Saving the order is one change to config.yml.</p>
+        <p className="pt-2 text-xs text-muted">Kometa draws layers in this order, so a lower one lands on top where they overlap. Moving a layer saves straight away, and Kometa checks it.</p>
         {ownFiles.length > 0 && (
           <p className="pt-2 text-xs text-muted">
             Also draws {ownFiles.length} of your own overlay file{ownFiles.length === 1 ? "" : "s"}, not shown here.{" "}
@@ -266,7 +274,7 @@ function Designer({ config, libraryType, status }: { config: ConfigLibrary; libr
               .filter((item) => item.rating_key !== samples.sample?.rating_key)
               .slice(0, 4)
               .map((item) => (
-                <OverlayPoster key={item.rating_key} item={item} boxes={boxes(item)} label={`Overlays on ${item.title}`} className="w-16 rounded-md" />
+                <OverlayPoster key={item.rating_key} item={item} boxes={boxes(item)} label={`Overlays on ${item.title}`} className="w-16 rounded-md" fontSize="11cqw" />
               ))}
           </div>
         )}

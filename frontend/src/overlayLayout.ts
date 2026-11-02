@@ -71,7 +71,7 @@ export function layerBoxes(key: string, label: string, layout: OverlayLayout | u
   const group = { width: across ? names.length * (width + gap) - gap : width, height: across ? height : names.length * (height + gap) - gap };
   const margin = 30;
   const { x, y } = place(
-    { horizontal_align: side(vars.horizontal_position) || "left", vertical_align: side(vars.vertical_position) || "center", horizontal_offset: side(vars.horizontal_position) === "center" ? 0 : margin, vertical_offset: side(vars.vertical_position) === "center" ? 0 : margin },
+    { horizontal_align: side(vars.horizontal_position) || "left", vertical_align: side(vars.vertical_position) || "top", horizontal_offset: side(vars.horizontal_position) === "center" ? 0 : margin, vertical_offset: side(vars.vertical_position) === "center" ? 0 : margin },
     group.width,
     group.height,
   );
@@ -91,7 +91,7 @@ export function whereItIs(layout: OverlayLayout | undefined, own: Vars): string 
   const vars = resolveLayout(layout, own);
   const position = layout?.moved_by === "position";
   const h = position ? side(vars.horizontal_position) || "left" : String(vars.horizontal_align ?? "left");
-  const v = position ? side(vars.vertical_position) || "center" : String(vars.vertical_align ?? "top");
+  const v = position ? side(vars.vertical_position) || "top" : String(vars.vertical_align ?? "top");
   return h === v ? h : `${v}-${h}`;
 }
 

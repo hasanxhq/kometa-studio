@@ -150,6 +150,8 @@ describe("The overlay designer", () => {
     mockApi(routes);
     renderAt("/overlays/designer");
     await layers();
+    expect(await within(settings()).findByText(/own resolution and edition/)).toBeInTheDocument();
+    fireEvent.click(pressed("Ratings"));
     expect(await within(settings()).findByText(/no choices to make there/)).toBeInTheDocument();
     fireEvent.click(pressed("Status"));
     const when = await screen.findByRole("group", { name: "Show when" });
@@ -196,6 +198,18 @@ describe("The overlay designer", () => {
 
     fireEvent.click(await within(settings()).findByRole("button", { name: "Turn off" }));
     expect(calls.some((c) => c.route.startsWith("DELETE"))).toBe(false);
+    fireEvent.click(within(settings()).getByRole("button", { name: "Turn off Resolution" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "DELETE /config/libraries/Movies/defaults/overlay/resolution")).toBe(true));
+  });
+
+  it("shows Kometa's refusal beside the button", async () => {
+    const refusal = { message: "Kometa found problems, so nothing was saved.", validation: { ...saved.validation, ok: false, errors: ["config.yml: back_color doesn't match the pattern"] } };
+    mockApi({ ...routes, "PUT /config/libraries/Movies/defaults/overlay/resolution": () => new Response(JSON.stringify({ detail: refusal }), { status: 422 }) });
+    renderAt("/overlays/designer");
+    await layers();
+    fireEvent.click(await screen.findByRole("button", { name: "Bottom left" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply on next run" }));
+    expect(await within(settings()).findByText(/back_color doesn't match/)).toBeInTheDocument();
   });
 
   it("changes the order Kometa draws them in", async () => {

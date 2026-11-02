@@ -256,8 +256,11 @@ export function VariablesEditor({
         </Button>
         {dirty && <Button onClick={() => setValues(saved)}>Undo my changes</Button>}
         {badYaml.size > 0 && <span className="text-sm text-warn">Fix the YAML in {[...badYaml].join(", ")} first.</span>}
+        {/* Beside the button that caused it: below the pin, a refusal would be off the screen. */}
+        <div className="max-h-48 overflow-y-auto">
+          <SaveError error={error} />
+        </div>
       </div>
-      <SaveError error={error} />
     </form>
   );
 }
