@@ -234,6 +234,15 @@ async def defaults_catalogue(reader: Reader) -> dict:
     return reader.catalogue()
 
 
+@router.get("/config/defaults/{name}/cover")
+async def default_cover(name: str, request: Request) -> FileResponse:
+    """A collection default's cover for the gallery. The gallery keeps its colour banner on a 404."""
+    path = await request.app.state.default_covers.cover(name)
+    if path is None:
+        raise HTTPException(404, f"No cover for {name} right now")
+    return FileResponse(path, media_type="image/webp", headers={"Cache-Control": "private, max-age=86400"})
+
+
 class VariablesIn(BaseModel):
     template_variables: dict = {}
 

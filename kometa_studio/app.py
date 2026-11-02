@@ -32,6 +32,7 @@ from .auth_routes import router as auth_router
 from .config_routes import router as config_router
 from .config_write import ConfigWriter
 from .crypto import SecretBox
+from .default_covers import DefaultCovers
 from .db import get_setting, open_database, schema_version
 from .health import PlexCheck, health, kometa_updates, kometa_version
 from .jobs import router as jobs_router
@@ -123,6 +124,7 @@ def create_app(
         app.state.timezone = get_setting(app.state.db, TIMEZONE) or app.state.timezone
         app.state.secrets = SecretBox.load_or_create(settings.data_dir)
         app.state.http = httpx.AsyncClient(transport=NetworkTransport(app.state.db, app.state.secrets, settings.kometa_config, http_transport))
+        app.state.default_covers = DefaultCovers(app.state.http, settings.data_dir / "default-covers")
         runner = Runner(app.state.db, settings, webhook_url(settings, webhook_token(app.state.db)))
         app.state.runner = runner
         runner.start()

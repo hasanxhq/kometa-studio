@@ -19,6 +19,7 @@ dependencies = [
     "ruamel.yaml>=0.18",
     "cryptography>=43",
     "tzdata>=2024.1",  # timezone data for zoneinfo where the system has none
+    "pillow>=11",  # the Defaults gallery's covers (default_covers.py)
 ]
 
 [project.optional-dependencies]

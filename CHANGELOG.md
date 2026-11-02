@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Overlay designer** (Overlays → Open the overlay designer): the overlay defaults a library uses, as layers, on a real poster from that library. A nine-cell anchor and offsets move a layer, with its colour, radius and what Kometa's default lets you choose under Show when, all written as that default's template variables. Pick the title to preview on, see the same layers on others, add and turn off layers, and change the order Kometa draws them in. It's placement only: Kometa draws the real overlays on the next overlay run. Every change is one save that Kometa checks.
 
+- **Covers in the Defaults gallery:** each collection default shows real posters from Kometa's own image repos, such as Action, Comedy and Horror for Genre. Studio's server downloads them from GitHub the first time they're needed and keeps a copy in its data folder, through the proxy and DNS settings in Settings → Network. If they can't be downloaded, the tile keeps its colour banner.
+
 ### Changed
 
 - The overlay form has the same anchor grid and previews on a poster from the library.

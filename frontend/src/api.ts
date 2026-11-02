@@ -642,6 +642,7 @@ export const api = {
     file: (path: string) => request<{ path: string; text: string }>("GET", `/config/file?path=${encodeURIComponent(path)}`),
     addLibrary: (name: string) => request<SaveResult>("POST", "/config/libraries", { name }),
     defaults: () => request<DefaultsCatalogue>("GET", "/config/defaults"),
+    defaultCoverUrl: (name: string) => `${urlBase}/api/v1/config/defaults/${encodeURIComponent(name)}/cover`,
     useDefault: (library: string, kind: DefaultKind, name: string, variables: Record<string, unknown>) =>
       request<SaveResult>("PUT", `/config/libraries/${encodeURIComponent(library)}/defaults/${kind}/${encodeURIComponent(name)}`, { template_variables: variables }),
     dropDefault: (library: string, kind: DefaultKind, name: string) =>
