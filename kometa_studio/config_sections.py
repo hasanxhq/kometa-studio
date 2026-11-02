@@ -241,6 +241,28 @@ def with_library_default(text: str, library: str, files: str, name: str, variabl
     return render(text, document, indent)
 
 
+def with_overlay_order(text: str, library: str, names: list[str]) -> str:
+    """``text`` with the library's overlay defaults in this order; Kometa draws overlay_files in order, so later ones go on top.
+
+    Only the defaults move, within the places they already have. ``names`` must be exactly the defaults the library uses, so a list
+    from before someone else's change is refused rather than dropping or adding one. A default listed twice stays together.
+    """
+    document, indent = _parse(text)
+    body = _library_body(document, library)
+    entries = body.get("overlay_files")
+    if not isinstance(entries, list):
+        raise ValueError(f"{library} has no overlay_files list")
+    def name_of(entry: object) -> str | None:
+        return next((str(entry[key]) for key in ("default", "pmm") if isinstance(entry, dict) and entry.get(key)), None)
+    places = [index for index, entry in enumerate(entries) if name_of(entry)]
+    if sorted(set(names)) != sorted({name_of(entries[index]) for index in places}) or len(set(names)) != len(names):
+        raise ValueError(f"{library}'s overlay defaults have changed. Reload the page.")
+    moved = [entries[index] for name in names for index in places if name_of(entries[index]) == name]
+    for index, entry in zip(places, moved, strict=True):
+        entries[index] = entry
+    return render(text, document, indent)
+
+
 def with_library_variables(text: str, library: str, variables: dict) -> str:
     """``text`` with the library's own template_variables (for every file in it) set to ``variables``."""
     document, indent = _parse(text)
@@ -252,6 +274,10 @@ async def set_library_default(writer: ConfigWriter, library: str, kind: str, nam
     files = "overlay_files" if kind == "overlay" else "collection_files"
     action = f"Turned off the {name} default" if variables is None else f"Set the {name} default"
     return await writer.save([_config_edit(writer, lambda text: with_library_default(text or "", library, files, name, variables))], f"{action} for {library}")
+
+
+async def set_overlay_order(writer: ConfigWriter, library: str, names: list[str]) -> dict:
+    return await writer.save([_config_edit(writer, lambda text: with_overlay_order(text or "", library, names))], f"Reordered the overlays for {library}")
 
 
 async def set_library_variables(writer: ConfigWriter, library: str, variables: dict) -> dict:

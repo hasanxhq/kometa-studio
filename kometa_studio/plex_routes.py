@@ -368,6 +368,25 @@ async def plex_collections(key: str, request: Request, http: Http, settings: App
     }
 
 
+@router.get("/libraries/{key}/items")
+async def plex_library_items(
+    key: str,
+    http: Http,
+    settings: AppSettings,
+    q: Annotated[str, Query(max_length=200)] = "",
+    start: Annotated[int, Query(ge=0)] = 0,
+    size: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> dict:
+    """A library's newest titles, or those matching ``q``: the posters to preview overlays on."""
+    server = kometa_plex(settings, http)
+    libraries = await _plex_read(server.libraries())
+    library = next((lib for lib in libraries if lib.key == key), None)
+    if library is None:
+        raise HTTPException(404, "Plex has no library with that key")
+    items, total = await _plex_read(server.library_items(key, library.type, start, size, q.strip()))
+    return {"items": [asdict(item) for item in items], "start": start, "total": total}
+
+
 @router.get("/libraries/{key}/collections/{rating_key}")
 async def plex_collection(
     key: str,

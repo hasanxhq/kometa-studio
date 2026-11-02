@@ -64,7 +64,7 @@ def test_exploring_a_collection_a_page_at_a_time(tmp_path, config):
     assert (first["total"], len(first["items"]), first["start"]) == (11, 4, 0)
     assert first["items"][0] == {
         "rating_key": "201", "title": "Marvel film 1", "type": "movie", "year": 2008, "thumb": "/library/metadata/201/thumb/1700000100",
-        "ids": {"imdb": "tt0371746", "tmdb": "1726", "tvdb": "128"}, "content_rating": "PG-13", "audience_rating": 7.5, "episodes": None, "added_at": 1700000000,
+        "ids": {"imdb": "tt0371746", "tmdb": "1726", "tvdb": "128"}, "content_rating": "PG-13", "audience_rating": 7.5, "episodes": None, "added_at": 1700000000, "video_resolution": None, "audio_codec": None,
     }
     assert [item["title"] for item in rest["items"]] == ["Marvel film 9", "Marvel film 10", "Marvel film 11"]
     assert show["collection"]["managed"] and show["collection"]["smart"]  # the older PMM label counts
@@ -105,3 +105,17 @@ def test_plex_unreachable_or_token_rejected(tmp_path, config):
     assert (down.status_code, rejected.status_code) == (502, 502)
     assert "Can't reach Plex" in down.json()["detail"]
     assert "rejected the token" in rejected.json()["detail"]
+
+
+def test_a_librarys_titles_for_previewing_overlays(tmp_path, config):
+    with make_client(tmp_path, FakePlex()) as client:
+        body = client.get("/api/v1/plex/libraries/1/items?size=2").json()
+        assert body["total"] == 3
+        assert [(item["title"], item["thumb"], item["video_resolution"], item["audio_codec"]) for item in body["items"]] == [
+            ("Dune", "/library/metadata/501/thumb/1700000005", "4k", "truehd"),
+            ("Dune Messiah", "/library/metadata/502/thumb/1700000006", "1080", "eac3"),
+        ]
+        searched = client.get("/api/v1/plex/libraries/1/items?q=heat").json()
+        assert [item["title"] for item in searched["items"]] == ["Heat"]
+        assert searched["items"][0]["video_resolution"] is None  # no media info in the listing
+        assert client.get("/api/v1/plex/libraries/9/items").status_code == 404

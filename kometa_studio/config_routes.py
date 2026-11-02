@@ -12,7 +12,7 @@ from pydantic import BaseModel, StringConstraints
 
 from . import backups
 from .config_items import ItemProblem, read_item, schema_kind
-from .config_sections import add_library, new_file_for_library, new_playlist_file, read_document, read_section, set_library_default, set_library_variables, set_settings
+from .config_sections import add_library, new_file_for_library, new_playlist_file, read_document, read_section, set_library_default, set_library_variables, set_overlay_order, set_settings
 from .config_write import ConfigWriter, Edit, SaveRefused
 from .db import get_setting, set_setting
 from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets, settings_defaults, setup_steps, unavailable_sources
@@ -258,6 +258,16 @@ async def drop_default(library: str, kind: str, name: str, writer: Writer) -> di
     if kind not in ("collection", "overlay"):
         raise HTTPException(404, "Defaults are collection or overlay defaults")
     return await _write_call(set_library_default(writer, library, kind, name, None))
+
+
+class OverlayOrderIn(BaseModel):
+    names: list[str]
+
+
+@router.put("/config/libraries/{library}/overlay-order")
+async def overlay_order(library: str, body: OverlayOrderIn, writer: Writer) -> dict:
+    """The order of a library's overlay defaults: Kometa draws them in this order, so later ones go on top."""
+    return await _write_call(set_overlay_order(writer, library, body.names))
 
 
 @router.put("/config/libraries/{library}/template-variables")

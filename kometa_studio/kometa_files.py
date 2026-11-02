@@ -257,7 +257,7 @@ class ConfigReader:
             title, docs = _banner(text)
             types = ["movie"] if path.stem.endswith("_movie") else ["show"] if path.stem.endswith("_show") else ["movie", "show"]
             toggles = [{**toggle, "types": types} for toggle in _toggles(text)]
-            overlays.append({"name": path.stem, "group": "overlays", "types": types, "title": title, "docs_url": docs, "toggles": toggles})
+            overlays.append({"name": path.stem, "group": "overlays", "types": types, "title": title, "docs_url": docs, "toggles": toggles, "layout": _overlay_layout(text)})
         return {"collections": list(collections.values()), "overlays": overlays}
 
     # --- one YAML file ------------------------------------------------------------
@@ -316,6 +316,36 @@ def _template_parts(body: dict) -> list[tuple[str | None, dict]]:
     return parts
 
 
+LAYOUT_KEYS = ("horizontal_align", "vertical_align", "horizontal_offset", "vertical_offset", "horizontal_position", "vertical_position", "back_width", "back_height", "back_color", "back_radius")
+
+
+@lru_cache(maxsize=64)
+def _overlay_layout(text: str) -> dict:
+    """Where an overlay default puts its overlays, read from the default itself, so the designer starts from what Kometa will do.
+
+    ``moved_by`` says which template variables move it: most use ``horizontal_align`` and ``vertical_align`` with offsets, while
+    ratings and languages place themselves from ``horizontal_position`` and ``vertical_position``. ``variables`` are the starting
+    values; ``conditionals`` are Kometa's rules for values that depend on others (an offset depends on the alignment, say).
+    """
+    head = re.split(r"^(?:overlays|queues):", text, maxsplit=1, flags=re.MULTILINE)[0]  # what's after it is long, and not needed
+    try:
+        data = _yaml().load(head)
+    except YAMLError:
+        data = None
+    data = _mapping(data)
+    shared = _mapping(_mapping(data.get("external_templates")).get("template_variables"))
+    sources = [shared, _mapping(shared.get("default"))]
+    for template in _mapping(data.get("templates")).values():  # ratings keeps its starting values in its template
+        sources.append(_mapping(_mapping(template).get("default")))
+    variables: dict[str, Any] = {}
+    for source in sources:
+        for key in LAYOUT_KEYS:
+            if isinstance(source.get(key), str | int) and "<<" not in str(source[key]):
+                variables.setdefault(key, source[key])
+    conditionals = {key: {"default": rule.get("default"), "conditions": rule.get("conditions") or []} for key, rule in _mapping(shared.get("conditionals")).items() if key in LAYOUT_KEYS and isinstance(rule, dict)}
+    return {"moved_by": "position" if "horizontal_position" in text else "align", "variables": variables, "conditionals": conditionals}
+
+
 @lru_cache(maxsize=256)
 def _toggles(text: str) -> tuple[dict, ...]:
     """What a ``use_<key>`` template variable turns on or off in a default, read from the default itself: ({key, label, on}, ...).
@@ -323,7 +353,9 @@ def _toggles(text: str) -> tuple[dict, ...]:
     Kometa's ``shared`` template gives its collections ``use_<key>``, and a few overlay defaults have their own. Other defaults
     get their collections from the library at run time, so there's nothing to list; nor for the ones with more than anyone would tick through.
     """
-    if "\noverlays:" in text and "use_<<key>>" not in text:  # most overlay defaults, and the biggest files
+    # Overlay defaults get use_<key> from the file or from overlays/templates.yml's standard template. The rest are the biggest files.
+    overlay_switches = "use_<<key>>" in text or "name: standard" in text
+    if "\noverlays:" in text and not overlay_switches:
         return ()
     try:
         data = _yaml().load(text)
@@ -341,7 +373,7 @@ def _toggles(text: str) -> tuple[dict, ...]:
         if isinstance(body, dict) and body.get("type") == "custom" and isinstance(body.get("data"), dict) and any(name == "shared" for name, _ in _template_parts(body)):
             for key, label in body["data"].items():
                 found.setdefault(str(key), {"key": str(key), "label": str(label), "on": True})
-    if "use_<<key>>" in text:
+    if overlay_switches:
         for title, body in (data.get("overlays") or {}).items():
             variables = (body.get("variables") or {}) if isinstance(body, dict) else {}
             if "alt" in variables or not isinstance(variables.get("key"), str):  # combinations (use_<key>_<alt>), or no one list of switches

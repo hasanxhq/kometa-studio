@@ -54,6 +54,8 @@ class PlexItem:
     audience_rating: float | None
     episodes: int | None  # shows only
     added_at: int | None
+    video_resolution: str | None = None  # from Plex's media info, where the listing has it
+    audio_codec: str | None = None
 
 
 @dataclass
@@ -166,6 +168,18 @@ class PlexServer:
         items = [_item(m) for m in container.get("Metadata") or []]
         return items, int(container.get("totalSize", container.get("size", len(items))) or 0)
 
+    async def library_items(self, library_key: str, library_type: str, start: int, size: int, title: str = "") -> tuple[list[PlexItem], int]:
+        """A page of a library's movies or shows, newest first, and how many there are. ``title`` narrows them to matching titles."""
+        plex_type = {"movie": "1", "show": "2"}.get(library_type)
+        if plex_type is None:
+            return [], 0
+        params = {"type": plex_type, "sort": "addedAt:desc", "X-Plex-Container-Start": str(start), "X-Plex-Container-Size": str(size)}
+        if title:
+            params["title"] = title
+        container = await self._get(f"/library/sections/{library_key}/all", params)
+        items = [_item(m) for m in container.get("Metadata") or []]
+        return items, int(container.get("totalSize", container.get("size", len(items))) or 0)
+
     async def image(self, path: str, width: int, height: int) -> tuple[bytes, str]:
         """A poster, resized by Plex. ``path`` must be one Plex gave Studio (IMAGE_PATH)."""
         if not IMAGE_PATH.match(path):
@@ -200,6 +214,7 @@ def _item(m: dict) -> PlexItem:
             ids[source] = value
     year = m.get("year")
     rating = m.get("audienceRating")
+    media = next(iter(m.get("Media") or []), {})
     return PlexItem(
         rating_key=str(m["ratingKey"]),
         title=str(m.get("title", "")),
@@ -211,4 +226,6 @@ def _item(m: dict) -> PlexItem:
         audience_rating=float(rating) if isinstance(rating, int | float) else None,
         episodes=int(m["leafCount"]) if m.get("type") == "show" and m.get("leafCount") is not None else None,
         added_at=m.get("addedAt"),
+        video_resolution=str(media["videoResolution"]) if media.get("videoResolution") else None,
+        audio_codec=str(media["audioCodec"]) if media.get("audioCodec") else None,
     )
