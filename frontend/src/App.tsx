@@ -6,6 +6,7 @@ import { AdvancedProvider } from "./advanced";
 import { AuthGate } from "./components/AuthGate";
 import { Layout } from "./components/Layout";
 import { pages } from "./nav";
+import { ReadyMadePicksProvider } from "./readyMadePicks";
 import { ActivityHistory } from "./pages/ActivityHistory";
 import { ActivityQueue } from "./pages/ActivityQueue";
 import { CollectionDetail } from "./pages/CollectionDetail";
@@ -21,6 +22,8 @@ import { Overview } from "./pages/Overview";
 import { LibraryDetail } from "./pages/LibraryDetail";
 import { Placeholder } from "./pages/Placeholder";
 import { Playlists } from "./pages/Playlists";
+import { ReadyMade } from "./pages/ReadyMade";
+import { ReadyMadeCategory } from "./pages/ReadyMadeCategory";
 import { RunDetail } from "./pages/RunDetail";
 import { SettingsConnect } from "./pages/SettingsConnect";
 import { SettingsGeneral } from "./pages/SettingsGeneral";
@@ -40,6 +43,7 @@ import { SystemUpdates } from "./pages/SystemUpdates";
 const built: Record<string, ComponentType> = {
   "/": Overview,
   "/libraries": Libraries,
+  "/ready-made": ReadyMade,
   "/defaults": Defaults,
   "/overlays": Overlays,
   "/playlists": Playlists,
@@ -63,31 +67,34 @@ export function App({ queryClient = new QueryClient() }: { queryClient?: QueryCl
   return (
     <QueryClientProvider client={queryClient}>
       <AdvancedProvider>
-        <AuthGate>
-          <Routes>
-            <Route element={<Layout />}>
-              {pages.map((page) => {
-                const Built = built[page.path];
-                return <Route key={page.path} path={page.path} element={Built ? <Built /> : <Placeholder page={page} />} />;
-              })}
-              <Route path="/setup" element={<Setup />} />
-              <Route path="/activity/queue/:id" element={<RunDetail />} />
-              <Route path="/libraries/:name" element={<LibraryDetail />} />
-              <Route path="/libraries/:name/collections/:key" element={<CollectionDetail />} />
-              <Route path="/overlays/designer" element={<OverlayDesigner />} />
-              <Route path="/files" element={<FileEditor />} />
-              <Route
-                path="/items"
-                element={
-                  <Suspense fallback={<p className="text-muted">Loading…</p>}>
-                    <ItemEditor />
-                  </Suspense>
-                }
-              />
-              <Route path="*" element={<p className="text-muted">Page not found.</p>} />
-            </Route>
-          </Routes>
-        </AuthGate>
+        <ReadyMadePicksProvider>
+          <AuthGate>
+            <Routes>
+              <Route element={<Layout />}>
+                {pages.map((page) => {
+                  const Built = built[page.path];
+                  return <Route key={page.path} path={page.path} element={Built ? <Built /> : <Placeholder page={page} />} />;
+                })}
+                <Route path="/setup" element={<Setup />} />
+                <Route path="/activity/queue/:id" element={<RunDetail />} />
+                <Route path="/libraries/:name" element={<LibraryDetail />} />
+                <Route path="/libraries/:name/collections/:key" element={<CollectionDetail />} />
+                <Route path="/ready-made/:category" element={<ReadyMadeCategory />} />
+                <Route path="/overlays/designer" element={<OverlayDesigner />} />
+                <Route path="/files" element={<FileEditor />} />
+                <Route
+                  path="/items"
+                  element={
+                    <Suspense fallback={<p className="text-muted">Loading…</p>}>
+                      <ItemEditor />
+                    </Suspense>
+                  }
+                />
+                <Route path="*" element={<p className="text-muted">Page not found.</p>} />
+              </Route>
+            </Routes>
+          </AuthGate>
+        </ReadyMadePicksProvider>
       </AdvancedProvider>
     </QueryClientProvider>
   );

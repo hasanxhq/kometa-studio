@@ -24,6 +24,11 @@ export const sections: Section[] = [
         path: "/libraries",
         summary: "One card per Plex library, with its collections, overlays, defaults and operations.",
       },
+      {
+        label: "Ready-made",
+        path: "/ready-made",
+        summary: "Kometa's ready-made collections as categories: pick the ones you want and build them in one run.",
+      },
       { label: "Defaults", path: "/defaults", summary: "Kometa's ready-made collections and overlays, turned on per library and customized without YAML." },
       { label: "Overlays", path: "/overlays", summary: "Kometa's overlays per library: the designer, what draws them, when, and turning them off and on." },
       { label: "Playlists", path: "/playlists", summary: "Kometa's playlists, from config.yml's playlist_files." },
@@ -77,6 +82,7 @@ export const otherPages: { path: string; label: string }[] = [
 const nestedPages: { pattern: RegExp; label: string }[] = [
   { pattern: /^\/libraries\/[^/]+\/collections\/[^/]+\/?$/, label: "Collection" },
   { pattern: /^\/libraries\/[^/]+\/?$/, label: "Library" },
+  { pattern: /^\/ready-made\/[^/]+\/?$/, label: "Category" },
   { pattern: /^\/overlays\/designer\/?$/, label: "Overlay designer" },
   { pattern: /^\/activity\/queue\/[^/]+\/?$/, label: "Run" },
 ];

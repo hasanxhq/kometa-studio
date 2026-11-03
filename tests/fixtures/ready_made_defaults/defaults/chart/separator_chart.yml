@@ -1,0 +1,8 @@
+#####
+#  Separator Chart  #
+#####
+
+collections:
+  Separator:
+    template:
+      - name: separator

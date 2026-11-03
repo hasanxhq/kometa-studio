@@ -27,9 +27,47 @@ class FakePlex:
         self.reachable = {REMOTE_URI, RELAY_URI}
         self.requests: list[httpx.Request] = []
         self.added: dict[str, list[int]] = {}  # section key -> when each movie or episode was added (Unix time)
+        self.deletions: list[str] = []
+        self._next_key = 200
+        self.TAGS = {
+            k: {tag: [dict(item) for item in items] for tag, items in tags.items()}
+            for k, tags in self.DEFAULT_TAGS.items()
+        }
+        self.TAG_COUNTS = {
+            k: dict(counts)
+            for k, counts in self.DEFAULT_TAG_COUNTS.items()
+        }
+        # Instance copies so tests can add/delete without polluting siblings.
+        self.COLLECTIONS = {k: [dict(c) for c in v] for k, v in self.DEFAULT_COLLECTIONS.items()}
+        self.LABELS = {k: [dict(x) for x in v] for k, v in self.DEFAULT_LABELS.items()}
+        self.LABELLED = {k: list(v) for k, v in self.DEFAULT_LABELLED.items()}
+        self.COLLECTION_META = {k: {**v, "Label": [dict(lab) for lab in v.get("Label", [])]} for k, v in self.DEFAULT_COLLECTION_META.items()}
+        self.ITEMS = {k: [dict(i) for i in v] for k, v in self.DEFAULT_ITEMS.items()}
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
+
+    def add_collection(self, section_key: str, title: str, *, labels: list[str] | None = None, items: int = 0, thumb: str | None = None) -> str:
+        """Add a collection as if Kometa (or something else) built it. Returns its rating key."""
+        self._next_key += 1
+        key = str(self._next_key)
+        entry: dict = {"ratingKey": key, "title": title, "childCount": items}
+        if thumb:
+            entry["thumb"] = thumb
+        self.COLLECTIONS.setdefault(section_key, []).append(entry)
+        by_title = {d["title"]: str(d["key"]) for d in self.LABELS.get(section_key, [])}
+        meta_labels = []
+        for name in labels or []:
+            if name not in by_title:
+                new_id = str(9000 + len(self.LABELS.get(section_key, [])))
+                self.LABELS.setdefault(section_key, []).append({"key": new_id, "title": name})
+                by_title[name] = new_id
+            lab_key = by_title[name]
+            meta_labels.append({"id": int(lab_key) if lab_key.isdigit() else abs(hash(lab_key)) % 100000, "tag": name})
+            self.LABELLED.setdefault(lab_key, []).append(key)
+        self.COLLECTION_META[key] = {"librarySectionID": int(section_key), "Label": meta_labels}
+        self.ITEMS[key] = []
+        return key
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -46,30 +84,56 @@ class FakePlex:
             return httpx.Response(
                 200, json={"MediaContainer": {"machineIdentifier": SERVER_ID, "friendlyName": "Seedbox", "version": "1.41.2.9200"}}
             )
+        if request.method == "DELETE" and url.path.startswith("/library/metadata/"):
+            return self.delete_metadata(url.path.rsplit("/", 1)[-1])
         if url.path.startswith("/library/"):
             return self.library(request)
         return httpx.Response(404)
 
+    def delete_metadata(self, rating_key: str) -> httpx.Response:
+        if rating_key not in self.COLLECTION_META:
+            return httpx.Response(404)
+        self.deletions.append(rating_key)
+        for section, items in self.COLLECTIONS.items():
+            self.COLLECTIONS[section] = [c for c in items if c["ratingKey"] != rating_key]
+        for lab_key, keys in list(self.LABELLED.items()):
+            self.LABELLED[lab_key] = [k for k in keys if k != rating_key]
+        self.COLLECTION_META.pop(rating_key, None)
+        self.ITEMS.pop(rating_key, None)
+        return httpx.Response(200)
+
     # Libraries shaped like a real server's answers (checked against Plex Media Server 1.41).
     SECTIONS = [{"key": "1", "title": "Movies", "type": "movie"}, {"key": "2", "title": "TV Shows", "type": "show"}]
-    COLLECTIONS = {
+    DEFAULT_COLLECTIONS = {
         "1": [
             {"ratingKey": "101", "title": "Marvel", "childCount": 11, "thumb": "/library/collections/101/composite/1700000001?width=400&height=600"},
             {"ratingKey": "102", "title": "Spy Kids", "childCount": 3, "summary": "Made by hand", "thumb": "/library/collections/102/composite/1700000002"},
             {"ratingKey": "103", "title": "Old PMM collection", "childCount": 2, "smart": "1"},
+            {"ratingKey": "104", "title": "Studio Chart", "childCount": 4, "thumb": "/library/collections/104/composite/1700000004"},
+            {"ratingKey": "105", "title": "Action Movies", "childCount": 5, "thumb": "/library/collections/105/composite/1700000005"},
         ],
         "2": [],
     }
     SIZES = {"1": 812, "2": 64}  # movies, shows
-    LABELS = {"1": [{"key": "33517", "title": "Kometa"}, {"key": "40", "title": "PMM"}, {"key": "41", "title": "Favourites"}], "2": []}
-    LABELLED = {"33517": ["101"], "40": ["103"], "41": ["102"]}
+    DEFAULT_LABELS = {
+        "1": [
+            {"key": "33517", "title": "Kometa"},
+            {"key": "40", "title": "PMM"},
+            {"key": "41", "title": "Favourites"},
+            {"key": "42", "title": "Studio"},
+        ],
+        "2": [],
+    }
+    DEFAULT_LABELLED = {"33517": ["101", "105"], "40": ["103"], "41": ["102"], "42": ["104", "105"]}
     # What /library/metadata/<collection> and /library/collections/<key>/children give (Plex 1.41, trimmed).
-    COLLECTION_META = {
+    DEFAULT_COLLECTION_META = {
         "101": {"librarySectionID": 1, "Label": [{"id": 33517, "tag": "Kometa"}]},
         "102": {"librarySectionID": 1, "Label": [{"id": 41, "tag": "Favourites"}]},
         "103": {"librarySectionID": 1, "Label": [{"id": 40, "tag": "PMM"}]},
+        "104": {"librarySectionID": 1, "Label": [{"id": 42, "tag": "Studio"}]},
+        "105": {"librarySectionID": 1, "Label": [{"id": 42, "tag": "Studio"}, {"id": 33517, "tag": "Kometa"}]},
     }
-    ITEMS = {
+    DEFAULT_ITEMS = {
         "101": [
             {
                 "ratingKey": str(201 + n),
@@ -86,6 +150,8 @@ class FakePlex:
         ],
         "102": [{"ratingKey": "301", "type": "movie", "title": "Spy Kids", "year": 2001}],
         "103": [{"ratingKey": "401", "type": "show", "title": "An Old Show", "year": 1999, "leafCount": 61, "Guid": [{"id": "tvdb://74852"}]}],
+        "104": [],
+        "105": [],
     }
 
     # What /library/sections/<key>/all gives for movies, newest first (trimmed).
@@ -97,12 +163,115 @@ class FakePlex:
         ]
     }
 
+    # Tag values from /library/sections/<key>/<tag> (Plex 1.41).
+    DEFAULT_TAGS = {
+        "1": {
+            "genre": [
+                {"key": "Action", "title": "Action"},
+                {"key": "Sci-Fi", "title": "Sci-Fi"},
+                {"key": "Drama", "title": "Drama"},
+            ],
+            "contentRating": [
+                {"key": "PG-13", "title": "PG-13"},
+                {"key": "R", "title": "R"},
+                {"key": "G", "title": "G"},
+                {"key": "TV-G", "title": "TV-G"},
+            ],
+            "studio": [
+                {"key": "Marvel Studios", "title": "Marvel Studios"},
+                {"key": "Warner Bros.", "title": "Warner Bros."},
+            ],
+            "country": [
+                {"key": "United States", "title": "United States"},
+                {"key": "United Kingdom", "title": "United Kingdom"},
+            ],
+            "decade": [
+                {"key": "2020", "title": "2020s"},
+                {"key": "2010", "title": "2010s"},
+                {"key": "1990", "title": "1990s"},
+            ],
+            "year": [
+                {"key": "2026", "title": "2026"},
+                {"key": "2021", "title": "2021"},
+                {"key": "1995", "title": "1995"},
+            ],
+            "resolution": [
+                {"key": "4k", "title": "4k"},
+                {"key": "1080", "title": "1080"},
+                {"key": "8k", "title": "8k"},
+            ],
+            "audioLanguage": [
+                {"key": "en", "title": "English"},
+                {"key": "fr", "title": "French"},
+            ],
+            "subtitleLanguage": [
+                {"key": "en", "title": "English"},
+                {"key": "es", "title": "Spanish"},
+            ],
+        },
+        "2": {
+            "network": [
+                {"key": "HBO", "title": "HBO"},
+                {"key": "Netflix", "title": "Netflix"},
+            ],
+            "genre": [
+                {"key": "Comedy", "title": "Comedy"},
+                {"key": "Drama", "title": "Drama"},
+            ],
+            "year": [
+                {"key": "2020", "title": "2020"},
+                {"key": "1999", "title": "1999"},
+            ],
+        },
+    }
+
+    # Counts for /library/sections/<key>/all with filter parameters.
+    DEFAULT_TAG_COUNTS = {
+        "1": {
+            ("genre", "Action"): 5,
+            ("genre", "Sci-Fi"): 2,
+            ("genre", "Drama"): 1,
+            ("contentRating", "PG-13"): 3,
+            ("contentRating", "R"): 1,
+            ("contentRating", "G"): 1,
+            ("contentRating", "TV-G"): 2,
+            ("studio", "Marvel Studios"): 4,
+            ("studio", "Warner Bros."): 2,
+            ("country", "United States"): 6,
+            ("country", "United Kingdom"): 2,
+            ("decade", "2020"): 2,
+            ("decade", "2010"): 5,
+            ("decade", "1990"): 1,
+            ("year", "2026"): 1,
+            ("year", "2021"): 1,
+            ("year", "1995"): 1,
+            ("resolution", "4k"): 1,
+            ("resolution", "1080"): 1,
+            ("resolution", "8k"): 1,
+            ("audioLanguage", "en"): 5,
+            ("audioLanguage", "fr"): 1,
+            ("subtitleLanguage", "en"): 4,
+            ("subtitleLanguage", "es"): 2,
+        },
+        "2": {
+            ("network", "HBO"): 3,
+            ("network", "Netflix"): 2,
+            ("genre", "Comedy"): 2,
+            ("genre", "Drama"): 1,
+            ("year", "2020"): 1,
+            ("year", "1999"): 1,
+        },
+    }
+
     def library(self, request: httpx.Request) -> httpx.Response:
         parts = request.url.path.strip("/").split("/")  # library, sections, <key>, <what>
         if parts == ["library", "sections"]:
             return httpx.Response(200, json={"MediaContainer": {"Directory": self.SECTIONS}})
         if len(parts) == 4 and parts[1] == "sections" and parts[2] in self.COLLECTIONS:
             key, what = parts[2], parts[3]
+            if what in self.TAGS.get(key, {}):
+                items = self.TAGS[key][what]
+                return httpx.Response(200, json={"MediaContainer": {"size": len(items), "Directory": items}})
             if what == "collections":
                 return httpx.Response(200, json={"MediaContainer": {"Metadata": self.COLLECTIONS[key]}})
             if what == "label":
@@ -113,6 +282,12 @@ class FakePlex:
                     found = [m for m in self.TITLES.get(key, []) if title in m["title"].lower()]
                     start, size = int(request.url.params.get("X-Plex-Container-Start", "0")), int(request.url.params["X-Plex-Container-Size"])
                     return httpx.Response(200, json={"MediaContainer": {"size": len(found[start : start + size]), "totalSize": len(found), "offset": start, "Metadata": found[start : start + size]}})
+                counts = self.TAG_COUNTS.get(key, {})
+                for tag_param in ("genre", "contentRating", "studio", "country", "network", "decade", "year", "resolution", "audioLanguage", "subtitleLanguage"):
+                    if tag_param in request.url.params:
+                        val = request.url.params[tag_param]
+                        cnt = counts.get((tag_param, val), 0)
+                        return httpx.Response(200, json={"MediaContainer": {"size": 0, "totalSize": cnt, "Metadata": []}})
                 return httpx.Response(200, json={"MediaContainer": {"size": 0, "totalSize": self.SIZES.get(key, 0), "Metadata": []}})
             if what == "all" and request.url.params.get("type") in ("1", "4"):  # how many were added since, as Plex's addedAt>>= filter
                 since = int(request.url.params.get("addedAt>>", "0"))

@@ -360,7 +360,7 @@ export type Job = {
 };
 
 // Studio's own tasks on System → Tasks.
-export type TaskName = "full_backup" | "full_check";
+export type TaskName = "full_backup" | "full_check" | "ready_made_counts";
 
 export type BuiltinTask = {
   name: TaskName;
@@ -524,6 +524,71 @@ export type HistoryEvent = {
 };
 
 export type HistoryPage = { events: HistoryEvent[]; libraries: string[]; next: number | null };
+
+// --- Ready-made collections (pick categories, build in one run) ---
+
+export type ReadyMadeKind = "fixed" | "award" | "per_value" | "helper";
+export type ReadyMadeRunScope = "collection" | "file";
+export type ReadyMadeEntryState = "none" | "queued" | "building" | "in_plex" | "missing" | "failed" | "removing";
+
+export type ReadyMadeRef = { category: string; block: string; key: string };
+
+export type ReadyMadeGroup = "chart" | "award" | "both" | "movie" | "show";
+
+export type ReadyMadeCategorySummary = {
+  name: string;
+  title: string;
+  group: ReadyMadeGroup; // feeds categoryOf for the banner
+  kind: ReadyMadeKind;
+  listable: boolean;
+  reason: string | null; // when not listable
+  count: number | null; // collections it makes in this library (null = not counted yet)
+  in_plex: number;
+  picked: number; // rows Studio wants (desired)
+  run_scope: ReadyMadeRunScope;
+};
+
+export type ReadyMadeLibrary = {
+  library: string;
+  library_type: "movie" | "show" | null;
+  counted_at: string | null;
+  counting: boolean;
+  categories: ReadyMadeCategorySummary[];
+};
+
+export type ReadyMadeEntry = {
+  block: string;
+  key: string;
+  title: string;
+  items: number | null;
+  id: number | null;
+  desired: boolean | null;
+  state: ReadyMadeEntryState;
+  plex_items: number | null;
+  thumb: string | null;
+  last_built_at: string | null;
+  last_error: string | null;
+  build_seconds: number | null;
+};
+
+export type ReadyMadeCategory = ReadyMadeCategorySummary & {
+  counted_at: string | null;
+  collections: ReadyMadeEntry[];
+};
+
+export type ReadyMadeBuildBody = { library: string; add: ReadyMadeRef[]; remove: ReadyMadeRef[]; dry_run: boolean };
+
+export type ReadyMadeBuildPlan = {
+  build: { category: string; title: string }[];
+  remove: { category: string; title: string; deletable: boolean; reason: string | null }[];
+  run: { libraries: string[]; collections: string[]; files: string[] } | null;
+};
+
+export type ReadyMadeBuildResult = ReadyMadeBuildPlan & {
+  run_id: number | null;
+  removed: string[];
+  kept: { title: string; reason: string }[];
+};
 
 // --- Editing (milestone 6) ---
 
@@ -746,6 +811,12 @@ export const api = {
     apply: (library: string) => request<{ run_id: number }>("POST", `/overlays/${encodeURIComponent(library)}/apply`),
     off: (library: string) => request<{ run_id: number }>("POST", `/overlays/${encodeURIComponent(library)}/off`),
     on: (library: string) => request<{ run_id: number }>("POST", `/overlays/${encodeURIComponent(library)}/on`),
+  },
+  readyMade: {
+    library: (name: string) => request<ReadyMadeLibrary>("GET", `/ready-made/libraries/${encodeURIComponent(name)}`),
+    category: (library: string, name: string) =>
+      request<ReadyMadeCategory>("GET", `/ready-made/libraries/${encodeURIComponent(library)}/categories/${encodeURIComponent(name)}`),
+    build: (body: ReadyMadeBuildBody) => request<ReadyMadeBuildPlan | ReadyMadeBuildResult>("POST", "/ready-made/build", body),
   },
   tasks: {
     list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),

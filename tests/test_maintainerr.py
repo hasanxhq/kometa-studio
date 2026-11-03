@@ -141,7 +141,13 @@ def test_connecting_lists_its_collections_and_libraries_mark_them(tmp_path, setu
         {"title": "Spy Kids", "library": "Movies", "overlays": True},
     ]
     assert state["overlays_enabled"] is True and state["risks"] == [] and state["error"] is None
-    assert {c["title"]: c["maintainerr"] for c in collections} == {"Marvel": False, "Old PMM collection": False, "Spy Kids": True}
+    assert {c["title"]: c["maintainerr"] for c in collections} == {
+        "Action Movies": False,
+        "Marvel": False,
+        "Old PMM collection": False,
+        "Spy Kids": True,
+        "Studio Chart": False,
+    }
     assert libraries[0]["maintainerr"] == 1
 
 

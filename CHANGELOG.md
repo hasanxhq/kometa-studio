@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ready-made** in the sidebar (Libraries, before Defaults): Kometa's collection defaults as categories. Open a category, pick the collections you want (or mark built ones for removal), then **Build** once from the bar at the bottom. Build writes Studio's generated files, queues one Kometa run, and Remove deletes only `Studio`-labelled collections (never Maintainerr's). A counting job fills per-library preview counts (after Plex connects, after runs, and daily). Covers and library picker match the Defaults gallery.
+
 - **Defaults** in the sidebar: the Defaults gallery as a page of its own, with an "Apply to" library picker. Until now it was only a tab inside each library.
 
 - **Overlay designer** (Overlays → Open the overlay designer): the overlay defaults a library uses, as layers, on a real poster from that library. A nine-cell anchor and offsets move a layer, with its colour, radius and what Kometa's default lets you choose under Show when, all written as that default's template variables. Pick the title to preview on, see the same layers on others, add and turn off layers, and change the order Kometa draws them in. It's placement only: Kometa draws the real overlays on the next overlay run. Every change is one save that Kometa checks.

@@ -1,0 +1,14 @@
+#####
+#  Network Collections  #
+#  https://kometa.wiki/en/latest/defaults/show/network  #
+#####
+
+collections:
+  Network Separator:
+    template:
+      - name: separator
+
+dynamic_collections:
+  Network:
+    type: network
+    title_format: <<key_name>>

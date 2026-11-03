@@ -1,0 +1,14 @@
+#####
+#  Director Collections  #
+#  https://kometa.wiki/en/latest/defaults/movie/director  #
+#####
+
+collections:
+  Director Separator:
+    template:
+      - name: separator
+
+dynamic_collections:
+  Directors:
+    type: director
+    title_format: <<key_name>> (Director)

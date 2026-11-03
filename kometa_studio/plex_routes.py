@@ -251,7 +251,7 @@ async def test_server(body: ManualServer, http: Http) -> dict:
 
 
 @router.post("/connect")
-async def connect_server(body: ConnectRequest, db: Db, http: Http, box: Box, settings: AppSettings) -> dict:
+async def connect_server(body: ConnectRequest, request: Request, db: Db, http: Http, box: Box, settings: AppSettings) -> dict:
     path = config_path(settings)
     if body.server_id is not None:
         servers = await _account_servers(db, http, box)
@@ -279,6 +279,9 @@ async def connect_server(body: ConnectRequest, db: Db, http: Http, box: Box, set
         set_setting(db, CUSTOM_URL, url)
     else:
         delete_setting(db, CUSTOM_URL)
+    tasks = getattr(request.app.state, "tasks", None)
+    if tasks is not None:
+        tasks.start("ready_made_counts")
     return current_state(db, settings)
 
 

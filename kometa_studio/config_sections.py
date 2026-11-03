@@ -118,6 +118,33 @@ def with_library_file(text: str, library: str, files: str, reference: str) -> st
     return render(text, document, indent)
 
 
+def without_library_file(text: str, library: str, files: str, reference: str) -> str:
+    """``text`` with the ``- file: reference`` entry removed from the library's ``files`` list."""
+    document, indent = _parse(text)
+    body = _library_body(document, library)
+    if files not in body and OLD_NAMES[files] in body:
+        raise ValueError(f"{library} still uses the old {OLD_NAMES[files]}. Rename it to {files} in config.yml first.")
+    current = body.get(files)
+    if current is None:
+        raise ValueError(f"{library} has no {files} entry for {reference}")
+    entries = current if isinstance(current, list) else [current]
+
+    def matches(entry: object) -> bool:
+        return isinstance(entry, dict) and entry.get("file") == reference
+
+    kept = [entry for entry in entries if not matches(entry)]
+    if len(kept) == len(entries):
+        raise ValueError(f"{library} has no {files} entry for {reference}")
+    if kept:
+        if isinstance(current, list):
+            current[:] = kept
+        else:
+            body[files] = CommentedSeq(kept)
+    else:
+        del body[files]  # Kometa refuses an empty list
+    return render(text, document, indent)
+
+
 def _config_edit(writer: ConfigWriter, change) -> Edit:
     path = writer.config_path
     current = path.read_bytes() if path.exists() else None

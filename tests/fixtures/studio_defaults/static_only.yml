@@ -1,0 +1,30 @@
+##############################################################################
+#                         Static-only fixture default                        #
+##############################################################################
+
+external_templates:
+  default: templates
+  template_variables:
+    collection_section: "010"
+
+templates:
+  chart:
+    imdb_chart: popular_movies
+
+collections:
+  Chart Separator:
+    template:
+      - name: separator
+        separator: chart
+        key_name: Charts
+
+  Popular:
+    template:
+      - name: chart
+      - name: shared
+    radarr_add_missing: true
+
+  Top Rated:
+    template:
+      - name: chart
+      - name: shared

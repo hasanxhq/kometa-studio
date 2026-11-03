@@ -1,0 +1,34 @@
+##############################################################################
+#              Dynamic fixture with sync, exclude, addons, separator         #
+##############################################################################
+
+external_templates:
+  default: templates
+  template_variables:
+    collection_section: "060"
+
+collections:
+  Genre Collections:
+    template:
+      - name: separator
+        separator: genre
+        key_name: Genre
+
+dynamic_collections:
+  Genre:
+    type: genre
+    sync: true
+    exclude:
+      - Talk-Show
+      - Reality
+    addons:
+      Action:
+        - Adventure
+    title_format: <<key_name>> Movies
+    template:
+      - smart_filter
+      - shared
+    template_variables:
+      search_term:
+        default: genre
+    sonarr_add_missing: false
