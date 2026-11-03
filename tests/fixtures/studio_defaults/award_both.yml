@@ -1,0 +1,40 @@
+##############################################################################
+#                    Award-style fixture: static + dynamic                   #
+##############################################################################
+
+external_templates:
+  default: templates
+  template_variables:
+    collection_section: 130
+
+collections:
+  Oscars Separator:
+    template:
+      - name: separator
+        separator: oscars
+
+  Best Picture:
+    variables:
+      key: best_picture
+    template:
+      - name: shared
+    imdb_award:
+      event_id: ev0000003
+      winning: true
+    append_label: Awards
+
+dynamic_collections:
+  Oscars Years:
+    type: imdb_awards
+    sync: true
+    data:
+      event_id: ev0000003
+      starting: latest-2
+      ending: latest
+    title_format: Oscars <<key_name>>
+    template:
+      - name: imdb_award
+      - name: shared
+    template_variables:
+      winning:
+        default: true
