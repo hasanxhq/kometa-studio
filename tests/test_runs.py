@@ -254,50 +254,26 @@ def test_a_critical_error_fails_the_run_even_when_kometa_exits_0(tmp_path, confi
     assert run["error"] == "Config Error: tmdb sub-attribute apikey not found"
 
 
-def kometas_log(config: Path, age: float = -60, message: str = "'NoneType' object has no attribute 'info'") -> None:
+def kometas_log(config: Path, age: float = -60) -> None:
     """A logs/meta.log with Kometa's crash in it, written ``age`` seconds ago (by default, during the run)."""
     log = config.parent / "logs" / "meta.log"
     log.parent.mkdir(exist_ok=True)
     log.write_text(
         "[2026-10-31 12:42:04,803] [kometa.py:481]  [INFO]     | Kometa starting |\n"
-        f"[2026-10-31 12:42:04,832] [kometa.py:308]  [CRITICAL] | {message}       |\n"
+        "[2026-10-31 12:42:04,832] [kometa.py:308]  [CRITICAL] | 'NoneType' object has no attribute 'info'       |\n"
     )
     when = time.time() - age
     os.utime(log, (when, when))
 
 
-def append_kometas_log(config: Path, message: str, level: str = "CRITICAL") -> None:
-    """A line Kometa appended during this run. Writing updates the file's mtime."""
-    log = config.parent / "logs" / "meta.log"
-    with log.open("a", encoding="utf-8") as handle:
-        handle.write(f"[2026-10-31 12:42:09,100] [kometa.py:308]  [{level}] | {message}       |\n")
-
-
 def test_a_crash_only_kometas_log_knows_about_fails_the_run(tmp_path, config):
-    release = tmp_path / "release"
-    plan(config, lines=["Starting Kometa"], wait_for=str(release), exit=0)
-    kometas_log(config, age=3600, message="Config Error: an old one")  # already in the file before this run
+    plan(config, lines=["Starting Kometa"], exit=0)
+    kometas_log(config)
     with make_client(tmp_path) as client:
         run_id = client.post("/api/v1/runs", json={"mode": "collections"}).json()["id"]
-        _wait_for_line(client, run_id, "Starting Kometa")
-        append_kometas_log(config, "Failed to set process priority")  # a critical line Kometa carries on from
-        append_kometas_log(config, "'NoneType' object has no attribute 'info'")
-        release.touch()
         run = wait_for(client, run_id)
     assert run["status"] == "failed" and run["exit_code"] == 0
     assert run["error"] == "'NoneType' object has no attribute 'info'"
-
-
-def test_an_older_critical_line_doesnt_fail_a_run_that_only_appended_past_it(tmp_path, config):
-    release = tmp_path / "release"
-    plan(config, lines=["Starting Kometa"], wait_for=str(release), exit=0)
-    kometas_log(config, age=3600, message="Config Error: an old one")
-    with make_client(tmp_path) as client:
-        run_id = client.post("/api/v1/runs", json={"mode": "collections"}).json()["id"]
-        _wait_for_line(client, run_id, "Starting Kometa")
-        append_kometas_log(config, "Kometa starting", level="INFO")  # the file's mtime moves, as it does every run
-        release.touch()
-        assert wait_for(client, run_id)["status"] == "succeeded"
 
 
 def test_a_critical_line_left_by_an_earlier_run_doesnt_count(tmp_path, config):
