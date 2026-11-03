@@ -71,6 +71,7 @@ class Active:
     cancel_requested: bool = False
     timed_out: bool = False
     started: float = 0.0  # when Kometa was started
+    log_size: int = 0  # bytes already in logs/meta.log when Kometa started; only what it appends counts
     warnings: int = 0  # log lines so far that are warnings
 
 
@@ -252,6 +253,7 @@ class Runner:
                         self._finish(run_id, "cancelled")
                         return
                     active.started = time.time()
+                    active.log_size = self._meta_log_size()
                     active.process = await asyncio.create_subprocess_exec(
                         *argv,
                         cwd=cwd,
@@ -302,7 +304,7 @@ class Runner:
             return "failed", f"Kometa exited with code {exit_code}"
         critical = self._first_critical_error(run_id)
         if critical is None and not self._reported_finishing(run_id):
-            critical = self._crash_in_kometas_log(active.started)
+            critical = self._crash_in_kometas_log(active.started, active.log_size)
         if critical is not None:
             # Kometa exits 0 even when a critical error (a config error, say) stopped it doing anything.
             return "failed", critical
@@ -311,17 +313,33 @@ class Runner:
     def _reported_finishing(self, run_id: int) -> bool:
         return self.db.execute("SELECT 1 FROM run_events WHERE run_id = ? AND event = 'run_end' LIMIT 1", (run_id,)).fetchone() is not None
 
-    def _crash_in_kometas_log(self, since: float) -> str | None:
-        """A crash before Kometa's webhooks are set up reaches only its own log, and it still exits 0."""
+    def _meta_log(self) -> Path:
         assert self.settings.kometa_config is not None
-        log = self.settings.kometa_config.parent / "logs" / "meta.log"
+        return self.settings.kometa_config.parent / "logs" / "meta.log"
+
+    def _meta_log_size(self) -> int:
+        try:
+            return self._meta_log().stat().st_size
+        except OSError:
+            return 0
+
+    def _crash_in_kometas_log(self, since: float, start_size: int) -> str | None:
+        """A crash before Kometa's webhooks are set up reaches only its own log, and it still exits 0.
+
+        Kometa appends to ``meta.log`` and leaves old lines there, so only what this run added is read. A log that was
+        replaced (shorter than it was at the start) is this run's. The last critical line is the one that stopped it;
+        an earlier one in the same run, such as failing to lower its priority, is not.
+        """
+        log = self._meta_log()
         try:
             if log.stat().st_mtime < since:
-                return None  # left by an earlier run
-            match = KOMETA_CRITICAL.search(log.read_text(encoding="utf-8", errors="replace"))
+                return None  # left by an earlier run, and this one didn't write to it
+            data = log.read_bytes()
         except OSError:
             return None
-        return match.group(1) if match else None
+        chunk = data if len(data) < start_size else data[start_size:]
+        found = list(KOMETA_CRITICAL.finditer(chunk.decode("utf-8", errors="replace")))
+        return found[-1].group(1) if found else None
 
     def _first_critical_error(self, run_id: int) -> str | None:
         for (payload,) in self.db.execute("SELECT payload FROM run_events WHERE run_id = ? AND event = 'error' ORDER BY id", (run_id,)):

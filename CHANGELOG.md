@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - A library whose operations are a list (Kometa's way to run more than one block, each with its own schedule) was treated as having none. An import then skipped that library's operations, and its Operations tab was empty.
+- A run Kometa exited 0 from, without its finishing webhook, was blamed on the first critical line ever written in `meta.log`, including one from an earlier run. Studio now reads only what that run appended, and reports the last critical line there.
 
 ### Removed
 
