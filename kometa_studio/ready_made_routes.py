@@ -364,11 +364,15 @@ async def _remove_plan(
 ) -> list[dict]:
     studio_by_title: dict[str, Any] = {}
     all_by_title: dict[str, Any] = {}
-    if server is not None and library_key is not None:
+    unreachable: str | None = None
+    if server is None or library_key is None:
+        unreachable = "Plex can't be reached, so Studio can't check it's Studio's own"
+    else:
         try:
             labelled = await server.labelled_collections(library_key, STUDIO_LABEL)
             all_cols = await server.collections(library_key)
-        except PlexUnavailable:
+        except PlexUnavailable as error:
+            unreachable = f"Plex can't be checked ({error})"
             labelled, all_cols = [], []
         studio_by_title = {c.title.casefold(): c for c in labelled}
         all_by_title = {c.title.casefold(): c for c in all_cols}
@@ -377,6 +381,10 @@ async def _remove_plan(
     for row in rows:
         title = row["title"]
         key = title.casefold()
+        if unreachable is not None:
+            # Never forget a row while Plex can't say whether its collection is still there.
+            planned.append({"category": row["category"], "title": title, "deletable": False, "reason": unreachable})
+            continue
         if key in maintainerr_titles:
             planned.append({"category": row["category"], "title": title, "deletable": False, "reason": "Maintainerr's collection"})
             continue
@@ -496,11 +504,13 @@ async def build(
             file_cats.add(ref.category)
         else:
             collection_names.append(entry.kometa_name)
-    # Categories that already need --run-files: their adds go as file stems, not collection names.
-    files = sorted(file_cats)
-    # Drop collection names that belong to file-scoped categories.
+    # Kometa ANDs --run-files and --run-collections, so one run can't mix them. When any category needs
+    # --run-files, the whole run goes by file: each generated file holds only that category's desired
+    # collections, so running a file builds exactly what Studio wants from it.
+    files: list[str] = []
     if file_cats:
-        collection_names = [entry.kometa_name for ref, entry in add_entries if ref.category not in file_cats]
+        files = sorted({ref.category for ref, _ in add_entries})
+        collection_names = []
 
     run_plan = None
     if add_entries:

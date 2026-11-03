@@ -336,3 +336,44 @@ def test_counting_task_stores_counts_and_shows_in_jobs(root):
         # Not running now, so it should start.
         assert again.status_code == 202
         wait_for_task(client, "ready_made_counts")
+
+
+def test_a_file_scoped_category_sends_the_whole_run_by_file(root):
+    # Kometa ANDs --run-files with --run-collections, so a mixed run would skip the collection-scoped picks.
+    client, _, _ = make_client(root)
+    with client:
+        wait_for_task(client, "ready_made_counts")
+        genre = client.get("/api/v1/ready-made/libraries/Movies/categories/genre").json()["collections"][0]
+        db = client.app.state.db
+        with db:
+            col.mark_present(db, "Movies", [col.Pick(col.Ref("genre", genre["block"], genre["key"]), genre["title"], genre["title"])])
+            col.set_run_scope(db, "Movies", "genre", "file")
+        plan = client.post(
+            "/api/v1/ready-made/build",
+            json={
+                "library": "Movies",
+                "add": [{"category": "basic", "block": "", "key": "Newly Released"}, {"category": "genre", "block": genre["block"], "key": genre["key"]}],
+                "remove": [],
+                "dry_run": True,
+            },
+        ).json()
+        assert plan["run"] == {"libraries": ["Movies"], "collections": [], "files": ["basic", "genre"]}
+
+
+def test_remove_keeps_everything_while_plex_cant_be_reached(root):
+    client, plex, _ = make_client(root)
+    with client:
+        wait_for_flags(client)
+        db = client.app.state.db
+        with db:
+            [row_id] = col.mark_present(db, "Movies", [col.Pick(col.Ref("basic", "", "Studio Chart"), "Studio Chart", "Studio Chart")])
+            col.record_plex_state(db, row_id, exists=True, rating_key="104", items=4, thumb=None, built=True, error=None)
+        plex.reachable = set()
+        result = client.post(
+            "/api/v1/ready-made/build",
+            json={"library": "Movies", "add": [], "remove": [{"category": "basic", "block": "", "key": "Studio Chart"}], "dry_run": False},
+        ).json()
+        assert result["removed"] == []
+        assert [k["title"] for k in result["kept"]] == ["Studio Chart"] and "Plex" in result["kept"][0]["reason"]
+        assert plex.deletions == []
+        assert [r["desired"] for r in col.rows(db, "Movies")] == [0]  # kept, marked for removal, for a later try
