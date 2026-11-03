@@ -32,6 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Library and collection pages: posters at half the size, and the same size at any screen width.
 - A collection's title card is half as tall.
 
+### Fixed
+
+- A library whose operations are a list (Kometa's way to run more than one block, each with its own schedule) was treated as having none. An import then skipped that library's operations, and its Operations tab was empty.
+
 ### Removed
 
 - The "← Libraries" link on a library's page; the sidebar already goes there.

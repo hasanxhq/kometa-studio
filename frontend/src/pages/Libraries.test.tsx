@@ -172,6 +172,21 @@ describe("A library", () => {
     await waitFor(() => expect(screen.getByText("mass_genre_update")).toBeInTheDocument());
   });
 
+  it("shows operations written as a list of blocks", async () => {
+    mockApi({
+      ...api,
+      "GET /config/libraries/Movies": () => ({
+        ...movies,
+        operations: [{ mass_genre_update: "tmdb", schedule: "weekly(sunday)" }, { assets_for_all: true }],
+      }),
+    });
+    renderAt("/libraries/Movies?tab=operations");
+    expect(await screen.findByText("Operation 1")).toBeInTheDocument();
+    expect(screen.getByText("mass_genre_update")).toBeInTheDocument();
+    expect(screen.getByText("assets_for_all")).toBeInTheDocument();
+    expect(screen.getByText("weekly(sunday)")).toBeInTheDocument();
+  });
+
   it("explains a Plex library that isn't in config.yml", async () => {
     mockApi({ ...api, "GET /plex/libraries/5/collections": () => ({ library: { key: "5", title: "Bangtan", type: "artist" }, collections: [] }) });
     renderAt("/libraries/Bangtan?tab=overlays");

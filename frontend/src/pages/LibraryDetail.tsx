@@ -97,6 +97,12 @@ function ReferenceHeader({ reference }: { reference: FileReference }) {
   );
 }
 
+function operationBlocks(operations: ConfigLibrary["operations"]): Record<string, unknown>[] {
+  // Kometa takes one mapping or a list of them. A list is several blocks, often each with its own schedule.
+  if (Array.isArray(operations)) return operations.filter((block) => Object.keys(block).length > 0);
+  return Object.keys(operations).length > 0 ? [operations] : [];
+}
+
 function KeyValues({ values, empty = "None." }: { values: Record<string, unknown>; empty?: string }) {
   const entries = Object.entries(values);
   if (entries.length === 0) return <p className="text-sm text-muted">{empty}</p>;
@@ -270,7 +276,7 @@ function CollectionsTab({
       {config && (
         <Card title="Collection files in config.yml" actions={<NewFileLink section="collections" library={config.name} />}>
           {config.collection_files.length === 0 ? (
-            config.overlay_files.length === 0 && Object.keys(config.operations).length === 0 ? (
+            config.overlay_files.length === 0 && operationBlocks(config.operations).length === 0 ? (
               <Nothing name={config.name} />
             ) : (
               <p className="text-sm text-muted">None.</p>
@@ -377,10 +383,20 @@ function OverlaysTab({ config }: { config: ConfigLibrary }) {
 }
 
 function OperationsTab({ config }: { config: ConfigLibrary }) {
+  const blocks = operationBlocks(config.operations);
   return (
     <div className="flex flex-col gap-4">
       <Card title="Operations">
-        <KeyValues values={config.operations} />
+        {blocks.length === 0 ? (
+          <p className="text-sm text-muted">None.</p>
+        ) : (
+          blocks.map((block, index) => (
+            <div key={index} className={index > 0 ? "mt-3 border-t border-border pt-3" : undefined}>
+              {blocks.length > 1 && <p className="mb-1 text-sm text-muted">Operation {index + 1}</p>}
+              <KeyValues values={block} />
+            </div>
+          ))
+        )}
       </Card>
       <Card title="Library settings">
         <KeyValues values={config.settings} />

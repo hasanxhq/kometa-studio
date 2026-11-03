@@ -142,6 +142,18 @@ def test_libraries_and_their_files(kometa):
     assert [p.files[0].playlists[0]["name"] for p in config.playlist_files] == ["Marvel"]
 
 
+def test_operations_written_as_a_list_are_kept(tmp_path):
+    """Kometa runs a list of operation blocks (each can have its own schedule). Dropping it hid them."""
+    root = tmp_path / "kometa"
+    config = root / "config"
+    config.mkdir(parents=True)
+    (config / "config.yml").write_text(
+        "libraries:\n  Movies:\n    operations:\n      - mass_genre_update: tmdb\n        schedule: weekly(sunday)\n      - assets_for_all: true\n      - 12\n"
+    )
+    [movies] = ConfigReader(config / "config.yml", root).read().libraries
+    assert movies.operations == [{"mass_genre_update": "tmdb", "schedule": "weekly(sunday)"}, {"assets_for_all": True}]
+
+
 def test_collections_are_summarised_with_their_builders(kometa):
     [summary] = reader(kometa).read().libraries[0].collection_files[1].files
     assert summary.templates == ["Studio"]
