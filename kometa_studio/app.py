@@ -40,6 +40,9 @@ from .logs_routes import router as logs_router
 from .maintainerr_routes import router as maintainerr_router
 from .notifications_routes import router as notifications_router
 from .plex_routes import router as plex_router
+from .ready_made_routes import needs_count, plex_is_configured
+from .ready_made_routes import router as ready_made_router
+from .ready_made_runs import ReadyMadeRecorder
 from .runner import Runner
 from .runs_routes import router as runs_router
 from .runs_routes import webhook_token, webhook_url
@@ -128,7 +131,7 @@ def create_app(
         runner = Runner(app.state.db, settings, webhook_url(settings, webhook_token(app.state.db)))
         app.state.runner = runner
         runner.start()
-        tasks = Tasks(app.state.db, settings, runner, app.state.writer)
+        tasks = Tasks(app.state.db, settings, runner, app.state.writer, app.state.http)
         tasks.setup(app.state.timezone)
         app.state.tasks = tasks
         # Started after the runner has marked cut-off runs interrupted; its first tick catches up on missed runs.
@@ -143,6 +146,7 @@ def create_app(
             app.state.writer.extra_env = runner.extra_env
         runner.hooks.append(maintainerr)
         runner.hooks.append(WantedRecorder(app.state.db, runner, settings.kometa_config, kometa_root))
+        runner.hooks.append(ReadyMadeRecorder(app.state.db, runner, settings, app.state.http, tasks))
         runner.hooks.append(ApiCalls(app.state.db, runner, settings.kometa_config))
         if app.state.writer is not None:
             app.state.writer.guard = lambda path, root: [risk.message for risk in maintainerr.risks(path, root)]
@@ -150,6 +154,8 @@ def create_app(
         scheduler = Scheduler(app.state.db, runner, also=(tasks, app.state.arr))
         app.state.scheduler = scheduler
         scheduler.start()
+        if plex_is_configured(settings) and needs_count(app.state.db):
+            tasks.start("ready_made_counts")
         # Learn which flags this Kometa has, in the background: importing Kometa takes a few seconds.
         probe = asyncio.create_task(runner.probe_flags())
         try:
@@ -192,5 +198,6 @@ def create_app(
     app.include_router(jobs_router)
     app.include_router(maintainerr_router)
     app.include_router(notifications_router)
+    app.include_router(ready_made_router)
     mount_frontend(app, static_dir)
     return app

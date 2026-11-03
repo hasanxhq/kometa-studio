@@ -27,6 +27,8 @@ class FakePlex:
         self.reachable = {REMOTE_URI, RELAY_URI}
         self.requests: list[httpx.Request] = []
         self.added: dict[str, list[int]] = {}  # section key -> when each movie or episode was added (Unix time)
+        self.deletions: list[str] = []
+        self._next_key = 200
         self.TAGS = {
             k: {tag: [dict(item) for item in items] for tag, items in tags.items()}
             for k, tags in self.DEFAULT_TAGS.items()
@@ -35,9 +37,37 @@ class FakePlex:
             k: dict(counts)
             for k, counts in self.DEFAULT_TAG_COUNTS.items()
         }
+        # Instance copies so tests can add/delete without polluting siblings.
+        self.COLLECTIONS = {k: [dict(c) for c in v] for k, v in self.DEFAULT_COLLECTIONS.items()}
+        self.LABELS = {k: [dict(x) for x in v] for k, v in self.DEFAULT_LABELS.items()}
+        self.LABELLED = {k: list(v) for k, v in self.DEFAULT_LABELLED.items()}
+        self.COLLECTION_META = {k: {**v, "Label": [dict(lab) for lab in v.get("Label", [])]} for k, v in self.DEFAULT_COLLECTION_META.items()}
+        self.ITEMS = {k: [dict(i) for i in v] for k, v in self.DEFAULT_ITEMS.items()}
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
+
+    def add_collection(self, section_key: str, title: str, *, labels: list[str] | None = None, items: int = 0, thumb: str | None = None) -> str:
+        """Add a collection as if Kometa (or something else) built it. Returns its rating key."""
+        self._next_key += 1
+        key = str(self._next_key)
+        entry: dict = {"ratingKey": key, "title": title, "childCount": items}
+        if thumb:
+            entry["thumb"] = thumb
+        self.COLLECTIONS.setdefault(section_key, []).append(entry)
+        by_title = {d["title"]: str(d["key"]) for d in self.LABELS.get(section_key, [])}
+        meta_labels = []
+        for name in labels or []:
+            if name not in by_title:
+                new_id = str(9000 + len(self.LABELS.get(section_key, [])))
+                self.LABELS.setdefault(section_key, []).append({"key": new_id, "title": name})
+                by_title[name] = new_id
+            lab_key = by_title[name]
+            meta_labels.append({"id": int(lab_key) if lab_key.isdigit() else abs(hash(lab_key)) % 100000, "tag": name})
+            self.LABELLED.setdefault(lab_key, []).append(key)
+        self.COLLECTION_META[key] = {"librarySectionID": int(section_key), "Label": meta_labels}
+        self.ITEMS[key] = []
+        return key
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -54,30 +84,56 @@ class FakePlex:
             return httpx.Response(
                 200, json={"MediaContainer": {"machineIdentifier": SERVER_ID, "friendlyName": "Seedbox", "version": "1.41.2.9200"}}
             )
+        if request.method == "DELETE" and url.path.startswith("/library/metadata/"):
+            return self.delete_metadata(url.path.rsplit("/", 1)[-1])
         if url.path.startswith("/library/"):
             return self.library(request)
         return httpx.Response(404)
 
+    def delete_metadata(self, rating_key: str) -> httpx.Response:
+        if rating_key not in self.COLLECTION_META:
+            return httpx.Response(404)
+        self.deletions.append(rating_key)
+        for section, items in self.COLLECTIONS.items():
+            self.COLLECTIONS[section] = [c for c in items if c["ratingKey"] != rating_key]
+        for lab_key, keys in list(self.LABELLED.items()):
+            self.LABELLED[lab_key] = [k for k in keys if k != rating_key]
+        self.COLLECTION_META.pop(rating_key, None)
+        self.ITEMS.pop(rating_key, None)
+        return httpx.Response(200)
+
     # Libraries shaped like a real server's answers (checked against Plex Media Server 1.41).
     SECTIONS = [{"key": "1", "title": "Movies", "type": "movie"}, {"key": "2", "title": "TV Shows", "type": "show"}]
-    COLLECTIONS = {
+    DEFAULT_COLLECTIONS = {
         "1": [
             {"ratingKey": "101", "title": "Marvel", "childCount": 11, "thumb": "/library/collections/101/composite/1700000001?width=400&height=600"},
             {"ratingKey": "102", "title": "Spy Kids", "childCount": 3, "summary": "Made by hand", "thumb": "/library/collections/102/composite/1700000002"},
             {"ratingKey": "103", "title": "Old PMM collection", "childCount": 2, "smart": "1"},
+            {"ratingKey": "104", "title": "Studio Chart", "childCount": 4, "thumb": "/library/collections/104/composite/1700000004"},
+            {"ratingKey": "105", "title": "Action Movies", "childCount": 5, "thumb": "/library/collections/105/composite/1700000005"},
         ],
         "2": [],
     }
     SIZES = {"1": 812, "2": 64}  # movies, shows
-    LABELS = {"1": [{"key": "33517", "title": "Kometa"}, {"key": "40", "title": "PMM"}, {"key": "41", "title": "Favourites"}], "2": []}
-    LABELLED = {"33517": ["101"], "40": ["103"], "41": ["102"]}
+    DEFAULT_LABELS = {
+        "1": [
+            {"key": "33517", "title": "Kometa"},
+            {"key": "40", "title": "PMM"},
+            {"key": "41", "title": "Favourites"},
+            {"key": "42", "title": "Studio"},
+        ],
+        "2": [],
+    }
+    DEFAULT_LABELLED = {"33517": ["101", "105"], "40": ["103"], "41": ["102"], "42": ["104", "105"]}
     # What /library/metadata/<collection> and /library/collections/<key>/children give (Plex 1.41, trimmed).
-    COLLECTION_META = {
+    DEFAULT_COLLECTION_META = {
         "101": {"librarySectionID": 1, "Label": [{"id": 33517, "tag": "Kometa"}]},
         "102": {"librarySectionID": 1, "Label": [{"id": 41, "tag": "Favourites"}]},
         "103": {"librarySectionID": 1, "Label": [{"id": 40, "tag": "PMM"}]},
+        "104": {"librarySectionID": 1, "Label": [{"id": 42, "tag": "Studio"}]},
+        "105": {"librarySectionID": 1, "Label": [{"id": 42, "tag": "Studio"}, {"id": 33517, "tag": "Kometa"}]},
     }
-    ITEMS = {
+    DEFAULT_ITEMS = {
         "101": [
             {
                 "ratingKey": str(201 + n),
@@ -94,6 +150,8 @@ class FakePlex:
         ],
         "102": [{"ratingKey": "301", "type": "movie", "title": "Spy Kids", "year": 2001}],
         "103": [{"ratingKey": "401", "type": "show", "title": "An Old Show", "year": 1999, "leafCount": 61, "Guid": [{"id": "tvdb://74852"}]}],
+        "104": [],
+        "105": [],
     }
 
     # What /library/sections/<key>/all gives for movies, newest first (trimmed).
