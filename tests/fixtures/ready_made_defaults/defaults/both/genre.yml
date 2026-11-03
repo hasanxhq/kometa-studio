@@ -1,0 +1,14 @@
+#####
+#  Genre Collections  #
+#  https://kometa.wiki/en/latest/defaults/both/genre  #
+#####
+
+collections:
+  Genre Separator:
+    template:
+      - name: separator
+
+dynamic_collections:
+  Genre:
+    type: genre
+    title_format: <<key_name>> <<library_typeU>>s

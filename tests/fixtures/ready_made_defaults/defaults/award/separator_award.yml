@@ -1,0 +1,8 @@
+#####
+#  Separator Award  #
+#####
+
+collections:
+  Separator:
+    template:
+      - name: separator

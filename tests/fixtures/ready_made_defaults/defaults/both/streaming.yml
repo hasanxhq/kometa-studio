@@ -1,0 +1,16 @@
+#####
+#  Streaming Collections  #
+#  https://kometa.wiki/en/latest/defaults/both/streaming  #
+#####
+
+dynamic_collections:
+  Streaming:
+    type: custom
+    data:
+      netflix: Netflix
+      disney: Disney+
+      hayu: hayu
+    title_format: <<key_name>> <<library_typeU>>s
+    template_variables:
+      allowed_libraries:
+        hayu: show

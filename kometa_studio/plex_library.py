@@ -99,6 +99,27 @@ class PlexServer:
         container = await self._get("/library/sections")
         return [PlexLibrary(str(d["key"]), str(d["title"]), str(d.get("type", ""))) for d in container.get("Directory", [])]
 
+    async def tag_values(self, library_key: str, tag: str, library_type: str = "") -> list[tuple[str, str]]:
+        """Tag values from /library/sections/{library_key}/{tag} as (title, key) tuples."""
+        try:
+            container = await self._get(f"/library/sections/{library_key}/{tag}")
+        except PlexNotFound:
+            return []
+        return [
+            (str(d.get("title", d.get("tag", d.get("key", "")))), str(d.get("key", "")))
+            for d in container.get("Directory", [])
+        ]
+
+    async def count_where(self, library_key: str, library_type: str, params: dict) -> int:
+        """How many movies or shows match the given filter parameters."""
+        plex_type = {"movie": "1", "show": "2"}.get(library_type.lower())
+        query = {"X-Plex-Container-Start": "0", "X-Plex-Container-Size": "0"}
+        if plex_type:
+            query["type"] = plex_type
+        query.update(params)
+        container = await self._get(f"/library/sections/{library_key}/all", query)
+        return int(container.get("totalSize", container.get("size", 0)) or 0)
+
     async def added_since(self, library_key: str, library_type: str, since: int) -> int:
         """How many movies (or episodes, in a show library) Plex added to a library at or after ``since`` (Unix time)."""
         params = {"type": "4" if library_type == "show" else "1", "addedAt>>": str(since), "X-Plex-Container-Start": "0", "X-Plex-Container-Size": "0"}

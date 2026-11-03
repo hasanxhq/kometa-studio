@@ -1,0 +1,14 @@
+#####
+#  Basic Charts  #
+#  https://kometa.wiki/en/latest/defaults/chart/basic  #
+#####
+
+collections:
+  Newly Released:
+    template:
+      - name: shared
+        translation_key: basic_released
+  Separator Collection:
+    template:
+      - name: separator
+        separator: chart

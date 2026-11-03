@@ -1,0 +1,9 @@
+#####
+#  Collectionless Collection  #
+#  https://kometa.wiki/en/latest/defaults/both/collectionless  #
+#####
+
+collections:
+  Collectionless:
+    template:
+      - name: collectionless
