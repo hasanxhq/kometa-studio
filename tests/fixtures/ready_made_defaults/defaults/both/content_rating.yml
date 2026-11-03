@@ -1,0 +1,18 @@
+#####
+#  Content Rating Collections  #
+#  https://kometa.wiki/en/latest/defaults/both/content_rating  #
+#####
+
+dynamic_collections:
+  Ratings:
+    type: content_rating
+    title_format: <<key_name>> <<library_typeU>>s
+    addons:
+      G:
+        - TV-G
+    exclude:
+      - R
+    include:
+      - G
+      - PG-13
+      - EmptyRating

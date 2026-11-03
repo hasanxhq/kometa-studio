@@ -27,6 +27,14 @@ class FakePlex:
         self.reachable = {REMOTE_URI, RELAY_URI}
         self.requests: list[httpx.Request] = []
         self.added: dict[str, list[int]] = {}  # section key -> when each movie or episode was added (Unix time)
+        self.TAGS = {
+            k: {tag: [dict(item) for item in items] for tag, items in tags.items()}
+            for k, tags in self.DEFAULT_TAGS.items()
+        }
+        self.TAG_COUNTS = {
+            k: dict(counts)
+            for k, counts in self.DEFAULT_TAG_COUNTS.items()
+        }
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
@@ -97,12 +105,115 @@ class FakePlex:
         ]
     }
 
+    # Tag values from /library/sections/<key>/<tag> (Plex 1.41).
+    DEFAULT_TAGS = {
+        "1": {
+            "genre": [
+                {"key": "Action", "title": "Action"},
+                {"key": "Sci-Fi", "title": "Sci-Fi"},
+                {"key": "Drama", "title": "Drama"},
+            ],
+            "contentRating": [
+                {"key": "PG-13", "title": "PG-13"},
+                {"key": "R", "title": "R"},
+                {"key": "G", "title": "G"},
+                {"key": "TV-G", "title": "TV-G"},
+            ],
+            "studio": [
+                {"key": "Marvel Studios", "title": "Marvel Studios"},
+                {"key": "Warner Bros.", "title": "Warner Bros."},
+            ],
+            "country": [
+                {"key": "United States", "title": "United States"},
+                {"key": "United Kingdom", "title": "United Kingdom"},
+            ],
+            "decade": [
+                {"key": "2020", "title": "2020s"},
+                {"key": "2010", "title": "2010s"},
+                {"key": "1990", "title": "1990s"},
+            ],
+            "year": [
+                {"key": "2026", "title": "2026"},
+                {"key": "2021", "title": "2021"},
+                {"key": "1995", "title": "1995"},
+            ],
+            "resolution": [
+                {"key": "4k", "title": "4k"},
+                {"key": "1080", "title": "1080"},
+                {"key": "8k", "title": "8k"},
+            ],
+            "audioLanguage": [
+                {"key": "en", "title": "English"},
+                {"key": "fr", "title": "French"},
+            ],
+            "subtitleLanguage": [
+                {"key": "en", "title": "English"},
+                {"key": "es", "title": "Spanish"},
+            ],
+        },
+        "2": {
+            "network": [
+                {"key": "HBO", "title": "HBO"},
+                {"key": "Netflix", "title": "Netflix"},
+            ],
+            "genre": [
+                {"key": "Comedy", "title": "Comedy"},
+                {"key": "Drama", "title": "Drama"},
+            ],
+            "year": [
+                {"key": "2020", "title": "2020"},
+                {"key": "1999", "title": "1999"},
+            ],
+        },
+    }
+
+    # Counts for /library/sections/<key>/all with filter parameters.
+    DEFAULT_TAG_COUNTS = {
+        "1": {
+            ("genre", "Action"): 5,
+            ("genre", "Sci-Fi"): 2,
+            ("genre", "Drama"): 1,
+            ("contentRating", "PG-13"): 3,
+            ("contentRating", "R"): 1,
+            ("contentRating", "G"): 1,
+            ("contentRating", "TV-G"): 2,
+            ("studio", "Marvel Studios"): 4,
+            ("studio", "Warner Bros."): 2,
+            ("country", "United States"): 6,
+            ("country", "United Kingdom"): 2,
+            ("decade", "2020"): 2,
+            ("decade", "2010"): 5,
+            ("decade", "1990"): 1,
+            ("year", "2026"): 1,
+            ("year", "2021"): 1,
+            ("year", "1995"): 1,
+            ("resolution", "4k"): 1,
+            ("resolution", "1080"): 1,
+            ("resolution", "8k"): 1,
+            ("audioLanguage", "en"): 5,
+            ("audioLanguage", "fr"): 1,
+            ("subtitleLanguage", "en"): 4,
+            ("subtitleLanguage", "es"): 2,
+        },
+        "2": {
+            ("network", "HBO"): 3,
+            ("network", "Netflix"): 2,
+            ("genre", "Comedy"): 2,
+            ("genre", "Drama"): 1,
+            ("year", "2020"): 1,
+            ("year", "1999"): 1,
+        },
+    }
+
     def library(self, request: httpx.Request) -> httpx.Response:
         parts = request.url.path.strip("/").split("/")  # library, sections, <key>, <what>
         if parts == ["library", "sections"]:
             return httpx.Response(200, json={"MediaContainer": {"Directory": self.SECTIONS}})
         if len(parts) == 4 and parts[1] == "sections" and parts[2] in self.COLLECTIONS:
             key, what = parts[2], parts[3]
+            if what in self.TAGS.get(key, {}):
+                items = self.TAGS[key][what]
+                return httpx.Response(200, json={"MediaContainer": {"size": len(items), "Directory": items}})
             if what == "collections":
                 return httpx.Response(200, json={"MediaContainer": {"Metadata": self.COLLECTIONS[key]}})
             if what == "label":
@@ -113,6 +224,12 @@ class FakePlex:
                     found = [m for m in self.TITLES.get(key, []) if title in m["title"].lower()]
                     start, size = int(request.url.params.get("X-Plex-Container-Start", "0")), int(request.url.params["X-Plex-Container-Size"])
                     return httpx.Response(200, json={"MediaContainer": {"size": len(found[start : start + size]), "totalSize": len(found), "offset": start, "Metadata": found[start : start + size]}})
+                counts = self.TAG_COUNTS.get(key, {})
+                for tag_param in ("genre", "contentRating", "studio", "country", "network", "decade", "year", "resolution", "audioLanguage", "subtitleLanguage"):
+                    if tag_param in request.url.params:
+                        val = request.url.params[tag_param]
+                        cnt = counts.get((tag_param, val), 0)
+                        return httpx.Response(200, json={"MediaContainer": {"size": 0, "totalSize": cnt, "Metadata": []}})
                 return httpx.Response(200, json={"MediaContainer": {"size": 0, "totalSize": self.SIZES.get(key, 0), "Metadata": []}})
             if what == "all" and request.url.params.get("type") in ("1", "4"):  # how many were added since, as Plex's addedAt>>= filter
                 since = int(request.url.params.get("addedAt>>", "0"))
