@@ -111,6 +111,19 @@ def test_a_library_is_unknown_until_kometa_reports_on_all_its_collections(config
     assert wanted.decide(db, changed, "all", ["tmdb-movie:1"]).reason == "its collection files changed since Kometa's last report"
 
 
+def test_operations_written_as_a_list_still_apply_to_a_new_item(tmp_path, db):
+    """A list of operation blocks is how Kometa runs more than one. An import still needs that library run."""
+    root = tmp_path / "kometa"
+    (root / "config").mkdir(parents=True)
+    path = root / "config" / "config.yml"
+    path.write_text("libraries:\n  Movies:\n    operations:\n      - mass_genre_update: tmdb\n      - assets_for_all: true\n")
+    movies = wanted.plan(path, root)["Movies"]
+    decision = wanted.decide(db, movies, "operations", ["tmdb-movie:1"])
+    assert decision is not None and decision.whole is True
+    assert decision.reason == "its operations apply to new items"
+    assert wanted.decide(db, movies, "collections", ["tmdb-movie:1"]) is None
+
+
 def test_overlays_and_plex_searches_need_the_whole_library(config, db):
     plans = wanted.plan(config, config.parent.parent)
     assert wanted.decide(db, plans["Posters"], "all", ["tmdb-movie:1"]).reason == "its overlays need drawing"

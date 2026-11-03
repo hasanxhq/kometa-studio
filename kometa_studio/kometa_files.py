@@ -92,7 +92,7 @@ class Library:
     collection_files: list[Reference]
     overlay_files: list[Reference]
     metadata_files: list[Reference]
-    operations: dict
+    operations: dict | list  # one mapping, or a list of them: Kometa accepts either (util.parse listdict)
     template_variables: dict
     settings: dict
 
@@ -139,14 +139,13 @@ class ConfigReader:
         collection_files = body.get("collection_files", body.get("metadata_path"))
         overlay_files = body.get("overlay_files", body.get("overlay_path"))
         metadata_files = body.get("metadata_files", body.get("metadata_path"))
-        operations = body.get("operations")
         template_variables = body.get("template_variables")
         return Library(
             name=name,
             collection_files=self._references(collection_files, overlay=False),
             overlay_files=self._references(overlay_files, overlay=True),
             metadata_files=self._references(metadata_files, overlay=False, defaults_allowed=False),
-            operations=operations if isinstance(operations, dict) else {},
+            operations=_operations(body.get("operations")),
             template_variables=template_variables if isinstance(template_variables, dict) else {},
             settings={key: value for key, value in body.items() if key not in LIBRARY_SECTIONS},
         )
@@ -295,6 +294,18 @@ class ConfigReader:
 
 def _mapping(value: Any) -> dict:
     return value if isinstance(value, dict) else {}
+
+
+def _operations(value: Any) -> dict | list:
+    """A library's operations as Kometa stores them: one mapping, or a list of mappings.
+
+    The list is how a library runs more than one block (each with its own schedule). Anything else is no operations.
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    return {}
 
 
 def _read(path: Path) -> str:

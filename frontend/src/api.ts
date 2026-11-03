@@ -440,7 +440,7 @@ export type ConfigLibrary = {
   collection_files: FileReference[];
   overlay_files: FileReference[];
   metadata_files: FileReference[];
-  operations: Record<string, unknown>;
+  operations: Record<string, unknown> | Array<Record<string, unknown>>;
   template_variables: Record<string, unknown>;
   settings: Record<string, unknown>;
   counts: LibraryCounts;

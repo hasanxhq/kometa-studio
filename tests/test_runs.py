@@ -276,6 +276,22 @@ def test_a_crash_only_kometas_log_knows_about_fails_the_run(tmp_path, config):
     assert run["error"] == "'NoneType' object has no attribute 'info'"
 
 
+def test_a_repeated_crash_after_kometa_rolls_its_log_over_fails_the_run(tmp_path, config):
+    """Kometa opens meta.log with mode "w" and rolls the old file aside, so this run's log can be the same size as the last."""
+    release = tmp_path / "release"
+    plan(config, lines=["Starting Kometa"], wait_for=str(release), exit=0)
+    kometas_log(config, age=3600)  # the previous run's crash
+    log = config.parent / "logs" / "meta.log"
+    with make_client(tmp_path) as client:
+        run_id = client.post("/api/v1/runs", json={"mode": "collections"}).json()["id"]
+        _wait_for_line(client, run_id, "Starting Kometa")
+        log.rename(log.with_name("meta-1.log"))  # Kometa's doRollover at start
+        kometas_log(config)  # this run: the same crash, the same size
+        release.touch()
+        run = wait_for(client, run_id)
+    assert run["status"] == "failed"
+
+
 def test_a_critical_line_left_by_an_earlier_run_doesnt_count(tmp_path, config):
     plan(config, lines=["Starting Kometa"], exit=0)
     kometas_log(config, age=3600)
