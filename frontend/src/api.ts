@@ -360,7 +360,7 @@ export type Job = {
 };
 
 // Studio's own tasks on System → Tasks.
-export type TaskName = "full_backup" | "full_check";
+export type TaskName = "full_backup" | "full_check" | "ready_made_counts";
 
 export type BuiltinTask = {
   name: TaskName;

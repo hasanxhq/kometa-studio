@@ -24,6 +24,7 @@ const lastLabels: Record<NonNullable<BuiltinTask["last"]>["status"], string> = {
 const descriptions: Record<BuiltinTask["name"], string> = {
   full_backup: "A zip of Kometa's config folder, including the Original Posters, and Studio's database. Waits while Kometa runs.",
   full_check: "Kometa reads the whole config and connects to Plex and every service in it. Changes nothing.",
+  ready_made_counts: "Asks Plex how many titles each ready-made collection would hold, so the gallery can show counts.",
 };
 
 /** Polls while a task runs, so its outcome shows when it ends. */

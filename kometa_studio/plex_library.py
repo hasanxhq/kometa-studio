@@ -135,17 +135,24 @@ class PlexServer:
         container = await self._get(f"/library/sections/{library_key}/all", params)
         return int(container.get("totalSize", container.get("size", 0)) or 0)
 
-    async def collections(self, library_key: str) -> list[PlexCollection]:
-        listing, labels = await asyncio.gather(
-            self._get(f"/library/sections/{library_key}/collections"),
-            self._get(f"/library/sections/{library_key}/label"),
-        )
-        label_ids = [str(d["key"]) for d in labels.get("Directory", []) if d.get("title") in KOMETA_LABELS]
-        managed: set[str] = set()
+    async def _keys_with_labels(self, library_key: str, titles: tuple[str, ...] | list[str]) -> set[str]:
+        """Rating keys of collections in a library that carry any of the given label titles."""
+        labels = await self._get(f"/library/sections/{library_key}/label")
+        label_ids = [str(d["key"]) for d in labels.get("Directory", []) if d.get("title") in titles]
+        if not label_ids:
+            return set()
+        found: set[str] = set()
         for container in await asyncio.gather(
             *(self._get(f"/library/sections/{library_key}/all", {"type": COLLECTION_TYPE, "label": label_id}) for label_id in label_ids)
         ):
-            managed |= {str(m["ratingKey"]) for m in container.get("Metadata", [])}
+            found |= {str(m["ratingKey"]) for m in container.get("Metadata", [])}
+        return found
+
+    async def collections(self, library_key: str) -> list[PlexCollection]:
+        listing, managed = await asyncio.gather(
+            self._get(f"/library/sections/{library_key}/collections"),
+            self._keys_with_labels(library_key, KOMETA_LABELS),
+        )
         return [
             PlexCollection(
                 rating_key=str(m["ratingKey"]),
@@ -160,6 +167,54 @@ class PlexServer:
             )
             for m in listing.get("Metadata", [])
         ]
+
+    async def labelled_collections(self, library_key: str, label: str) -> list[PlexCollection]:
+        """Collections in a library that carry ``label`` (same label lookup as ``collections``)."""
+        listing, labelled = await asyncio.gather(
+            self._get(f"/library/sections/{library_key}/collections"),
+            self._keys_with_labels(library_key, (label,)),
+        )
+        return [
+            PlexCollection(
+                rating_key=str(m["ratingKey"]),
+                title=str(m.get("title", "")),
+                items=int(m.get("childCount") or 0),
+                managed=False,
+                smart=str(m.get("smart", "0")) in ("1", "True", "true"),
+                summary=str(m.get("summary") or ""),
+                thumb=_image_path(m.get("thumb")),
+                added_at=m.get("addedAt"),
+                updated_at=m.get("updatedAt"),
+            )
+            for m in listing.get("Metadata", [])
+            if str(m["ratingKey"]) in labelled
+        ]
+
+    async def collection_labels(self, rating_key: str) -> set[str]:
+        """The label tags on one collection, by rating key."""
+        found = (await self._get(f"/library/metadata/{rating_key}")).get("Metadata") or []
+        if not found or found[0].get("type") != "collection":
+            raise PlexNotFound(f"Plex has no collection {rating_key}")
+        return {str(label.get("tag")) for label in found[0].get("Label") or []}
+
+    async def delete_collection(self, rating_key: str) -> None:
+        """Delete a collection. Callers must re-check its labels on this rating key first."""
+        try:
+            response = await self.client.delete(
+                f"{self.url}/library/metadata/{rating_key}",
+                headers={"Accept": "application/json", "X-Plex-Token": self.token},
+                timeout=TIMEOUT,
+            )
+        except httpx.TimeoutException:
+            raise PlexUnavailable(f"Plex didn't answer within {TIMEOUT:g} s") from None
+        except httpx.HTTPError as error:
+            raise PlexUnavailable(f"Can't reach Plex: {error}") from None
+        if response.status_code == 401:
+            raise PlexUnavailable("Plex rejected the token in config.yml. Connect again in Settings → Plex.")
+        if response.status_code == 404:
+            raise PlexNotFound(f"Plex has no collection {rating_key}")
+        if response.status_code not in (200, 204):
+            raise PlexUnavailable(f"Plex answered HTTP {response.status_code} deleting {rating_key}")
 
     async def collection(self, rating_key: str) -> tuple[str, PlexCollection]:
         """One collection and the key of the library it's in. Managed by Kometa if it carries Kometa's label."""

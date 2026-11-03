@@ -124,7 +124,7 @@ def _task_job(row: sqlite3.Row, running: bool, note: str | None = None) -> dict 
         "progress": None,
         "started_at": row["last_started_at"],
         "finished_at": None if running else row["last_finished_at"],
-        "link": "/system/backup" if row["name"] == "full_backup" else "/system/status",
+        "link": "/system/backup" if row["name"] == "full_backup" else ("/ready-made" if row["name"] == "ready_made_counts" else "/system/status"),
         "run_id": None,
         "cancellable": False,
     }

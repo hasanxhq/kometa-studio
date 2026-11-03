@@ -111,12 +111,16 @@ def test_due_tasks_start_once_and_missed_ones_catch_up(config):
     sunday = datetime(2026, 11, 1, 4, 30, tzinfo=UTC)
     with db:
         db.execute("UPDATE tasks SET last_fired_at = ?", (utc_text(sunday - timedelta(days=1)),))
-    assert tasks.tick(sunday + timedelta(minutes=1)) == ["full_backup"]  # full_check is off by default
+    started = tasks.tick(sunday + timedelta(minutes=1))
+    assert "full_backup" in started  # full_check is off by default
+    assert "ready_made_counts" in started  # daily at 03:30, due since last_fired was yesterday
     assert tasks.tick(sunday + timedelta(minutes=2)) == []
     # Studio was off for the next Sunday's backup and comes back within a day: it runs once.
-    assert tasks.tick(sunday + timedelta(days=7, hours=5)) == ["full_backup"]
-    # Off for longer than a day: skipped.
-    assert tasks.tick(sunday + timedelta(days=16)) == []
+    later = tasks.tick(sunday + timedelta(days=7, hours=5))
+    assert "full_backup" in later and "ready_made_counts" in later
+    # Off for longer than a day: the weekly backup is skipped. The daily count's latest
+    # 03:30 is still inside the catch-up window, so it may run once.
+    assert "full_backup" not in tasks.tick(sunday + timedelta(days=16))
     db.close()
 
 
@@ -158,7 +162,11 @@ def wait_for_task(client, name, timeout=30):
 def test_running_a_full_backup_and_downloading_it(tmp_path, config):
     with make_client(tmp_path, config) as client:
         tasks = client.get("/api/v1/tasks").json()["tasks"]
-        assert [(t["name"], t["enabled"], t["days"], t["time"]) for t in tasks] == [("full_backup", True, [6], "04:30"), ("full_check", False, list(range(7)), "04:00")]
+        assert [(t["name"], t["enabled"], t["days"], t["time"]) for t in tasks] == [
+            ("full_backup", True, [6], "04:30"),
+            ("full_check", False, list(range(7)), "04:00"),
+            ("ready_made_counts", True, list(range(7)), "03:30"),
+        ]
         assert client.post("/api/v1/tasks/full_backup/run").status_code == 202
         task = wait_for_task(client, "full_backup")
         assert task["last"]["status"] == "succeeded", task

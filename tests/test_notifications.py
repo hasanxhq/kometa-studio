@@ -155,7 +155,8 @@ def test_notifiarr_is_checked_the_way_kometa_checks_it(tmp_path, kometa, fake):
     with make_client(tmp_path, kometa, fake) as client:
         response = client.post("/api/v1/settings/notifications/notifiarr/test", json={"values": {"apikey": NOTIFIARR_KEY}})
     assert response.json()["ok"] is True
-    assert fake.calls == ["GET notifiarr.com/api/v1/user/pmm/"]
+    # Startup may also have asked Plex for the ready-made counting task.
+    assert [c for c in fake.calls if "notifiarr.com" in c] == ["GET notifiarr.com/api/v1/user/pmm/"]
     assert fake.messages == []
 
 

@@ -14,6 +14,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import asdict
 from datetime import UTC, datetime
 
+import httpx
+
 from . import full_backup
 from .config_routes import FULL_CHECK
 from .config_write import ConfigWriter, SaveRefused
@@ -30,6 +32,7 @@ BUSY_WAIT = 30.0  # how often a backup looks again while Kometa is running
 DEFAULTS = {
     "full_backup": ("Full backup", 1 << 6, "04:30", True, {"keep": 4}),  # Sundays
     "full_check": ("Full check", 127, "04:00", False, {}),
+    "ready_made_counts": ("Count ready-made collections", 127, "03:30", True, {}),
 }
 
 
@@ -38,11 +41,19 @@ def now_text() -> str:
 
 
 class Tasks:
-    def __init__(self, db: sqlite3.Connection, settings: Settings, runner: Runner, writer: ConfigWriter | None):
+    def __init__(
+        self,
+        db: sqlite3.Connection,
+        settings: Settings,
+        runner: Runner,
+        writer: ConfigWriter | None,
+        http: httpx.AsyncClient | None = None,
+    ):
         self.db = db
         self.settings = settings
         self.runner = runner
         self.writer = writer
+        self.http = http
         self._running: dict[str, asyncio.Task] = {}
         self.notes: dict[str, str] = {}  # what a running task is doing right now, for the jobs drawer
 
@@ -82,7 +93,11 @@ class Tasks:
         """Run a task now, unless it's already going."""
         if name not in DEFAULTS or name in self._running:
             return False
-        work: Callable[[dict], Awaitable[str]] = {"full_backup": self._full_backup, "full_check": self._full_check}[name]
+        work: Callable[[dict], Awaitable[str]] = {
+            "full_backup": self._full_backup,
+            "full_check": self._full_check,
+            "ready_made_counts": self._ready_made_counts,
+        }[name]
         self._running[name] = asyncio.create_task(self._execute(name, work), name=f"task-{name}")
         return True
 
@@ -138,6 +153,64 @@ class Tasks:
         if not validation.ok:
             raise RuntimeError(f"Kometa found {len(validation.errors) or 'some'} problem(s); see System → Status")
         return "Kometa's config passed"
+
+    async def _ready_made_counts(self, options: dict) -> str:
+        from . import collections as col
+        from . import ready_made
+        from .kometa_config import read_plex
+        from .kometa_files import ConfigReader
+        from .plex_library import PlexServer, PlexUnavailable
+
+        if self.settings.kometa_config is None or self.settings.kometa_entry is None:
+            raise RuntimeError("Studio doesn't know where Kometa is")
+        if self.http is None:
+            raise RuntimeError("Studio has no HTTP client for Plex")
+        try:
+            current = read_plex(self.settings.kometa_config)
+        except (OSError, ValueError) as error:
+            raise RuntimeError(f"Can't read Plex settings: {error}") from None
+        if not current.url or not current.token:
+            raise RuntimeError("Kometa isn't connected to Plex yet. Connect it in Settings → Plex.")
+        server = PlexServer(self.http, current.url, current.token)
+        try:
+            plex_libs = {lib.title.casefold(): lib for lib in await server.libraries()}
+        except PlexUnavailable as error:
+            raise RuntimeError(str(error)) from None
+        root = self.settings.kometa_entry.parent
+        try:
+            config_libs = ConfigReader(self.settings.kometa_config, root).read().libraries
+        except (FileNotFoundError, ValueError, OSError) as error:
+            raise RuntimeError(str(error)) from None
+
+        counted = 0
+        for library in config_libs:
+            plex_title = str(library.settings.get("library_name") or library.name)
+            plex = plex_libs.get(plex_title.casefold())
+            if plex is None or plex.type not in ("movie", "show"):
+                continue
+            self.notes["ready_made_counts"] = f"Counting in {library.name}"
+            try:
+                categories = await ready_made.count(server, plex.key, plex.type, root)
+            except PlexUnavailable as error:
+                raise RuntimeError(str(error)) from None
+            with self.db:
+                for cat in categories:
+                    self.notes["ready_made_counts"] = f"Counting {cat.title} in {library.name}"
+                    data = {
+                        "entries": [
+                            {
+                                "block": e.block,
+                                "key": e.key,
+                                "title": e.title,
+                                "kometa_name": e.kometa_name,
+                                "items": e.items,
+                            }
+                            for e in cat.collections
+                        ]
+                    }
+                    col.save_counts(self.db, library.name, cat.name, data, None)
+                    counted += 1
+        return f"Counted {counted} categor{'y' if counted == 1 else 'ies'}"
 
 
 def task_json(row: sqlite3.Row, running: bool, now: datetime) -> dict:

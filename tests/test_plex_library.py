@@ -24,7 +24,7 @@ def test_libraries_with_collection_counts(tmp_path, config):
     with make_client(tmp_path, FakePlex()) as client:
         body = client.get("/api/v1/plex/libraries").json()
     assert body["libraries"] == [
-        {"key": "1", "title": "Movies", "type": "movie", "items": 812, "collections": 3, "managed": 2, "maintainerr": 0},
+        {"key": "1", "title": "Movies", "type": "movie", "items": 812, "collections": 5, "managed": 3, "maintainerr": 0},
         {"key": "2", "title": "TV Shows", "type": "show", "items": 64, "collections": 0, "managed": 0, "maintainerr": 0},
     ]
 
@@ -34,9 +34,11 @@ def test_collections_are_marked_managed_by_kometas_labels(tmp_path, config):
         body = client.get("/api/v1/plex/libraries/1/collections").json()
     assert body["library"] == {"key": "1", "title": "Movies", "type": "movie"}
     assert [(c["title"], c["items"], c["managed"], c["smart"], c["thumb"]) for c in body["collections"]] == [
+        ("Action Movies", 5, True, False, "/library/collections/105/composite/1700000005"),  # Studio + Kometa
         ("Marvel", 11, True, False, "/library/collections/101/composite/1700000001"),
         ("Old PMM collection", 2, True, True, None),  # PMM is Kometa's old label
         ("Spy Kids", 3, False, False, "/library/collections/102/composite/1700000002"),  # labelled, but not by Kometa
+        ("Studio Chart", 4, False, False, "/library/collections/104/composite/1700000004"),
     ]
 
 
