@@ -13,18 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Ready-made lists Top Actors, Top Directors, Top Writers and Top Producers: the people Kometa would make collections for in each library, ranked the way Kometa ranks them from Plex's credits, with how many titles each one has. The first count reads every title's credits from Plex, and later counts read only titles Plex has changed.
 
-- **Ready-made** in the sidebar (Libraries, before Defaults): Kometa's collection defaults as categories. Open a category, pick the collections you want (or mark built ones for removal), then **Build** once from the bar at the bottom. Build writes Studio's generated files, queues one Kometa run, and Remove deletes only `Studio`-labelled collections (never Maintainerr's). A counting job fills per-library preview counts (after Plex connects, after runs, and daily). Covers and library picker match the Defaults gallery.
-
-- **Defaults** in the sidebar: the Defaults gallery as a page of its own, with an "Apply to" library picker. Until now it was only a tab inside each library.
+- **Ready-made** in the sidebar (under Libraries): Kometa's collection defaults as categories. Open a category, pick the collections you want (or mark built ones for removal), then **Build** once from the bar at the bottom. Build writes Studio's generated files, queues one Kometa run, and Remove deletes only `Studio`-labelled collections (never Maintainerr's). A counting job fills per-library preview counts (after Plex connects, after runs, and daily).
 
 - **Overlay designer** (Overlays → Open the overlay designer): the overlay defaults a library uses, as layers, on a real poster from that library. A nine-cell anchor and offsets move a layer, with its colour, radius and what Kometa's default lets you choose under Show when, all written as that default's template variables. Pick the title to preview on, see the same layers on others, add and turn off layers, and change the order Kometa draws them in. It's placement only: Kometa draws the real overlays on the next overlay run. Every change is one save that Kometa checks.
 
-- **Covers in the Defaults gallery:** each collection default shows real posters from Kometa's own image repos, such as Action, Comedy and Horror for Genre. Studio's server downloads them from GitHub the first time they're needed and keeps a copy in its data folder, through the proxy and DNS settings in Settings → Network. If they can't be downloaded, the tile keeps its colour banner.
+- **Covers on Ready-made's categories:** each category shows real posters from Kometa's own image repos, such as Action, Comedy and Horror for Genre. Studio's server downloads them from GitHub the first time they're needed and keeps a copy in its data folder, through the proxy and DNS settings in Settings → Network. If they can't be downloaded, the tile keeps its colour banner.
 
 ### Changed
 
 - The overlay form has the same anchor grid and previews on a poster from the library.
-- Customize lists what more overlay defaults can turn on or off, such as Ribbon's awards and Audio Codec's formats.
 - A run that worked now says **Succeeded** instead of Finished.
 - A run's log can show only warnings and errors, and runs count their warnings on the Queue, the Overview and the run's page. Runs from before this update show none.
 - Save stays in view at the bottom of the page on the collection, overlay, playlist and file editors and Settings → Kometa.
@@ -32,9 +29,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Text boxes and dropdowns use the same font as the rest of Studio. The code font stays for YAML, file names, Kometa's own keys and the API key.
 - Collection form: **Show on** is three checkboxes (My home, Library recommended, Friends' home) instead of three empty YAML boxes. A value that's a schedule stays as YAML, and Show Advanced offers YAML for all three, to set one.
 - Leaving a collection, overlay, playlist or file editor with unsaved changes now asks first, for any link in Studio as well as closing the tab. Before, a form's link to the YAML editor dropped its edits without a word.
-- Unsaved changes in the Defaults gallery's Customize panel are safe. Picking another card, Close, Apply to, a library's tabs, any link and closing the browser tab now ask first, as the editors do. Before, picking another card dropped them without a word. This covers the library's own variables too.
-- The Defaults gallery follows the design: a card per default with a coloured banner and a one-line description, an Enabled checkbox, Collections and Overlays tabs, category and Enabled filters, and a Customize panel beside the cards. A library's Defaults tab is the same gallery.
-- Customize shows what a default can turn on or off as checkboxes (streaming services, charts, seasons and so on, read from the installed Kometa's own files), its common variables as labelled controls (Originals only, Watch region, Show in Plex and more), the rest under More variables, and the YAML it writes. With no card picked, the panel holds the library's own variables.
 - Library and collection pages: posters at half the size, and the same size at any screen width.
 - A collection's title card is half as tall.
 
@@ -51,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The Defaults gallery (Defaults in the sidebar and a library's Defaults tab). Ready-made replaces it for collections, and the overlay designer for overlays.
 - The "← Libraries" link on a library's page; the sidebar already goes there.
 
 ## [0.0.1-alpha.1] - 2026-10-31
