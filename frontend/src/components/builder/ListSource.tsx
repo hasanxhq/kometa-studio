@@ -9,7 +9,7 @@ import { Button, Field, inputClass } from "../ui";
 
 export type ListSourceValue = { builder: string; value: string; label: string | null };
 
-const GROUP_ORDER: SourceKind["group"][] = ["TMDb", "IMDb", "Letterboxd", "MDBList", "Trakt"];
+const GROUP_ORDER: SourceKind["group"][] = ["TMDb", "IMDb", "Letterboxd", "MDBList"];
 
 function useDebounced<T>(value: T, ms: number): T {
   const [settled, setSettled] = useState(value);
@@ -72,7 +72,7 @@ function PasteLink({
                 submit();
               }
             }}
-            placeholder="Paste a link from TMDb, IMDb, Letterboxd, MDBList or Trakt"
+            placeholder="Paste a link from TMDb, IMDb, Letterboxd or MDBList"
             aria-label="Paste a link"
             aria-invalid={error ? true : undefined}
           />

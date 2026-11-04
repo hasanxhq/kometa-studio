@@ -158,15 +158,15 @@ const sourceKinds: SourceKind[] = [
     why: null,
   },
   {
-    builder: "trakt_list",
-    label: "Trakt list",
-    group: "Trakt",
+    builder: "mdblist_list",
+    label: "MDBList list",
+    group: "MDBList",
     input: "link",
     placeholder: "List URL",
     choices: null,
     previewable: false,
     available: false,
-    why: "Connect Trakt in Settings → Connect",
+    why: "Connect MDBList in Settings → Connect first",
   },
 ];
 
@@ -667,8 +667,8 @@ describe("CollectionBuilder", () => {
     mockApi(baseRoutes());
     renderBuilder("/collections/new?library=Movies");
     await pickList();
-    expect(await screen.findByText("Connect Trakt in Settings → Connect")).toBeInTheDocument();
-    expect(screen.getByLabelText("Trakt list")).toBeDisabled();
+    expect(await screen.findByText("Connect MDBList in Settings → Connect first")).toBeInTheDocument();
+    expect(screen.getByLabelText("MDBList list")).toBeDisabled();
   });
 
   it("Create sends a list source payload", async () => {

@@ -13,7 +13,7 @@ export type Source =
 export type SourceKind = {
   builder: string;
   label: string;
-  group: "TMDb" | "IMDb" | "Letterboxd" | "MDBList" | "Trakt";
+  group: "TMDb" | "IMDb" | "Letterboxd" | "MDBList";
   input: "search" | "link" | "choice" | "count";
   placeholder: string | null;
   choices: { value: string; label: string }[] | null;
