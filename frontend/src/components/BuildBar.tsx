@@ -145,7 +145,20 @@ export function BuildBar({ library }: { library: string }) {
                     </ul>
                   </section>
                 )}
-                {plan.build.length === 0 && plan.remove.length === 0 && <p className="text-sm text-muted">Nothing to build or remove.</p>}
+                {plan.blocked.length > 0 && (
+                  <section>
+                    <h3 className="text-sm font-semibold text-warn">Won't build</h3>
+                    <ul className="mt-1 list-disc pl-5 text-sm">
+                      {plan.blocked.map((item) => (
+                        <li key={`${item.category}:${item.title}`}>
+                          {item.title}
+                          <span className="text-muted"> — {item.reason}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                )}
+                {plan.build.length === 0 && plan.remove.length === 0 && plan.blocked.length === 0 && <p className="text-sm text-muted">Nothing to build or remove.</p>}
               </>
             )}
             <SaveError error={error} />
