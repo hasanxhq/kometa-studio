@@ -33,6 +33,7 @@ class FakePlex:
             k: {tag: [dict(item) for item in items] for tag, items in tags.items()}
             for k, tags in self.DEFAULT_TAGS.items()
         }
+        self.CREDITS = {k: dict(v) for k, v in self.DEFAULT_CREDITS.items()}
         self.TAG_COUNTS = {
             k: dict(counts)
             for k, counts in self.DEFAULT_TAG_COUNTS.items()
@@ -161,6 +162,27 @@ class FakePlex:
             {"ratingKey": "502", "type": "movie", "title": "Dune Messiah", "year": 2026, "thumb": "/library/metadata/502/thumb/1700000006", "Media": [{"videoResolution": "1080", "audioCodec": "eac3"}]},
             {"ratingKey": "503", "type": "movie", "title": "Heat", "year": 1995},
         ]
+    }
+
+    # A title's full credits, as /library/metadata/<ratingKey> gives them (trimmed to the people).
+    DEFAULT_CREDITS = {
+        "501": {
+            "Director": [{"id": 11, "tag": "Denis Villeneuve"}],
+            "Writer": [{"id": 21, "tag": "Jon Spaihts"}, {"id": 11, "tag": "Denis Villeneuve"}],
+            "Producer": [{"id": 31, "tag": "Mary Parent"}],
+            "Role": [{"id": 41, "tag": "Timothée Chalamet"}, {"id": 42, "tag": "Zendaya"}, {"id": 43, "tag": "Rebecca Ferguson"}],
+        },
+        "502": {
+            "Director": [{"id": 11, "tag": "Denis Villeneuve"}],
+            "Writer": [{"id": 11, "tag": "Denis Villeneuve"}],
+            "Producer": [{"id": 31, "tag": "Mary Parent"}],
+            "Role": [{"id": 41, "tag": "Timothée Chalamet"}, {"id": 42, "tag": "Zendaya"}],
+        },
+        "503": {
+            "Director": [{"id": 12, "tag": "Michael Mann"}],
+            "Writer": [{"id": 12, "tag": "Michael Mann"}],
+            "Role": [{"id": 44, "tag": "Al Pacino"}, {"id": 45, "tag": "Robert De Niro"}, {"id": 42, "tag": "Zendaya"}],
+        },
     }
 
     # Tag values from /library/sections/<key>/<tag> (Plex 1.41).
@@ -300,6 +322,9 @@ class FakePlex:
         if len(parts) == 3 and parts[1] == "metadata" and parts[2] in self.COLLECTION_META:
             meta = next(c for c in self.COLLECTIONS["1"] if c["ratingKey"] == parts[2]) | self.COLLECTION_META[parts[2]] | {"type": "collection"}
             return httpx.Response(200, json={"MediaContainer": {"size": 1, "Metadata": [meta]}})
+        if len(parts) == 3 and parts[1] == "metadata" and parts[2] in self.CREDITS:
+            title = next(m for m in self.TITLES["1"] if m["ratingKey"] == parts[2])
+            return httpx.Response(200, json={"MediaContainer": {"size": 1, "Metadata": [title | self.CREDITS[parts[2]]]}})
         if len(parts) == 3 and parts[1] == "metadata" and parts[2] == "201":  # a movie, not a collection
             return httpx.Response(200, json={"MediaContainer": {"size": 1, "Metadata": [self.ITEMS["101"][0] | {"librarySectionID": 1}]}})
         if len(parts) == 4 and parts[1] == "collections" and parts[3] == "children" and parts[2] in self.ITEMS:
