@@ -398,7 +398,9 @@ async def customise_ready_made(library: str, category: str, block: str, key: str
     return {
         "library": library,
         "title": title,
-        "filters": {"match": "all", "rules": [{"field": field.key, "modifier": "", "value": value}]},
+        # Kometa's smart_filter template puts the value in an `any:` block, so a key with addons (G with TV-G)
+        # matches either; in an `all:` block Kometa would AND them.
+        "filters": {"match": "any", "rules": [{"field": field.key, "modifier": "", "value": value}]},
         "sort_by": TEMPLATE_SORT,
         "limit": None,
         "visible": {"library": True, "home": False, "shared": False},

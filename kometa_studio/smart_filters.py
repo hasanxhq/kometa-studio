@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 if TYPE_CHECKING:
     from kometa_studio.plex_library import PlexServer
@@ -832,7 +832,7 @@ async def plex_query(
                 rule_pairs.append((f"{arg_key}{mod_code}", str(item)))
 
     if not rule_pairs:
-        return params
+        return [(unquote(key), unquote(value)) for key, value in params]
 
     # Interleave with conjunctions and push/pop wrapper for 'any' (kometa/modules/builder.py line 4483)
     if is_all:
@@ -848,4 +848,6 @@ async def plex_query(
             params.append(pair)
         params.append(("pop", "1"))
 
-    return params
+    # Kometa writes these into a URI by hand, already %-encoded (``%3E`` for ``>``). Studio passes them to httpx,
+    # which encodes them itself, so hand back the decoded form; otherwise Plex would get ``year%253E`` and ignore it.
+    return [(unquote(key), unquote(value)) for key, value in params]

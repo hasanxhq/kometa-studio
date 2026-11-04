@@ -380,7 +380,7 @@ async def test_plex_query_spec1_all_tags_year_unplayed(plex_server):
         ("and", "1"),
         ("genre", "Sci-Fi"),
         ("and", "1"),
-        ("year%3E", "2000"),
+        ("year>", "2000"),
         ("and", "1"),
         ("unwatched", "1"),
     ]
@@ -392,10 +392,10 @@ async def test_plex_query_spec2_any_with_push_pop(plex_server):
 
     Kometa builder.py lines 4460-4490:
     - type=1 (movie)
-    - sort='originallyAvailableAt%3Adesc' (from movie_sorts['release.desc'])
+    - sort='originallyAvailableAt:desc' (from movie_sorts['release.desc'])
     - base is 'any', so final_filter is push=1&<inside>&pop=1
     - inside items joined with 'or=1'
-    Expected URI: ?type=1&sort=originallyAvailableAt%3Adesc&push=1&genre=Action&or=1&genre=Sci-Fi&pop=1
+    Expected URI: ?type=1&sort=originallyAvailableAt:desc&push=1&genre=Action&or=1&genre=Sci-Fi&pop=1
     """
     _, server = plex_server
     spec = {
@@ -408,7 +408,7 @@ async def test_plex_query_spec2_any_with_push_pop(plex_server):
     params = await plex_query(server, "1", "movie", spec, sort_by="release.desc")
     assert params == [
         ("type", "1"),
-        ("sort", "originallyAvailableAt%3Adesc"),
+        ("sort", "originallyAvailableAt:desc"),
         ("push", "1"),
         ("genre", "Action"),
         ("or", "1"),
@@ -444,11 +444,11 @@ async def test_plex_query_spec3_dates_ratings_duration(plex_server):
     assert params == [
         ("type", "1"),
         ("sort", "titleSort"),
-        ("addedAt%3E%3E", "-30d"),
+        ("addedAt>>", "-30d"),
         ("and", "1"),
-        ("userRating%3E", "7.5"),
+        ("userRating>", "7.5"),
         ("and", "1"),
-        ("duration%3E", "5400000"),
+        ("duration>", "5400000"),
     ]
 
 
@@ -484,7 +484,7 @@ async def test_plex_query_spec4_show_library(plex_server):
         ("sort", "titleSort"),
         ("show.network", "HBO"),
         ("and", "1"),
-        ("show.year%3E", "2020"),
+        ("show.year>", "2020"),
         ("and", "1"),
         ("episode.resolution", "4k"),
     ]

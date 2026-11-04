@@ -133,6 +133,10 @@ def test_a_ready_made_plex_collection_opens_in_the_builder(root):
             "/api/v1/ready-made/libraries/Movies/categories/genre/customise", params={"block": action["block"], "key": "Action"}
         ).json()
         assert draft["title"] == "Action Movies"
-        assert draft["filters"] == {"match": "all", "rules": [{"field": "genre", "modifier": "", "value": ["Action"]}]}
+        assert draft["filters"] == {"match": "any", "rules": [{"field": "genre", "modifier": "", "value": ["Action"]}]}
+        # The fixture's content_rating block: G with its TV-G addon, so either one.
+        rating = client.get("/api/v1/ready-made/libraries/Movies/categories/content_rating/customise", params={"block": "Ratings", "key": "G"})
+        assert rating.status_code == 200, rating.text
+        assert rating.json()["filters"] == {"match": "any", "rules": [{"field": "content_rating", "modifier": "", "value": ["G", "TV-G"]}]}
         chart = client.get("/api/v1/ready-made/libraries/Movies/categories/basic/customise", params={"block": "", "key": "Newly Released"})
         assert chart.status_code == 422
