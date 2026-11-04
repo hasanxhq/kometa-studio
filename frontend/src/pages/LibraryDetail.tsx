@@ -6,6 +6,8 @@ import { Link, useParams, useSearchParams } from "react-router";
 
 import { ApiError, api, type ConfigLibrary, type FileReference, type PlexCollection } from "../api";
 import { AddLibrary } from "../components/AddLibrary";
+import { LibrarySettingsForm } from "../components/library/LibrarySettingsForm";
+import { OperationsForm } from "../components/library/OperationsForm";
 import { PlexPoster, posterGrid } from "../components/PlexPoster";
 import { Button, Card, Tag } from "../components/ui";
 import { collectionPath, libraryTypeLabels, mergeLibraries } from "../libraries";
@@ -99,21 +101,6 @@ function operationBlocks(operations: ConfigLibrary["operations"]): Record<string
   // Kometa takes one mapping or a list of them. A list is several blocks, often each with its own schedule.
   if (Array.isArray(operations)) return operations.filter((block) => Object.keys(block).length > 0);
   return Object.keys(operations).length > 0 ? [operations] : [];
-}
-
-function KeyValues({ values, empty = "None." }: { values: Record<string, unknown>; empty?: string }) {
-  const entries = Object.entries(values);
-  if (entries.length === 0) return <p className="text-sm text-muted">{empty}</p>;
-  return (
-    <dl className="flex flex-col gap-1 font-mono text-xs">
-      {entries.map(([key, value]) => (
-        <div key={key} className="flex flex-col gap-0.5 border-b border-border py-1.5 last:border-0 sm:flex-row sm:gap-4">
-          <dt className="shrink-0 text-muted sm:w-56">{key}</dt>
-          <dd className="min-w-0 whitespace-pre-wrap break-words">{typeof value === "object" && value !== null ? JSON.stringify(value, null, 2) : String(value)}</dd>
-        </div>
-      ))}
-    </dl>
-  );
 }
 
 // --- Collections ----------------------------------------------------------------
@@ -381,24 +368,10 @@ function OverlaysTab({ config }: { config: ConfigLibrary }) {
 }
 
 function OperationsTab({ config }: { config: ConfigLibrary }) {
-  const blocks = operationBlocks(config.operations);
   return (
     <div className="flex flex-col gap-4">
-      <Card title="Operations">
-        {blocks.length === 0 ? (
-          <p className="text-sm text-muted">None.</p>
-        ) : (
-          blocks.map((block, index) => (
-            <div key={index} className={index > 0 ? "mt-3 border-t border-border pt-3" : undefined}>
-              {blocks.length > 1 && <p className="mb-1 text-sm text-muted">Operation {index + 1}</p>}
-              <KeyValues values={block} />
-            </div>
-          ))
-        )}
-      </Card>
-      <Card title="Library settings">
-        <KeyValues values={config.settings} />
-      </Card>
+      <OperationsForm library={config.name} operations={config.operations} />
+      <LibrarySettingsForm library={config.name} settings={config.settings} />
     </div>
   );
 }

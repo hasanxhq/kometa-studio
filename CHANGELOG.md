@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A library's **Operations** tab: Kometa's library operations and the library's own `settings:` overrides as forms you can save (from Kometa's config schema), instead of editing config.yml by hand. Clearing every field removes that section; a stale open form is refused so another edit isn't overwritten.
 - **Poster** on the collection builder: Plex's own mosaic (the default), an image you upload, an image link, or Kometa's artwork when you opened a Ready-made Genre (and similar) collection with Customise. Uploads are stored under `studio/posters/`; Kometa applies the poster on the collection's next run.
 
 - **Collections** in the sidebar, and the **collection builder**: make a smart collection from your library's own data without YAML. Pick filter rules (genre, year, decade, studio, actor, resolution, unwatched, added and the rest of what Kometa's smart filters can use), see a live preview of the posters Plex would put in it, choose its sort, size, where it shows (Library recommended, My home, Friends' home), summary and sort title, then Create. Studio writes it, Kometa checks it, and Studio runs just that collection; the card then shows it building, then in Plex. Editing opens the same page; renaming or deleting removes the old collection from Plex, but only if Studio made it. A Ready-made collection that's a Plex filter (Genre, Decade, people…) has **Customise**, which opens it in the builder prefilled.
