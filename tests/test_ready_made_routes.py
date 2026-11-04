@@ -379,31 +379,40 @@ def test_remove_keeps_everything_while_plex_cant_be_reached(root):
         assert [r["desired"] for r in col.rows(db, "Movies")] == [0]  # kept, marked for removal, for a later try
 
 
-def test_hand_edits_to_generated_files_are_flagged_then_replaced(root):
+def test_every_run_puts_studios_generated_files_back_without_asking(root):
+    # A fully managed install: hand edits, a deleted file and a dropped config.yml entry are undone before Kometa runs.
     client, _, _ = make_client(root)
     with client:
         wait_for_flags(client)
         add = {"library": "Movies", "add": [{"category": "basic", "block": "", "key": "Newly Released"}], "remove": []}
         first = client.post("/api/v1/ready-made/build", json=add).json()
         wait_for_run(client, first["run_id"])
-        assert client.get("/api/v1/ready-made/libraries/Movies").json()["hand_edited"] == []
+        gallery = client.get("/api/v1/ready-made/libraries/Movies").json()
+        assert "hand_edited" not in gallery  # no warnings: Studio just corrects it
 
         studio = root / "config" / "studio" / "Movies" / "basic.yml"
-        original = studio.read_text()
+        config = root / "config" / "config.yml"
+        original, original_config = studio.read_text(), config.read_text()
         studio.write_text(original + "# changed by hand\n")
-        assert client.get("/api/v1/ready-made/libraries/Movies").json()["hand_edited"] == ["studio/Movies/basic.yml"]
-        health = client.get("/api/v1/status").json()["health"]
-        check = next(c for c in health if c["source"] == "generated_files")
-        assert check["level"] == "warning" and "studio/Movies/basic.yml" in check["message"]
-        plan = client.post("/api/v1/ready-made/build", json=add | {"dry_run": True}).json()
-        assert plan["replaces_edits"] == ["studio/Movies/basic.yml"]
-
-        # The next Build puts Studio's text back and the warning goes.
-        again = client.post("/api/v1/ready-made/build", json=add).json()
-        wait_for_run(client, again["run_id"])
+        run = wait_for_run(client, client.post("/api/v1/runs", json={"mode": "operations"}).json()["id"])
         assert studio.read_text() == original
-        assert client.get("/api/v1/ready-made/libraries/Movies").json()["hand_edited"] == []
+        log = client.get(f"/api/v1/runs/{run['id']}/log").text
+        assert "studio/Movies/basic.yml had been changed by hand: put Studio's version back" in log
         assert not any(c["source"] == "generated_files" for c in client.get("/api/v1/status").json()["health"])
+
+        # Deleted, and its entry taken out of config.yml: both come back on the next run.
+        studio.unlink()
+        config.write_text(original_config.replace("studio/Movies/basic.yml", "studio/Movies/gone.yml"))
+        run = wait_for_run(client, client.post("/api/v1/runs", json={"mode": "operations"}).json()["id"])
+        assert studio.read_text() == original
+        assert "studio/Movies/basic.yml" in config.read_text()
+        assert "brought Studio's generated files for Movies up to date" in client.get(f"/api/v1/runs/{run['id']}/log").text
+
+        # Nothing to put right: no save, nothing in the log.
+        backups = len(client.get("/api/v1/backups").json()["backups"])
+        run = wait_for_run(client, client.post("/api/v1/runs", json={"mode": "operations"}).json()["id"])
+        assert len(client.get("/api/v1/backups").json()["backups"]) == backups
+        assert "generated files" not in client.get(f"/api/v1/runs/{run['id']}/log").text
 
 
 def test_removing_a_categorys_last_pick_removes_its_file(root):

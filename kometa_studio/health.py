@@ -191,27 +191,6 @@ def _maintainerr_checks(service) -> list[Check]:
     return checks
 
 
-def _generated_file_checks(db: sqlite3.Connection, settings: Settings) -> list[Check]:
-    from .studio_files import hand_edited
-
-    if settings.kometa_config is None:
-        return []
-    edited = hand_edited(db, settings.kometa_config.parent)
-    if not edited:
-        return []
-    names = ", ".join(edited)
-    one = len(edited) == 1
-    return [
-        Check(
-            "generated_files",
-            "warning",
-            f"Studio's generated {'file was' if one else 'files were'} changed by hand: {names}. "
-            f"The next Build in Ready-made replaces {'it' if one else 'them'}; change those collections in Ready-made instead.",
-            "/ready-made",
-        )
-    ]
-
-
 async def health(
     db: sqlite3.Connection, settings: Settings, http: httpx.AsyncClient, plex_check: PlexCheck, flags_error: str | None, maintainerr=None
 ) -> list[dict]:
@@ -226,7 +205,6 @@ async def health(
     checks += _maintainerr_checks(maintainerr)
     checks += _backup_checks(db, settings)
     checks += _disk_check(settings)
-    checks += _generated_file_checks(db, settings)
     if auth_settings(db) is None:
         checks.append(Check("sign_in", "warning", "Sign-in isn't set up, so anyone on your local network can use Studio.", "/settings/general"))
     updates = kometa_updates(db, kometa_version(settings))

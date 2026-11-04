@@ -145,19 +145,6 @@ export function BuildBar({ library }: { library: string }) {
                     </ul>
                   </section>
                 )}
-                {plan.replaces_edits.length > 0 && (
-                  <section>
-                    <h3 className="text-sm font-semibold text-warn">Will replace hand edits</h3>
-                    <ul className="mt-1 list-disc pl-5 text-sm">
-                      {plan.replaces_edits.map((path) => (
-                        <li key={path} className="font-mono">
-                          {path}
-                        </li>
-                      ))}
-                    </ul>
-                    <p className="mt-1 text-sm text-muted">These files were changed outside Studio. Build writes Studio's version back.</p>
-                  </section>
-                )}
                 {plan.build.length === 0 && plan.remove.length === 0 && <p className="text-sm text-muted">Nothing to build or remove.</p>}
               </>
             )}

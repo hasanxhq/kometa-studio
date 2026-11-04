@@ -553,7 +553,6 @@ export type ReadyMadeLibrary = {
   library_type: "movie" | "show" | null;
   counted_at: string | null;
   counting: boolean;
-  hand_edited: string[]; // generated files changed by hand; the next Build replaces them
   categories: ReadyMadeCategorySummary[];
 };
 
@@ -583,7 +582,6 @@ export type ReadyMadeBuildPlan = {
   build: { category: string; title: string }[];
   remove: { category: string; title: string; deletable: boolean; reason: string | null }[];
   run: { libraries: string[]; collections: string[]; files: string[] } | null;
-  replaces_edits: string[]; // hand-edited generated files this Build puts Studio's text back into
 };
 
 export type ReadyMadeBuildResult = ReadyMadeBuildPlan & {
