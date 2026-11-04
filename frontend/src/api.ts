@@ -582,6 +582,7 @@ export type ReadyMadeBuildPlan = {
   build: { category: string; title: string }[];
   remove: { category: string; title: string; deletable: boolean; reason: string | null }[];
   run: { libraries: string[]; collections: string[]; files: string[] } | null;
+  blocked: { category: string; title: string; reason: string }[]; // picks Build skips: the name belongs to a collection Studio didn't make
 };
 
 export type ReadyMadeBuildResult = ReadyMadeBuildPlan & {

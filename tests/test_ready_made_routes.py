@@ -443,3 +443,33 @@ def test_a_category_the_count_couldnt_list_shows_why(root):
         assert detail["listable"] is False and detail["reason"] == "Kometa names these with TMDb's names"
         basic = next(c for c in gallery["categories"] if c["name"] == "basic")
         assert basic["listable"] is True and basic["reason"] is None
+
+
+def test_a_pick_whose_name_is_taken_by_someone_elses_collection_isnt_built(root):
+    # Kometa takes over a collection with the same title; the Studio label would land on the user's own.
+    plex = FakePlex()
+    plex.add_collection("1", "Newly Released", labels=[], items=3)
+    client, _, _ = make_client(root, plex)
+    with client:
+        wait_for_flags(client)
+        add = {"library": "Movies", "add": [{"category": "basic", "block": "", "key": "Newly Released"}], "remove": []}
+        plan = client.post("/api/v1/ready-made/build", json=add | {"dry_run": True}).json()
+        assert plan["build"] == [] and plan["run"] is None
+        assert plan["blocked"] == [
+            {"category": "basic", "title": "Newly Released", "reason": "a collection with this name that Studio didn't make is already in Plex"}
+        ]
+        result = client.post("/api/v1/ready-made/build", json=add).json()
+        assert result["run_id"] is None and result["blocked"] == plan["blocked"]
+        assert col.rows(client.app.state.db, "Movies", "basic") == []
+        assert not (root / "config" / "studio" / "Movies" / "basic.yml").exists()
+
+
+def test_a_studio_collection_with_the_name_is_built_again(root):
+    plex = FakePlex()
+    plex.add_collection("1", "Newly Released", labels=["Studio"], items=3)
+    client, _, _ = make_client(root, plex)
+    with client:
+        wait_for_flags(client)
+        add = {"library": "Movies", "add": [{"category": "basic", "block": "", "key": "Newly Released"}], "remove": []}
+        plan = client.post("/api/v1/ready-made/build", json=add | {"dry_run": True}).json()
+        assert plan["blocked"] == [] and plan["run"]["collections"] == ["Newly Released"]

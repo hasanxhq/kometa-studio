@@ -251,6 +251,7 @@ describe("Ready-made Build bar", () => {
               { category: "imdb", title: "Maintainerr Watchlist", deletable: false, reason: "Maintainerr collection" },
             ],
             run: { libraries: ["Movies"], collections: ["IMDb Popular"], files: [] },
+            blocked: [{ category: "imdb", title: "IMDb Lowest Rated", reason: "a collection with this name that Studio didn't make is already in Plex" }],
           };
         }
         return {
@@ -260,6 +261,7 @@ describe("Ready-made Build bar", () => {
             { category: "imdb", title: "Maintainerr Watchlist", deletable: false, reason: "Maintainerr collection" },
           ],
           run: { libraries: ["Movies"], collections: ["IMDb Popular"], files: [] },
+          blocked: [],
           run_id: 77,
           removed: ["IMDb Top 250"],
           kept: [{ title: "Maintainerr Watchlist", reason: "Maintainerr collection" }],
@@ -280,6 +282,8 @@ describe("Ready-made Build bar", () => {
     expect(within(dialog).getByText("IMDb Top 250")).toBeInTheDocument();
     expect(within(dialog).getByText(/won't be deleted: Maintainerr Watchlist/)).toBeInTheDocument();
     expect(within(dialog).getByText(/Maintainerr collection/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Won't build")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Studio didn't make is already in Plex/)).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(screen.getByText(/Building in/)).toBeInTheDocument());

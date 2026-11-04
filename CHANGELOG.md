@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ready-made never builds a collection whose name is already used by a collection Studio didn't make, or by Maintainerr's. Kometa would have taken that collection over and given it Studio's label, so a later Remove could have deleted it. Build's confirmation lists these under "Won't build", with the reason.
+
 - Ready-made: Studio keeps its generated files (`config/studio/…`) as it wrote them. Before every Kometa run it puts back a file that was changed by hand or deleted, and a `- file:` entry taken out of config.yml, then says so in the run's log. There's no warning to act on: Studio corrects it.
 - Ready-made: when a category's last collection is removed, its generated file goes too, instead of staying on disk unused. It's backed up first, like every save.
 - Ready-made: audio and subtitle language collections get the names Kometa gives them, such as "French Audio" instead of "Français Audio", so Build and "In Plex" find them. Studio reads the names from TMDb with your TMDb key. If it can't, the category says so instead of listing.
