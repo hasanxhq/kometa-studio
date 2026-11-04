@@ -82,6 +82,7 @@ const sample: BuiltCollection = {
   poster: null,
   download_missing: false,
   request_cap: null,
+  request_profile: null,
   state: "in_plex",
   plex_items: 12,
   thumb: null,
@@ -106,6 +107,7 @@ const listSample: BuiltCollection = {
   poster: null,
   download_missing: false,
   request_cap: null,
+  request_profile: null,
   state: "in_plex",
   plex_items: 5,
   thumb: null,
@@ -402,6 +404,7 @@ describe("CollectionBuilder", () => {
       poster: null,
       download_missing: false,
       request_cap: null,
+      request_profile: null,
       confirm_requests: false,
     });
     await waitFor(() => expect(router.state.location.pathname).toBe("/collections"));
@@ -480,6 +483,7 @@ describe("CollectionBuilder", () => {
       poster: { kind: "url", url: KOMETA_POSTER },
       download_missing: false,
       request_cap: null,
+      request_profile: null,
     };
     mockApi(
       baseRoutes({
@@ -721,6 +725,7 @@ describe("CollectionBuilder", () => {
       poster: null,
       download_missing: false,
       request_cap: null,
+      request_profile: null,
       confirm_requests: false,
     });
     await waitFor(() => expect(router.state.location.pathname).toBe("/collections"));
@@ -810,6 +815,57 @@ describe("CollectionBuilder", () => {
     expect(confirmed.confirm_requests).toBe(true);
     expect(confirmed.download_missing).toBe(true);
     await waitFor(() => expect(router.state.location.pathname).toBe("/collections"));
+  });
+
+  it("Download missing offers a quality profile, with the default first, and Create sends the choice", async () => {
+    const calls = mockApi(
+      baseRoutes({
+        "GET /requests/settings": () => ({
+          settings: {
+            enabled: true,
+            via: "auto",
+            radarr: { quality_profile: "HD-1080p", root_folder: null, minimum_availability: "released", search: true },
+            sonarr: { quality_profile: null, root_folder: null, monitor: "all", search: true, series_type: "standard" },
+            daily_cap: null,
+            confirm_over: 25,
+          },
+          seerr: null,
+          connected: { radarr: true, sonarr: false, seerr: false },
+        }),
+        "GET /requests/options": () => ({
+          radarr: { quality_profiles: ["Any", "HD-1080p", "Ultra-HD"], root_folders: ["/movies"] },
+          sonarr: null,
+          errors: {},
+        }),
+        "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+        "POST /collections": (body) => ({
+          ...(body as CollectionInput),
+          id: 21,
+          state: "queued",
+          plex_items: null,
+          thumb: null,
+          last_built_at: null,
+          last_error: null,
+          run_id: 10,
+          requests: { waiting: 0, requested: 1, downloading: 0, imported: 0, failed: 0 },
+        }),
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    await screen.findByLabelText("Chosen source");
+    expect(screen.queryByRole("combobox", { name: "Quality profile" })).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", { name: /Download missing/ }));
+    const profile = await screen.findByRole("combobox", { name: "Quality profile" });
+    expect(within(profile).getAllByRole("option")[0]).toHaveTextContent("Default (HD-1080p)");
+    await within(profile).findByRole("option", { name: "Ultra-HD" });
+    fireEvent.change(profile, { target: { value: "Ultra-HD" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /collections")).toBe(true));
+    const sent = calls.find((c) => c.route === "POST /collections")?.body as CollectionInput;
+    expect(sent.request_profile).toBe("Ultra-HD");
   });
 
   it("edit opens a list collection in the list view with source and order", async () => {

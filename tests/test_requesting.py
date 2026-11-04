@@ -97,7 +97,7 @@ class FakeMockEnvironment:
             if path == "/api/v3/rootfolder":
                 return httpx.Response(200, json=[{"id": 1, "path": "/movies"}])
             if path == "/api/v3/qualityprofile":
-                return httpx.Response(200, json=[{"id": 4, "name": "HD-1080p"}])
+                return httpx.Response(200, json=[{"id": 4, "name": "HD-1080p"}, {"id": 6, "name": "Ultra-HD"}])
             if path == "/api/v3/tag":
                 if request.method == "GET":
                     return httpx.Response(200, json=self.radarr_tags)
@@ -759,3 +759,19 @@ async def test_auto_via_selection(env):
     row2 = db.execute("SELECT * FROM requests WHERE item = 'tmdb-movie:102'").fetchone()
     assert row2["via"] == "overseerr"
 
+
+
+@pytest.mark.anyio
+async def test_a_collection_profile_overrides_the_default_and_falls_back_when_gone(env):
+    service, mock, db, box, config, client = env
+    settings = service.load_settings()
+    settings.enabled = True
+    settings.radarr.quality_profile = "HD-1080p"
+    service.save_settings(settings)
+
+    await service.request([Item(item="tmdb-movie:603", title="The Matrix", year=1999)], library="Movies", collection_id=1, now=T0, profile="Ultra-HD")
+    await service.request([Item(item="tmdb-movie:604", title="The Matrix Reloaded", year=2003)], library="Movies", collection_id=1, now=T0, profile="Deleted profile")
+
+    by_tmdb = {m["tmdbId"]: m for m in mock.radarr_movies.values()}
+    assert by_tmdb[603]["qualityProfileId"] == 6  # the collection's choice
+    assert by_tmdb[604]["qualityProfileId"] == 4  # no longer in Radarr: the default from Settings → Requests

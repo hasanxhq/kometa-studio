@@ -25,8 +25,11 @@ def record_requests(client) -> list:
     """Swap the request service's request() for one that notes what was asked, so no app is called."""
     calls: list = []
 
-    async def fake(items, library, collection_id, now, cap=None):
-        calls.append({"items": [i.item for i in items], "library": library, "collection_id": collection_id, "cap": cap})
+    async def fake(items, library, collection_id, now, cap=None, profile=None):
+        call = {"items": [i.item for i in items], "library": library, "collection_id": collection_id, "cap": cap}
+        if profile is not None:
+            call["profile"] = profile
+        calls.append(call)
         return RequestOutcome(requested=len(items))
 
     client.app.state.requests.request = fake
@@ -172,3 +175,21 @@ def test_ready_made_build_marks_its_picks(root):
         assert row["download_missing"] == 1
         tile = next(e for e in client.get("/api/v1/ready-made/libraries/Movies/categories/basic").json()["collections"] if e["key"] == "Newly Released")
         assert tile["download_missing"] is True and tile["requests"]["waiting"] == 0
+
+
+def test_a_collection_keeps_its_own_quality_profile_for_requests(root):
+    with tmdb_client(root, []) as client:
+        wait_for_flags(client)
+        requests_on(client)
+        calls = record_requests(client)
+        made = client.post("/api/v1/collections", json=dune(download_missing=True, request_profile="Ultra-HD"))
+        assert made.status_code == 201, made.text
+        built = made.json()
+        assert built["request_profile"] == "Ultra-HD"
+        assert calls[0]["profile"] == "Ultra-HD"
+        wait_for_run(client, built["run_id"])
+
+        # Back to the default: saved without one.
+        again = client.put(f"/api/v1/collections/{built['id']}", json=dune(download_missing=True))
+        assert again.status_code == 200, again.text
+        assert again.json()["request_profile"] is None

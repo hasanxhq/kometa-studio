@@ -81,6 +81,8 @@ export type CollectionInput = {
   poster: Poster;
   download_missing: boolean;
   request_cap: number | null;
+  /** Radarr/Sonarr quality profile for this collection's requests; null uses the default in Settings → Requests. */
+  request_profile: string | null;
 };
 
 export type CollectionSaveBody = CollectionInput & { confirm_requests?: boolean };
