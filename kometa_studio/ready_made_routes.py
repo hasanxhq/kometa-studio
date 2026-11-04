@@ -310,7 +310,8 @@ async def category_detail(library: str, name: str, request: Request, db: Db, set
             }
         )
     summary = _summary(category, rows, cached)
-    return {**summary, "counted_at": cached["counted_at"] if cached else None, "collections": collections_out}
+    customisable = bool(root) and ready_made.customisable(root, name, library_type or "movie")
+    return {**summary, "customisable": customisable, "counted_at": cached["counted_at"] if cached else None, "collections": collections_out}
 
 
 class RefIn(BaseModel):
@@ -537,7 +538,7 @@ async def build(
             col.mark_absent(db, body.library, remove_refs)
             desired = col.desired(db, body.library)
         written = await studio_files.write_library(
-            writer, root, body.library, library_type, desired, all_libraries, "Ready-made collections"
+            writer, root, body.library, library_type, desired, all_libraries, "Ready-made collections", built=col.built_definitions(db, body.library)
         )
     except SaveRefused as refused:
         with db:

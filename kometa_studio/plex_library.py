@@ -290,6 +290,13 @@ class PlexServer:
             for kind, field in (("actor", "Role"), ("director", "Director"), ("writer", "Writer"), ("producer", "Producer"))
         }
 
+    async def query(self, library_key: str, params: list[tuple[str, str]], size: int = 30) -> tuple[list[PlexItem], int]:
+        """The first ``size`` titles for a filter query on /library/sections/<key>/all (as a smart collection would hold them), and how many in all."""
+        query = [*params, ("X-Plex-Container-Start", "0"), ("X-Plex-Container-Size", str(size))]
+        container = await self._get(f"/library/sections/{library_key}/all", query)  # type: ignore[arg-type]
+        items = [_item(m) for m in container.get("Metadata") or []]
+        return items, int(container.get("totalSize", container.get("size", len(items))) or 0)
+
     async def image(self, path: str, width: int, height: int) -> tuple[bytes, str]:
         """A poster, resized by Plex. ``path`` must be one Plex gave Studio (IMAGE_PATH)."""
         if not IMAGE_PATH.match(path):

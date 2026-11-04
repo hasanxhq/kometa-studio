@@ -118,7 +118,7 @@ export type RunSummary = {
   added_to_sonarr?: number;
 };
 
-export type RunTrigger = "manual" | "schedule" | "catch_up" | "arr" | "maintainerr";
+export type RunTrigger = "manual" | "schedule" | "catch_up" | "arr" | "maintainerr" | "ready-made" | "builder";
 
 export type Run = {
   id: number;
@@ -546,6 +546,7 @@ export type ReadyMadeCategorySummary = {
   in_plex: number;
   picked: number; // rows Studio wants (desired)
   run_scope: ReadyMadeRunScope;
+  customisable?: boolean; // category page only: its collections open in the builder (Plex filters)
 };
 
 export type ReadyMadeLibrary = {

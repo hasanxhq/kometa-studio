@@ -7,11 +7,13 @@ variable for extra labels). Saves go through ``ConfigWriter`` like any other edi
 
 from __future__ import annotations
 
+import io
 import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
 from . import collections as col
@@ -215,7 +217,40 @@ def _studio_prefix(library: str, all_libraries: list[str]) -> str:
 
 def is_generated(text: str) -> bool:
     """True for a file Studio wrote: its header is in the first lines."""
-    return any("Written by Kometa Studio from Kometa's" in line for line in text.splitlines()[:3])
+    return any("Written by Kometa Studio" in line for line in text.splitlines()[:3])
+
+
+BUILT_HEADER = "Written by Kometa Studio from its collection builder. Studio rewrites this file on every save: change these collections in Studio."
+
+
+def render_built(definitions: list[tuple[str, dict]]) -> str | None:
+    """Kometa's file for the library's builder collections: one smart collection each, labelled Studio. None if there are none."""
+    from . import smart_filters
+
+    if not definitions:
+        return None
+    collections = CommentedMap()
+    for title, definition in sorted(definitions, key=lambda pair: pair[0].casefold()):
+        body = CommentedMap()
+        body["smart_filter"] = smart_filters.to_kometa(definition.get("filters") or {}, definition.get("sort_by"), definition.get("limit"))
+        body["label"] = "Studio"  # adds the label without replacing others (Kometa's label, not label.sync)
+        visible = definition.get("visible") or {}
+        body["visible_library"] = bool(visible.get("library", True))
+        body["visible_home"] = bool(visible.get("home", False))
+        body["visible_shared"] = bool(visible.get("shared", False))
+        body["minimum_items"] = int(definition.get("minimum_items") or 1)
+        if definition.get("summary"):
+            body["summary"] = str(definition["summary"])
+        if definition.get("sort_title"):
+            body["sort_title"] = str(definition["sort_title"])
+        collections[title] = body
+    document = CommentedMap([("collections", collections)])
+    stream = io.StringIO()
+    yaml = YAML()
+    yaml.indent(mapping=2, sequence=4, offset=2)
+    yaml.width = 4096
+    yaml.dump(document, stream)
+    return f"# {BUILT_HEADER}\n" + stream.getvalue()
 
 
 @dataclass
@@ -286,6 +321,7 @@ async def write_library(
     picks: dict[str, list[Ref]],
     all_libraries: list[str],
     reason: str,
+    built: list[tuple[str, dict]] | None = None,
 ) -> Written:
     """Write every category file for ``library`` and update config.yml in one ``ConfigWriter.save``.
 
@@ -301,7 +337,7 @@ async def write_library(
     removed: list[str] = []
 
     for category, refs in sorted(picks.items()):
-        if not refs:
+        if not refs or category == col.BUILT:
             continue
         source = default_file(kometa_root, category, library_type)
         if source is None:
@@ -317,6 +353,16 @@ async def write_library(
         if current is not None and current.decode("utf-8") == text:
             continue
         edits.append(Edit(rel, text, file_hash(current) if current is not None else None))
+
+    built_text = render_built(built or [])
+    if built_text is not None:
+        rel = relative_path(library, col.BUILT, all_libraries)
+        active_rels[col.BUILT] = rel
+        generated[rel] = file_hash(built_text.encode("utf-8"))
+        path = writer.config_dir / rel
+        current = path.read_bytes() if path.is_file() else None
+        if current is None or current.decode("utf-8") != built_text:
+            edits.append(Edit(rel, built_text, file_hash(current) if current is not None else None))
 
     config_path = writer.config_path
     if not config_path.is_file():
@@ -360,3 +406,18 @@ async def write_library(
     if not edits:
         return Written(None, generated, removed)
     return Written(await writer.save(edits, reason), generated, removed)
+
+
+async def write_from_db(
+    writer: ConfigWriter,
+    kometa_root: Path,
+    db: sqlite3.Connection,
+    library: str,
+    library_type: str,
+    all_libraries: list[str],
+    reason: str,
+) -> Written:
+    """``write_library`` with everything Studio wants for ``library``: ready-made picks and builder collections."""
+    return await write_library(
+        writer, kometa_root, library, library_type, col.desired(db, library), all_libraries, reason, built=col.built_definitions(db, library)
+    )

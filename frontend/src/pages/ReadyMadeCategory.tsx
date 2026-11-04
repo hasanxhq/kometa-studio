@@ -31,7 +31,7 @@ function statusLine(entry: ReadyMadeEntry, selected: boolean, wasBuilt: boolean)
   }
 }
 
-function CollectionTile({ entry, banner, selected, onToggle }: { entry: ReadyMadeEntry; banner: string; selected: boolean; onToggle: () => void }) {
+function CollectionTile({ entry, banner, selected, onToggle, customise }: { entry: ReadyMadeEntry; banner: string; selected: boolean; onToggle: () => void; customise?: string }) {
   const status = statusLine(entry, selected, entry.state === "in_plex");
   return (
     <li>
@@ -60,6 +60,12 @@ function CollectionTile({ entry, banner, selected, onToggle }: { entry: ReadyMad
         )}
         {entry.build_seconds != null && <span className="text-xs text-muted">built in {entry.build_seconds} s</span>}
       </button>
+      {customise && (
+        // A template: the builder opens prefilled, and saving makes it the user's own collection.
+        <Link className="inline-flex min-h-11 items-center text-xs text-muted underline hover:text-text" to={customise} aria-label={`Customise ${entry.title}`}>
+          Customise
+        </Link>
+      )}
     </li>
   );
 }
@@ -159,6 +165,11 @@ export function ReadyMadeCategory() {
               banner={banner}
               selected={isSelected(entry, category, local)}
               onToggle={() => picksApi.setPicked(library, category, entry, !isSelected(entry, category, local))}
+              customise={
+                data.data.customisable && entry.block
+                  ? `/collections/new?${new URLSearchParams({ library, category, block: entry.block, key: entry.key })}`
+                  : undefined
+              }
             />
           ))}
         </ul>

@@ -43,6 +43,7 @@ from .notifications_routes import router as notifications_router
 from .plex_routes import router as plex_router
 from .ready_made_routes import needs_count, plex_is_configured
 from .ready_made_routes import router as ready_made_router
+from .builder_routes import router as builder_router
 from .ready_made_runs import ReadyMadeRecorder
 from .runner import Runner
 from .runs_routes import router as runs_router
@@ -202,5 +203,6 @@ def create_app(
     app.include_router(maintainerr_router)
     app.include_router(notifications_router)
     app.include_router(ready_made_router)
+    app.include_router(builder_router)
     mount_frontend(app, static_dir)
     return app
