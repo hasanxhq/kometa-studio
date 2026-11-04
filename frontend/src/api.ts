@@ -657,7 +657,7 @@ async function errorFrom(response: Response): Promise<ApiError> {
   return new ApiError(response.status, message, detail);
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(`${urlBase}/api/v1${path}`, {
     method,
     headers: body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" },
