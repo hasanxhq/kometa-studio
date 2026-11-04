@@ -6,6 +6,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ApiError, api, type ReadyMadeBuildResult, type ReadyMadeEntry } from "../api";
 import { BuildBar } from "../components/BuildBar";
 import { useHeaderTitle } from "../components/HeaderTitle";
+import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
 import { PlexPoster } from "../components/PlexPoster";
 import { RetryButton } from "../components/RetryButton";
 import { Button } from "../components/ui";
@@ -39,6 +40,7 @@ function CollectionTile({
   onToggle,
   customise,
   retry,
+  library,
 }: {
   entry: ReadyMadeEntry;
   banner: string;
@@ -46,8 +48,10 @@ function CollectionTile({
   onToggle: () => void;
   customise?: string;
   retry?: { run: () => Promise<string | null>; onDone: () => void };
+  library: string;
 }) {
   const status = statusLine(entry, selected, entry.state === "in_plex");
+  const waiting = entry.requests?.waiting ?? 0;
   return (
     <li>
       <button
@@ -75,7 +79,14 @@ function CollectionTile({
         )}
         {entry.build_seconds != null && <span className="text-xs text-muted">built in {entry.build_seconds} s</span>}
       </button>
+      {entry.id != null && (entry.download_missing || entry.requests) && (
+        <div className="mt-1 flex flex-col gap-1">
+          <DownloadMissingBadge id={entry.id} downloadMissing={entry.download_missing} library={library} />
+          <RequestCountsLine summary={entry.requests} />
+        </div>
+      )}
       {entry.state === "failed" && retry && <RetryButton title={entry.title} run={retry.run} onDone={retry.onDone} />}
+      {entry.id != null && waiting > 0 && <RequestWaitingButton id={entry.id} waiting={waiting} library={library} />}
       {customise && (
         // A template: the builder opens prefilled, and saving makes it the user's own collection.
         <Link className="inline-flex min-h-11 items-center text-xs text-muted underline hover:text-text" to={customise} aria-label={`Customise ${entry.title}`}>
@@ -180,12 +191,19 @@ export function ReadyMadeCategory() {
               key={`${entry.block}:${entry.key}`}
               entry={entry}
               banner={banner}
+              library={library}
               selected={isSelected(entry, category, local)}
               onToggle={() => picksApi.setPicked(library, category, entry, !isSelected(entry, category, local))}
               retry={{
                 // Building a pick again: the same Build the bar does, for just this one.
                 run: async () => {
-                  const result = (await api.readyMade.build({ library, add: [{ category, block: entry.block, key: entry.key }], remove: [], dry_run: false })) as ReadyMadeBuildResult;
+                  const result = (await api.readyMade.build({
+                    library,
+                    add: [{ category, block: entry.block, key: entry.key }],
+                    remove: [],
+                    dry_run: false,
+                    download_missing: false,
+                  })) as ReadyMadeBuildResult;
                   return result.blocked[0]?.reason ?? null;
                 },
                 onDone: () => queryClient.invalidateQueries({ queryKey: ["ready-made"] }),

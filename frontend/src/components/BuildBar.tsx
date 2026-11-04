@@ -1,13 +1,14 @@
 // The Ready-made build bar: local picks for one library, dry-run confirm, then one Kometa run.
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 
 import { api, type ReadyMadeBuildPlan, type ReadyMadeBuildResult } from "../api";
+import { requestsApi } from "../requestsApi";
 import { useReadyMadePicks } from "../readyMadePicks";
 import { SaveError } from "./ValidationReport";
-import { Button, StickyActions } from "./ui";
+import { Button, Checkbox, StickyActions } from "./ui";
 
 export function BuildBar({ library }: { library: string }) {
   const queryClient = useQueryClient();
@@ -17,9 +18,13 @@ export function BuildBar({ library }: { library: string }) {
   const [plan, setPlan] = useState<ReadyMadeBuildPlan | null>(null);
   const [done, setDone] = useState<ReadyMadeBuildResult | null>(null);
   const [error, setError] = useState<Error | null>(null);
+  const [downloadMissing, setDownloadMissing] = useState(false);
+  const [help, setHelp] = useState(false);
+  const settings = useQuery({ queryKey: ["requests", "settings"], queryFn: requestsApi.settings });
+  const requestsOn = settings.data?.settings.enabled === true;
 
   const dryRun = useMutation({
-    mutationFn: () => api.readyMade.build({ library, add: local.add, remove: local.remove, dry_run: true }),
+    mutationFn: () => api.readyMade.build({ library, add: local.add, remove: local.remove, dry_run: true, download_missing: downloadMissing }),
     onMutate: () => {
       setError(null);
       setDone(null);
@@ -29,13 +34,14 @@ export function BuildBar({ library }: { library: string }) {
   });
 
   const confirm = useMutation({
-    mutationFn: () => api.readyMade.build({ library, add: local.add, remove: local.remove, dry_run: false }),
+    mutationFn: () => api.readyMade.build({ library, add: local.add, remove: local.remove, dry_run: false, download_missing: downloadMissing }),
     onMutate: () => setError(null),
     onSuccess: (result) => {
       clearLibrary(library);
       setPlan(null);
       setDone(result as ReadyMadeBuildResult);
       queryClient.invalidateQueries({ queryKey: ["ready-made"] });
+      queryClient.invalidateQueries({ queryKey: ["requests"] });
     },
     onError: (err: Error) => setError(err),
   });
@@ -53,6 +59,7 @@ export function BuildBar({ library }: { library: string }) {
     setPlan(null);
     setDone(null);
     setError(null);
+    setDownloadMissing(false);
   };
 
   const closeDialog = () => {
@@ -68,6 +75,35 @@ export function BuildBar({ library }: { library: string }) {
           <span className="text-sm font-medium" aria-live="polite">
             {label || "Ready-made"}
           </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <Checkbox
+              checked={downloadMissing}
+              onChange={setDownloadMissing}
+              disabled={!requestsOn}
+            >
+              Download missing
+            </Checkbox>
+            {!requestsOn && (
+              <button
+                type="button"
+                className="inline-flex size-7 shrink-0 items-center justify-center rounded-control border border-border text-xs text-muted hover:text-text"
+                aria-label="Why Download missing is off"
+                aria-expanded={help}
+                onClick={() => setHelp((open) => !open)}
+              >
+                ?
+              </button>
+            )}
+          </div>
+          {help && !requestsOn && (
+            <p className="basis-full text-sm text-muted">
+              Turn on requests in{" "}
+              <Link className="underline hover:text-text" to="/settings/requests">
+                Settings → Requests
+              </Link>{" "}
+              first.
+            </p>
+          )}
           <Button variant="primary" onClick={() => dryRun.mutate()} disabled={dryRun.isPending || total === 0}>
             {dryRun.isPending ? "Checking…" : "Build"}
           </Button>

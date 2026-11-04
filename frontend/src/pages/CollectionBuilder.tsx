@@ -18,11 +18,14 @@ import {
 } from "../builderApi";
 import { ListPreview } from "../components/builder/ListPreview";
 import { ListSource, type ListSourceValue } from "../components/builder/ListSource";
+import { MissingTitles } from "../components/builder/MissingTitles";
 import { emptyValue, RuleValueInput, type DraftValue } from "../components/builder/RuleValueInput";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useHeaderTitle } from "../components/HeaderTitle";
 import { LeaveGuard } from "../components/LeaveGuard";
 import { PlexPoster, posterGrid } from "../components/PlexPoster";
 import { Button, Checkbox, ConfirmButton, Field, StickyActions, inputClass } from "../components/ui";
+import { needsConfirm, type NeedsConfirm } from "../requestsApi";
 
 type StartMode = "filters" | "list";
 type DraftRule = { field: string; modifier: string; value: DraftValue };
@@ -38,6 +41,8 @@ type Draft = {
   summary: string;
   sort_title: string;
   poster: Poster;
+  download_missing: boolean;
+  request_cap: number | null;
 };
 
 const EMPTY_FILTERS: FilterSpec = { match: "all", rules: [] };
@@ -76,6 +81,8 @@ function toInput(draft: Draft): CollectionInput {
     summary: draft.summary.trim() || null,
     sort_title: draft.sort_title.trim() || null,
     poster: draft.poster,
+    download_missing: list ? draft.download_missing : false,
+    request_cap: list && draft.download_missing ? draft.request_cap : null,
   };
 }
 
@@ -96,6 +103,8 @@ function fromInput(input: CollectionInput): Draft {
     summary: input.summary ?? "",
     sort_title: input.sort_title ?? "",
     poster: input.poster ?? null,
+    download_missing: input.download_missing ?? false,
+    request_cap: input.request_cap ?? null,
   };
 }
 
@@ -117,6 +126,8 @@ function blankDraft(library: string, fields: BuilderField[], source: Source = { 
     summary: "",
     sort_title: "",
     poster: null,
+    download_missing: false,
+    request_cap: null,
   };
 }
 
@@ -408,6 +419,7 @@ function BuilderForm({
   const [autoTitle, setAutoTitle] = useState<string | null>(
     baseline.source.kind === "list" ? baseline.source.label : null,
   );
+  const [confirmMore, setConfirmMore] = useState<NeedsConfirm | null>(null);
   const dirty = JSON.stringify(toInput(draft)) !== JSON.stringify(toInput(baselineSnap));
   const kometaUrl =
     baselineSnap.poster?.kind === "url" && isKometaPosterUrl(baselineSnap.poster.url) ? baselineSnap.poster.url : null;
@@ -441,14 +453,20 @@ function BuilderForm({
   useHeaderTitle(draft.title.trim() || (id === null ? "New collection" : "Collection"));
 
   const save = useMutation({
-    mutationFn: () => {
-      const body = toInput(draft);
+    mutationFn: async (confirm_requests: boolean) => {
+      const body = { ...toInput(draft), confirm_requests };
       return id === null ? builderApi.create(body) : builderApi.update(id, body);
     },
     onSuccess: (saved) => {
+      setConfirmMore(null);
       released.current = true;
       queryClient.invalidateQueries({ queryKey: ["collections"] });
+      queryClient.invalidateQueries({ queryKey: ["requests"] });
       navigate(`/collections?library=${encodeURIComponent(saved.library)}`);
+    },
+    onError: (error) => {
+      const confirm = needsConfirm(error);
+      if (confirm) setConfirmMore(confirm);
     },
   });
 
@@ -464,7 +482,8 @@ function BuilderForm({
   });
 
   const problems = saveProblems(save.error);
-  const conflict = save.error instanceof ApiError && save.error.status === 409 ? save.error.message : null;
+  const conflict =
+    save.error instanceof ApiError && save.error.status === 409 && !needsConfirm(save.error) ? save.error.message : null;
   const removeNotice = remove.error instanceof ApiError ? remove.error.message : null;
 
   const setRule = (index: number, rule: DraftRule) =>
@@ -742,6 +761,18 @@ function BuilderForm({
                 <input className={inputClass} value={draft.sort_title} onChange={(event) => setDraft({ ...draft, sort_title: event.target.value })} aria-label="Sort title" />
               </Field>
             </section>
+
+            {isList && list && (
+              <MissingTitles
+                library={library}
+                builder={list.builder}
+                value={list.value}
+                downloadMissing={draft.download_missing}
+                requestCap={draft.request_cap}
+                onDownloadMissing={(download_missing) => setDraft({ ...draft, download_missing })}
+                onRequestCap={(request_cap) => setDraft({ ...draft, request_cap })}
+              />
+            )}
           </div>
 
           <section className="rounded-card border border-border bg-surface p-4 lg:sticky lg:top-4" aria-labelledby="preview-heading">
@@ -773,7 +804,7 @@ function BuilderForm({
 
       {mode !== null && (
         <StickyActions>
-          <Button variant="primary" onClick={() => save.mutate()} disabled={!canSave(draft) || save.isPending}>
+          <Button variant="primary" onClick={() => save.mutate(false)} disabled={!canSave(draft) || save.isPending}>
             {save.isPending ? "Saving…" : id === null ? "Create" : "Save"}
           </Button>
           {id !== null && (
@@ -786,6 +817,21 @@ function BuilderForm({
             />
           )}
         </StickyActions>
+      )}
+
+      {confirmMore && (
+        <ConfirmDialog
+          title="Request missing titles"
+          confirm={`Request ${confirmMore.count}`}
+          busy={save.isPending}
+          onConfirm={() => save.mutate(true)}
+          onCancel={() => {
+            setConfirmMore(null);
+            save.reset();
+          }}
+        >
+          {confirmMore.message || `Request ${confirmMore.count} titles now?`}
+        </ConfirmDialog>
       )}
     </div>
   );

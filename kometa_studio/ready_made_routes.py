@@ -13,7 +13,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from . import collections as col
-from . import ready_made, studio_files
+from . import collection_requests, ready_made, studio_files
+from .requesting import load_settings as load_request_settings
 from .config_write import ConfigWriter, SaveRefused
 from .health import PLEX_CHECK_TTL
 from .kometa_command import RunRequest
@@ -286,6 +287,8 @@ async def category_detail(library: str, name: str, request: Request, db: Db, set
                 "last_built_at": row["last_built_at"] if row else None,
                 "last_error": row["last_error"] if row else None,
                 "build_seconds": _build_seconds(db, row["last_run_id"]) if row else None,
+                "download_missing": bool(row["download_missing"]) if row else False,
+                "requests": collection_requests.summary(db, row) if row else None,
             }
         )
     # Rows no longer in the catalogue: still listed so they can be removed.
@@ -307,6 +310,8 @@ async def category_detail(library: str, name: str, request: Request, db: Db, set
                 "last_built_at": row["last_built_at"],
                 "last_error": row["last_error"],
                 "build_seconds": _build_seconds(db, row["last_run_id"]),
+                "download_missing": bool(row["download_missing"]),
+                "requests": collection_requests.summary(db, row),
             }
         )
     summary = _summary(category, rows, cached)
@@ -325,6 +330,7 @@ class BuildIn(BaseModel):
     add: list[RefIn] = Field(default_factory=list)
     remove: list[RefIn] = Field(default_factory=list)
     dry_run: bool = False
+    download_missing: bool = False  # the added picks request what they're missing after their run (Settings → Requests must be on)
 
 
 def _catalogue_index(cats: list[ready_made.Category]) -> dict[tuple[str, str, str], ready_made.Entry]:
@@ -454,6 +460,9 @@ async def build(
     if root is None:
         raise HTTPException(409, "Studio doesn't know where Kometa is. Set STUDIO_KOMETA_ENTRY.")
 
+    if body.download_missing and body.add and not body.dry_run and not load_request_settings(db).enabled:
+        raise HTTPException(422, {"message": "Turn on requests in Settings → Requests first"})
+
     cats = ready_made.categories(root, library_type)
     # Merge counted plex entries into the catalogue index so dynamic picks validate.
     cached = col.counts(db, body.library)
@@ -568,7 +577,9 @@ async def build(
     try:
         with db:
             if picks:
-                col.mark_present(db, body.library, picks)
+                added_ids = col.mark_present(db, body.library, picks)
+                if body.download_missing:  # before the run is queued, so its hook sees them
+                    collection_requests.set_download_missing(db, added_ids, True, keep_cap=True)
             col.mark_absent(db, body.library, remove_refs)
             desired = col.desired(db, body.library)
         written = await studio_files.write_library(

@@ -30,6 +30,11 @@ export const sections: Section[] = [
         summary: "Kometa's ready-made collections as categories: pick the ones you want and build them in one run.",
       },
       { label: "Collections", path: "/collections", summary: "Smart collections you build from your library's own data. Plex keeps them up to date." },
+      {
+        label: "Requests",
+        path: "/requests",
+        summary: "Titles Studio asked Radarr, Sonarr or Overseerr/Jellyseerr to download for your collections.",
+      },
       { label: "Overlays", path: "/overlays", summary: "Kometa's overlays per library: the designer, what draws them, when, and turning them off and on." },
       { label: "Playlists", path: "/playlists", summary: "Kometa's playlists, from config.yml's playlist_files." },
     ],
@@ -61,6 +66,11 @@ export const sections: Section[] = [
       { label: "General", path: "/settings/general", summary: "Port, sign-in, API key and timezone." },
       { label: "Plex", path: "/settings/plex", summary: "Sign in with Plex and pick your server." },
       { label: "Connect", path: "/settings/connect", summary: "Radarr, Sonarr, Maintainerr, TMDb and MDBList, each tested before it is saved." },
+      {
+        label: "Requests",
+        path: "/settings/requests",
+        summary: "Ask Radarr, Sonarr or Overseerr/Jellyseerr for titles a collection is missing, and set daily limits.",
+      },
       { label: "Notifications", path: "/settings/notifications", summary: "Notifiarr, Gotify, ntfy and Apprise, and which Kometa events go where." },
       { label: "Network", path: "/settings/network", summary: "A proxy, DNS over HTTPS and IPv4 first, for Studio and Kometa, and a connection check." },
       { label: "Kometa", path: "/settings/kometa", summary: "Kometa's own settings, its paths and the flags every run uses." },
@@ -94,5 +104,9 @@ export function pageTitle(pathname: string): string {
   const nested = nestedPages.find((page) => page.pattern.test(pathname));
   if (nested) return nested.label;
   if (pathname === "/") return "Overview";
-  return [...pages, ...otherPages].find((page) => page.path !== "/" && pathname.startsWith(page.path))?.label ?? "Kometa Studio";
+  // Longest prefix wins so /settings/requests isn't titled as Libraries → Requests.
+  const match = [...pages, ...otherPages]
+    .filter((page) => page.path !== "/" && pathname.startsWith(page.path))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+  return match?.label ?? "Kometa Studio";
 }

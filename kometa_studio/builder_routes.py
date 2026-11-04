@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from ruamel.yaml import YAML
 
 from . import collections as col
-from . import list_sources, smart_filters, studio_files
+from . import collection_requests, list_sources, smart_filters, studio_files
 from .config_sections import read_section
 from .config_write import SaveRefused
 from .default_covers import DEFAULT_IMAGES
@@ -114,6 +114,13 @@ class CollectionIn(BaseModel):
     summary: str | None = None
     sort_title: str | None = None
     poster: PosterIn | None = None
+    download_missing: bool = False  # request the titles a list collection lacks (Settings → Requests must be on)
+    request_cap: int | None = Field(default=None, ge=1)  # most per day for this collection; None = the setting's
+    confirm_requests: bool = False  # the user saw how many titles this requests now and said yes
+
+
+class DownloadMissingIn(BaseModel):
+    download_missing: bool
 
 
 class PreviewIn(BaseModel):
@@ -304,6 +311,61 @@ def _definition(body: CollectionIn) -> dict:
     }
 
 
+def _requests_service(request: Request):
+    service = getattr(request.app.state, "requests", None)
+    if service is None:
+        raise HTTPException(503, "Studio's requests aren't running")
+    return service
+
+
+async def _missing_now(request: Request, settings, context: Context, body: CollectionIn, db: sqlite3.Connection) -> list:
+    """The titles a list collection with Download missing would request right away: what its preview misses, never asked for before."""
+    if not body.download_missing or body.source.kind != "list":
+        return []
+    try:
+        items = await _lists(request, settings).items(str(body.source.builder), str(body.source.value), context.library_type)
+        library = await context.server.all_items(context.section, context.library_type)
+    except (list_sources.NotPreviewable, list_sources.SourceError, PlexUnavailable):
+        return []  # Studio can't read it now: Kometa's missing report covers it after the build
+    _have, missing = list_sources.split(items, library)
+    asked = {r[0] for r in db.execute("SELECT item FROM requests")}
+    out, seen = [], set()
+    for m in missing:
+        key = list_sources.missing_key(m, context.library_type)
+        if key.startswith("tmdb-") and key not in asked and key not in seen:
+            seen.add(key)
+            out.append(collection_requests.Item(item=key, title=m.title, year=m.year))
+    return out
+
+
+def _check_requests(request: Request, db: sqlite3.Connection, body: CollectionIn, missing: list, already_on: bool = False) -> None:
+    """Refuse turning Download missing on while requests are off, and ask first when it would request more than the setting allows."""
+    if not body.download_missing:
+        return
+    settings = collection_requests.load_settings(db)
+    if not settings.enabled:
+        if already_on:
+            return  # requests were turned off since: the collection keeps its choice, and nothing is requested
+        raise HTTPException(422, {"message": "Turn on requests in Settings → Requests first", "problems": ["Requests are off"]})
+    _requests_service(request)
+    if len(missing) > settings.confirm_over and not body.confirm_requests:
+        raise HTTPException(
+            409,
+            {"message": f"This would request {len(missing)} titles now", "needs_confirm": True, "count": len(missing)},
+        )
+
+
+async def _request_now(request: Request, db: sqlite3.Connection, row_id: int, missing: list) -> None:
+    if not missing:
+        return
+    row = col.built_row(db, row_id)
+    try:
+        outcome = await collection_requests.request_items(_requests_service(request), db, row, missing)
+        log.info("Requested %d of %d missing titles for %r", outcome.requested, len(missing), row["title"])
+    except collection_requests.RequestsDisabled:
+        pass
+
+
 def _built_json(db: sqlite3.Connection, row: sqlite3.Row) -> dict:
     definition = json.loads(row["definition"] or "{}")
     run_status = _run_status(db, row["last_run_id"])
@@ -326,6 +388,9 @@ def _built_json(db: sqlite3.Connection, row: sqlite3.Row) -> dict:
         "last_built_at": row["last_built_at"],
         "last_error": row["last_error"],
         "run_id": row["last_run_id"],
+        "download_missing": bool(row["download_missing"]),
+        "request_cap": row["request_cap"],
+        "requests": collection_requests.summary(db, row),
     }
 
 
@@ -340,7 +405,10 @@ def _connected(settings) -> set[str]:
 def _body_problems(context: Context, body: CollectionIn, settings) -> list[str]:
     """What's wrong with a collection as given. A list source's value is normalised in place (a pasted link becomes Kometa's value)."""
     if body.source.kind == "filters":
-        return _problems(context, body.filters, body.sort_by)
+        problems = _problems(context, body.filters, body.sort_by)
+        if body.download_missing:
+            problems.append("A smart collection only holds what you have, so it has no missing titles to download")
+        return problems
     source = body.source
     problems = []
     try:
@@ -582,8 +650,11 @@ async def create_collection(body: CollectionIn, request: Request, db: Db, settin
     taken = await _title_taken(db, request, context, title, None)
     if taken:
         raise HTTPException(409, {"message": taken})
+    missing = await _missing_now(request, settings, context, body, db)
+    _check_requests(request, db, body, missing)
     with db:
         row_id = col.insert_built(db, body.library, secrets.token_hex(6), title, _definition(body))
+        collection_requests.set_download_missing(db, [row_id], body.download_missing, body.request_cap)
     try:
         await _save_and_run(db, settings, writer, runner, context, row_id, f"Built the collection {title!r} in {body.library}")
     except SaveRefused as refused:
@@ -595,6 +666,7 @@ async def create_collection(body: CollectionIn, request: Request, db: Db, settin
             col.delete_rows(db, [row_id])
         raise
     _cleanup_posters(_config_dir(settings), db)
+    await _request_now(request, db, row_id, missing)
     return _built_json(db, col.built_row(db, row_id))
 
 
@@ -615,13 +687,18 @@ async def update_collection(row_id: int, body: CollectionIn, request: Request, d
     if taken:
         raise HTTPException(409, {"message": taken})
     old_title, old_definition = row["title"], row["definition"]
+    old_flags = (row["download_missing"], row["request_cap"])
+    missing = await _missing_now(request, settings, context, body, db) if collection_requests.load_settings(db).enabled else []
+    _check_requests(request, db, body, missing, already_on=bool(row["download_missing"]))
     with db:
         col.update_built(db, row_id, title, _definition(body))
+        collection_requests.set_download_missing(db, [row_id], body.download_missing, body.request_cap)
     try:
         await _save_and_run(db, settings, writer, runner, context, row_id, f"Changed the collection {title!r} in {body.library}")
     except SaveRefused as refused:
         with db:
             col.update_built(db, row_id, old_title, json.loads(old_definition or "{}"))
+            collection_requests.set_download_missing(db, [row_id], bool(old_flags[0]), old_flags[1])
         raise HTTPException(refused.status, refused.detail()) from None
     if old_title.casefold() != title.casefold():
         # Kometa finds collections by title, so the old one would stay in Plex under its old name.
@@ -629,6 +706,7 @@ async def update_collection(row_id: int, body: CollectionIn, request: Request, d
         if not gone:
             log.warning("Renamed %r to %r, but the old collection stays in Plex: %s", old_title, title, why)
     _cleanup_posters(_config_dir(settings), db)
+    await _request_now(request, db, row_id, missing)
     return _built_json(db, col.built_row(db, row_id))
 
 
@@ -646,6 +724,44 @@ async def retry_collection(row_id: int, request: Request, db: Db, settings: AppS
     except SaveRefused as refused:
         raise HTTPException(refused.status, refused.detail()) from None
     return _built_json(db, col.built_row(db, row_id))
+
+
+@router.post("/collections/{row_id}/request-missing")
+async def request_missing(row_id: int, request: Request, db: Db) -> dict:
+    """Request the titles a collection (builder or ready-made) is waiting on: the go-ahead for more than the setting allows."""
+    row = db.execute("SELECT * FROM collections WHERE id = ?", (row_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "No such collection")
+    items = collection_requests.waiting(db, row)
+    try:
+        outcome = await collection_requests.request_items(_requests_service(request), db, row, items)
+    except collection_requests.RequestsDisabled:
+        raise HTTPException(409, {"message": "Turn on requests in Settings → Requests first"}) from None
+    return outcome.model_dump()
+
+
+@router.put("/collections/{row_id}/download-missing")
+async def put_download_missing(row_id: int, body: DownloadMissingIn, request: Request, db: Db, writer: Writer) -> dict:
+    """Turn Download missing on or off for one collection, builder or ready-made."""
+    row = db.execute("SELECT * FROM collections WHERE id = ?", (row_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "No such collection")
+    if body.download_missing:
+        if not collection_requests.load_settings(db).enabled:
+            raise HTTPException(422, {"message": "Turn on requests in Settings → Requests first"})
+        if row["category"] == col.BUILT and (json.loads(row["definition"] or "{}").get("source") or {}).get("kind") != "list":
+            raise HTTPException(422, {"message": "A smart collection only holds what you have, so it has no missing titles to download"})
+    with db:
+        collection_requests.set_download_missing(db, [row_id], body.download_missing, keep_cap=True)
+    if body.download_missing:
+        try:
+            await collection_requests.ensure_reports(writer)
+        except SaveRefused as refused:
+            log.warning("Couldn't turn on Kometa's missing report: %s", refused.detail())
+    row = db.execute("SELECT * FROM collections WHERE id = ?", (row_id,)).fetchone()
+    if row["category"] == col.BUILT:
+        return _built_json(db, row)
+    return {"id": row_id, "download_missing": bool(row["download_missing"]), "requests": collection_requests.summary(db, row)}
 
 
 @router.delete("/collections/{row_id}")
