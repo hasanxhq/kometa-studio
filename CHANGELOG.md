@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Collections **from a list** (the builder's **Get something new**): a TMDb collection (franchise) or list, TMDb's popular, top rated, trending and now-playing charts, an IMDb chart or list, a Letterboxd list or an MDBList list. Paste a link or pick a kind; TMDb collections can be searched by name. Before you save, the preview splits the list into **In your library** and **Missing** (TMDb and MDBList lists; IMDb and Letterboxd lists show theirs after the first build). Studio writes it as that Kometa builder, kept in sync with the list, with Kometa's own Radarr/Sonarr requests off. Order: list order, release date or title. Cards show "Smart filter" or the list's name. Trakt lists aren't offered: Kometa 2.5 dropped Trakt (MDBList can mirror one).
+
 - **Retry** on a collection whose last build failed, in Collections and on Ready-made category pages. It builds the collection again as it stands, for when a run failed on something passing, such as TMDb dropping the connection.
 - A library's **Operations** tab: Kometa's library operations and the library's own `settings:` overrides as forms you can save (from Kometa's config schema), instead of editing config.yml by hand. Clearing every field removes that section; a stale open form is refused so another edit isn't overwritten.
 - **Poster** on the collection builder: Plex's own mosaic (the default), an image you upload, an image link, or Kometa's artwork when you opened a Ready-made Genre (and similar) collection with Customise. Uploads are stored under `studio/posters/`; Kometa applies the poster on the collection's next run.

@@ -11,6 +11,7 @@ import { Collections } from "./Collections";
 
 const collection = (partial: Partial<BuiltCollection> & Pick<BuiltCollection, "id" | "title" | "state">): BuiltCollection => ({
   library: "Movies",
+  source: { kind: "filters" },
   filters: { match: "all", rules: [{ field: "genre", modifier: "", value: ["Action"] }] },
   sort_by: null,
   limit: null,
@@ -72,6 +73,7 @@ describe("Collections list", () => {
     expect(screen.getByText(/Smart collections you build/)).toBeInTheDocument();
 
     const action = await screen.findByRole("listitem", { name: "Action Picks" });
+    expect(within(action).getByText("Smart filter")).toBeInTheDocument();
     expect(within(action).getByText("In Plex · 12 titles")).toBeInTheDocument();
     expect(within(action).getByRole("link")).toHaveAttribute("href", "/collections/1");
 
@@ -82,6 +84,35 @@ describe("Collections list", () => {
 
     const newLinks = screen.getAllByRole("link", { name: "New collection" });
     expect(newLinks[0]).toHaveAttribute("href", "/collections/new?library=Movies");
+  });
+
+  it("shows Smart filter or the list label under the title", async () => {
+    mockApi({
+      ...config,
+      "GET /collections?library=Movies": () => ({
+        collections: [
+          collection({ id: 1, title: "Action Picks", state: "in_plex", plex_items: 12 }),
+          collection({
+            id: 2,
+            title: "Die Hard",
+            state: "missing",
+            source: { kind: "list", builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" },
+            filters: { match: "all", rules: [] },
+          }),
+          collection({
+            id: 3,
+            title: "Chart",
+            state: "missing",
+            source: { kind: "list", builder: "imdb_chart", value: "top", label: null },
+            filters: { match: "all", rules: [] },
+          }),
+        ],
+      }),
+    });
+    renderCollections("/collections?library=Movies");
+    expect(within(await screen.findByRole("listitem", { name: "Action Picks" })).getByText("Smart filter")).toBeInTheDocument();
+    expect(within(screen.getByRole("listitem", { name: "Die Hard" })).getByText("Die Hard Collection")).toBeInTheDocument();
+    expect(within(screen.getByRole("listitem", { name: "Chart" })).getByText("imdb_chart")).toBeInTheDocument();
   });
 
   it("retries a failed collection", async () => {

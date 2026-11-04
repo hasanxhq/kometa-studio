@@ -227,20 +227,33 @@ BUILT_HEADER = "Written by Kometa Studio from its collection builder. Studio rew
 def render_built(
     definitions: list[tuple[str, dict]],
     file_ref: Callable[[str], str] | None = None,
+    library_type: str = "movie",
 ) -> str | None:
-    """Kometa's file for the library's builder collections: one smart collection each, labelled Studio. None if there are none.
+    """Kometa's file for the library's builder collections, each labelled Studio. None if there are none.
+
+    A filter collection is a ``smart_filter``. A list collection is that Kometa builder (``tmdb_collection: 1234``…)
+    with ``sync_mode: sync``, so titles leaving the list leave the collection, and with Kometa's own Radarr/Sonarr
+    requests off: only Studio requests missing titles.
 
     ``file_ref`` turns a config-relative poster path (``studio/posters/…``) into the path Kometa's working directory
     uses for ``file_poster`` (``ConfigWriter.reference``). Without it, a file poster is skipped.
     """
-    from . import smart_filters
+    from . import list_sources, smart_filters
 
     if not definitions:
         return None
     collections = CommentedMap()
     for title, definition in sorted(definitions, key=lambda pair: pair[0].casefold()):
         body = CommentedMap()
-        body["smart_filter"] = smart_filters.to_kometa(definition.get("filters") or {}, definition.get("sort_by"), definition.get("limit"))
+        source = definition.get("source") or {}
+        if source.get("kind") == "list" and source.get("builder"):
+            body[str(source["builder"])] = list_sources.kometa_value(str(source["builder"]), str(source.get("value") or ""))
+            body["sync_mode"] = "sync"
+            if definition.get("sort_by") in ("custom", "release", "alpha"):
+                body["collection_order"] = str(definition["sort_by"])
+            body["radarr_add_missing" if library_type == "movie" else "sonarr_add_missing"] = False
+        else:
+            body["smart_filter"] = smart_filters.to_kometa(definition.get("filters") or {}, definition.get("sort_by"), definition.get("limit"))
         body["label"] = "Studio"  # adds the label without replacing others (Kometa's label, not label.sync)
         visible = definition.get("visible") or {}
         body["visible_library"] = bool(visible.get("library", True))
@@ -368,7 +381,7 @@ async def write_library(
             continue
         edits.append(Edit(rel, text, file_hash(current) if current is not None else None))
 
-    built_text = render_built(built or [], file_ref=lambda path: writer.reference(writer.config_dir / path))
+    built_text = render_built(built or [], file_ref=lambda path: writer.reference(writer.config_dir / path), library_type=library_type)
     if built_text is not None:
         rel = relative_path(library, col.BUILT, all_libraries)
         active_rels[col.BUILT] = rel

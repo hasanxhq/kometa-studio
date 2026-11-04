@@ -4,7 +4,7 @@ import { render } from "@testing-library/react";
 import { RouterProvider, createMemoryRouter } from "react-router";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { BuilderFields, BuiltCollection, CollectionInput } from "../builderApi";
+import type { BuilderFields, BuiltCollection, CollectionInput, SourceKind } from "../builderApi";
 import { HeaderTitleProvider } from "../components/HeaderTitle";
 import { mockApi } from "../test-utils";
 import { CollectionBuilder } from "./CollectionBuilder";
@@ -71,6 +71,7 @@ const sample: BuiltCollection = {
   id: 7,
   library: "Movies",
   title: "Action Picks",
+  source: { kind: "filters" },
   filters: { match: "all", rules: [{ field: "genre", modifier: "", value: ["Action"] }] },
   sort_by: "title.asc",
   limit: 50,
@@ -87,7 +88,97 @@ const sample: BuiltCollection = {
   run_id: 3,
 };
 
+const listSample: BuiltCollection = {
+  id: 8,
+  library: "Movies",
+  title: "Die Hard Collection",
+  source: { kind: "list", builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" },
+  filters: { match: "all", rules: [] },
+  sort_by: "custom",
+  limit: null,
+  visible: { library: true, home: false, shared: false },
+  minimum_items: 1,
+  summary: null,
+  sort_title: null,
+  poster: null,
+  state: "in_plex",
+  plex_items: 5,
+  thumb: null,
+  last_built_at: null,
+  last_error: null,
+  run_id: 4,
+};
+
+const sourceKinds: SourceKind[] = [
+  {
+    builder: "tmdb_collection",
+    label: "TMDb collection (franchise)",
+    group: "TMDb",
+    input: "search",
+    placeholder: "Search franchises",
+    choices: null,
+    previewable: true,
+    available: true,
+    why: null,
+  },
+  {
+    builder: "tmdb_list",
+    label: "TMDb list",
+    group: "TMDb",
+    input: "link",
+    placeholder: "List URL or id",
+    choices: null,
+    previewable: true,
+    available: true,
+    why: null,
+  },
+  {
+    builder: "imdb_chart",
+    label: "IMDb chart",
+    group: "IMDb",
+    input: "choice",
+    placeholder: null,
+    choices: [
+      { value: "top", label: "Top 250" },
+      { value: "popular", label: "Popular" },
+    ],
+    previewable: true,
+    available: true,
+    why: null,
+  },
+  {
+    builder: "tmdb_popular",
+    label: "TMDb Popular",
+    group: "TMDb",
+    input: "count",
+    placeholder: null,
+    choices: null,
+    previewable: true,
+    available: true,
+    why: null,
+  },
+  {
+    builder: "mdblist_list",
+    label: "MDBList list",
+    group: "MDBList",
+    input: "link",
+    placeholder: "List URL",
+    choices: null,
+    previewable: false,
+    available: false,
+    why: "Connect MDBList in Settings → Connect first",
+  },
+];
+
 const KOMETA_POSTER = "https://raw.githubusercontent.com/Kometa-Team/Default-Images/master/genre/Action.jpg";
+
+async function pickOrganise() {
+  fireEvent.click(await screen.findByRole("radio", { name: "Organise what I have" }));
+}
+
+async function pickList() {
+  fireEvent.click(await screen.findByRole("radio", { name: "Get something new" }));
+}
 
 function renderBuilder(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -119,12 +210,26 @@ function baseRoutes(extra: Record<string, (body: unknown) => unknown> = {}) {
         { key: "Drama", title: "Drama" },
       ],
     }),
+    "GET /builder/sources?library=Movies": () => ({ sources: sourceKinds }),
     "POST /builder/preview": () => ({
       count: 2,
       items: [
         { rating_key: "1", title: "Die Hard", year: 1988, thumb: "/library/metadata/1/thumb" },
         { rating_key: "2", title: "Speed", year: 1994, thumb: null },
       ],
+      problems: [],
+    }),
+    "POST /builder/sources/preview": () => ({
+      previewable: true,
+      why: null,
+      total: 3,
+      in_library: [{ rating_key: "1", title: "Die Hard", year: 1988, thumb: "/library/metadata/1/thumb" }],
+      in_library_count: 1,
+      missing: [
+        { id: "tt0095016", title: "Die Hard 2", year: 1990, poster: "https://image.tmdb.org/t/p/w185/x.jpg" },
+        { id: "tt0112864", title: "Die Hard with a Vengeance", year: 1995, poster: null },
+      ],
+      missing_count: 2,
       problems: [],
     }),
     "GET /collections?library=Movies": () => ({ collections: [] }),
@@ -137,9 +242,23 @@ afterEach(() => {
 });
 
 describe("CollectionBuilder", () => {
+  it("shows the start choice for a new collection", async () => {
+    mockApi(baseRoutes());
+    renderBuilder("/collections/new?library=Movies");
+    expect(await screen.findByRole("heading", { name: "How to start", level: 3 })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Organise what I have" })).not.toBeChecked();
+    expect(screen.getByRole("radio", { name: "Get something new" })).not.toBeChecked();
+    expect(screen.queryByRole("group", { name: "Filter rule" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "List", level: 3 })).not.toBeInTheDocument();
+
+    await pickOrganise();
+    expect(screen.getAllByRole("group", { name: "Filter rule" })).toHaveLength(1);
+  });
+
   it("adds, changes and removes rules; value input follows field kind", async () => {
     mockApi(baseRoutes());
     renderBuilder("/collections/new?library=Movies");
+    await pickOrganise();
 
     expect(await screen.findByRole("heading", { name: "New collection", level: 2 })).toBeInTheDocument();
     expect(screen.getAllByRole("group", { name: "Filter rule" })).toHaveLength(1);
@@ -177,6 +296,7 @@ describe("CollectionBuilder", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const calls = mockApi(baseRoutes());
     renderBuilder("/collections/new?library=Movies");
+    await pickOrganise();
     await screen.findByRole("heading", { name: "New collection", level: 2 });
 
     await act(async () => {
@@ -222,6 +342,7 @@ describe("CollectionBuilder", () => {
       }),
     );
     renderBuilder("/collections/new?library=Movies");
+    await pickOrganise();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(500);
     });
@@ -247,6 +368,7 @@ describe("CollectionBuilder", () => {
       }),
     );
     const { router } = renderBuilder("/collections/new?library=Movies");
+    await pickOrganise();
     await screen.findByRole("heading", { name: "New collection", level: 2 });
 
     fireEvent.change(screen.getByLabelText("Title"), { target: { value: "My Action" } });
@@ -263,6 +385,7 @@ describe("CollectionBuilder", () => {
     expect(body).toEqual({
       library: "Movies",
       title: "My Action",
+      source: { kind: "filters" },
       filters: { match: "all", rules: [{ field: "genre", modifier: "", value: ["Action"] }] },
       sort_by: "year.desc",
       limit: 25,
@@ -287,6 +410,7 @@ describe("CollectionBuilder", () => {
       }),
     );
     renderBuilder("/collections/new?library=Movies");
+    await pickOrganise();
     fireEvent.change(await screen.findByLabelText("Title"), { target: { value: "Bad" } });
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     expect(await screen.findByText("Genre is required")).toBeInTheDocument();
@@ -336,6 +460,7 @@ describe("CollectionBuilder", () => {
     const draft: CollectionInput = {
       library: "Movies",
       title: "Action Movies",
+      source: { kind: "filters" },
       filters: { match: "all", rules: [{ field: "genre", modifier: "", value: ["Action"] }] },
       sort_by: null,
       limit: null,
@@ -390,6 +515,7 @@ describe("CollectionBuilder", () => {
     });
 
     renderBuilder("/collections/new?library=Movies");
+    await pickOrganise();
     expect(await screen.findByRole("heading", { name: "Poster", level: 3 })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Plex's own" })).toBeChecked();
     expect(screen.queryByRole("radio", { name: "Kometa's artwork" })).not.toBeInTheDocument();
@@ -431,11 +557,173 @@ describe("CollectionBuilder", () => {
   it("asks before leaving with unsaved changes", async () => {
     mockApi(baseRoutes());
     renderBuilder("/collections/new?library=Movies");
+    await pickOrganise();
     fireEvent.change(await screen.findByLabelText("Title"), { target: { value: "Draft" } });
     fireEvent.click(screen.getByRole("link", { name: "Collections" }));
     expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
     expect(screen.getByText("You have unsaved changes")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stay here" }));
     expect(screen.getByLabelText("Title")).toHaveValue("Draft");
+  });
+
+  it("pastes a link to set the list source, and shows a 422 under the box", async () => {
+    const calls = mockApi(
+      baseRoutes({
+        "POST /builder/sources/link": (body) => {
+          const url = (body as { url: string }).url;
+          if (url.includes("bad")) {
+            return new Response(JSON.stringify({ detail: "Studio doesn't recognise that link" }), {
+              status: 422,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
+          return { builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" };
+        },
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/bad" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Studio doesn't recognise that link");
+
+    fireEvent.change(screen.getByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    await waitFor(() => expect(calls.filter((c) => c.route === "POST /builder/sources/link")).toHaveLength(2));
+    expect(await screen.findByLabelText("Chosen source")).toHaveTextContent("Die Hard Collection");
+    expect(screen.getByLabelText("Title")).toHaveValue("Die Hard Collection");
+  });
+
+  it("search pick sets the source and prefills the title", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const calls = mockApi(
+      baseRoutes({
+        "GET /builder/sources/search?library=Movies&builder=tmdb_collection&q=die": () => ({
+          results: [
+            { value: "1570", title: "Die Hard Collection", year: 1988, poster: "https://image.tmdb.org/t/p/w185/a.jpg" },
+            { value: "99", title: "Other", year: null, poster: null },
+          ],
+        }),
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+
+    fireEvent.change(await screen.findByLabelText("Search TMDb collection (franchise)"), { target: { value: "die" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    await waitFor(() => expect(calls.some((c) => c.route.includes("/builder/sources/search"))).toBe(true));
+    fireEvent.click(await screen.findByRole("button", { name: /Die Hard Collection/ }));
+    expect(screen.getByLabelText("Chosen source")).toHaveTextContent("Die Hard Collection");
+    expect(screen.getByLabelText("Title")).toHaveValue("Die Hard Collection");
+  });
+
+  it("list preview shows in-library and missing, or why when not previewable", async () => {
+    mockApi(
+      baseRoutes({
+        "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+
+    expect(await screen.findByRole("heading", { name: "In your library (1)", level: 4 })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Missing (2)", level: 4 })).toBeInTheDocument();
+    expect(within(screen.getByLabelText("In your library")).getByText("Die Hard")).toBeInTheDocument();
+    const missing = screen.getByLabelText("Missing");
+    expect(within(missing).getAllByText("Die Hard 2").length).toBeGreaterThan(0);
+    expect(within(missing).getAllByText("Die Hard with a Vengeance").length).toBeGreaterThan(0);
+  });
+
+  it("list preview shows why when not previewable", async () => {
+    mockApi(
+      baseRoutes({
+        "POST /builder/sources/link": () => ({ builder: "letterboxd_list", value: "crew", label: "Crew" }),
+        "POST /builder/sources/preview": () => ({
+          previewable: false,
+          why: "Studio can show this list once it has been built",
+          total: null,
+          in_library: [],
+          in_library_count: 0,
+          missing: [],
+          missing_count: 0,
+          problems: [],
+        }),
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://letterboxd.com/crew" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    expect(await screen.findByText("Studio can show this list once it has been built")).toBeInTheDocument();
+    expect(screen.queryByLabelText("In your library")).not.toBeInTheDocument();
+  });
+
+  it("unavailable source kinds are disabled with their reason", async () => {
+    mockApi(baseRoutes());
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    expect(await screen.findByText("Connect MDBList in Settings → Connect first")).toBeInTheDocument();
+    expect(screen.getByLabelText("MDBList list")).toBeDisabled();
+  });
+
+  it("Create sends a list source payload", async () => {
+    const calls = mockApi(
+      baseRoutes({
+        "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+        "POST /collections": (body) => ({
+          ...(body as CollectionInput),
+          id: 12,
+          state: "queued",
+          plex_items: null,
+          thumb: null,
+          last_built_at: null,
+          last_error: null,
+          run_id: 5,
+        }),
+      }),
+    );
+    const { router } = renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    await screen.findByLabelText("Chosen source");
+    fireEvent.change(screen.getByLabelText("Order"), { target: { value: "release" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /collections")).toBe(true));
+    expect(calls.find((c) => c.route === "POST /collections")!.body).toEqual({
+      library: "Movies",
+      title: "Die Hard Collection",
+      source: { kind: "list", builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" },
+      filters: { match: "all", rules: [] },
+      sort_by: "release",
+      limit: null,
+      visible: { library: true, home: false, shared: false },
+      minimum_items: 1,
+      summary: null,
+      sort_title: null,
+      poster: null,
+    });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/collections"));
+  });
+
+  it("edit opens a list collection in the list view with source and order", async () => {
+    mockApi(
+      baseRoutes({
+        "GET /collections/8": () => ({ ...listSample, sort_by: "alpha" }),
+      }),
+    );
+    renderBuilder("/collections/8");
+    expect(await screen.findByRole("radio", { name: "Get something new" })).toBeChecked();
+    expect(screen.getByLabelText("Chosen source")).toHaveTextContent("Die Hard Collection");
+    expect(screen.getByLabelText("Title")).toHaveValue("Die Hard Collection");
+    expect(screen.getByLabelText("Order")).toHaveValue("alpha");
+    expect(screen.queryByRole("group", { name: "Filter rule" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Limit")).not.toBeInTheDocument();
   });
 });
