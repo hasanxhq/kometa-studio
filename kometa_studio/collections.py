@@ -183,3 +183,22 @@ def counts(db: sqlite3.Connection, library: str) -> dict[str, dict[str, Any]]:
             "error": row["error"],
         }
     return found
+
+
+def record_generated(db: sqlite3.Connection, files: dict[str, str]) -> None:
+    """Remember what Studio wrote to its generated files: path (config-relative) → sha256."""
+    stamp = now()
+    db.executemany(
+        "INSERT INTO generated_files (path, hash, written_at) VALUES (?, ?, ?) "
+        "ON CONFLICT (path) DO UPDATE SET hash = excluded.hash, written_at = excluded.written_at",
+        [(path, digest, stamp) for path, digest in files.items()],
+    )
+
+
+def forget_generated(db: sqlite3.Connection, paths: list[str]) -> None:
+    db.executemany("DELETE FROM generated_files WHERE path = ?", [(path,) for path in paths])
+
+
+def generated(db: sqlite3.Connection) -> dict[str, str]:
+    """path → the sha256 Studio last wrote there."""
+    return {row["path"]: row["hash"] for row in db.execute("SELECT path, hash FROM generated_files")}

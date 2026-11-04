@@ -15,6 +15,8 @@ from kometa_studio.settings import Settings
 from kometa_studio.studio_files import (
     default_file,
     library_folders,
+    hand_edited,
+    record,
     relative_path,
     render,
     write_library,
@@ -186,19 +188,21 @@ def test_write_library_one_save_idempotent_and_removes_entry(writer_env):
     first = asyncio.run(
         write_library(writer, kometa_root, "Movies", "movie", picks, ["Movies"], "Studio picks")
     )
-    assert first is not None
+    assert first.saved is not None
     genre_path = config / "studio" / "Movies" / "genre.yml"
     imdb_path = config / "studio" / "Movies" / "imdb.yml"
     assert genre_path.is_file() and imdb_path.is_file()
     config_text = (config / "config.yml").read_text()
     assert "studio/Movies/genre.yml" in config_text
     assert "studio/Movies/imdb.yml" in config_text
-    assert len(first["files"]) >= 2
+    assert len(first.saved["files"]) >= 2
+    assert set(first.generated) == {"studio/Movies/genre.yml", "studio/Movies/imdb.yml"}
 
     second = asyncio.run(
         write_library(writer, kometa_root, "Movies", "movie", picks, ["Movies"], "Studio picks again")
     )
-    assert second is None
+    assert second.saved is None
+    assert second.generated == first.generated  # unchanged files still report what Studio's text is
 
     cleared = asyncio.run(
         write_library(
@@ -211,11 +215,15 @@ def test_write_library_one_save_idempotent_and_removes_entry(writer_env):
             "Dropped imdb",
         )
     )
-    assert cleared is not None
+    assert cleared.saved is not None
     config_text = (config / "config.yml").read_text()
     assert "studio/Movies/genre.yml" in config_text
     assert "studio/Movies/imdb.yml" not in config_text
-    assert imdb_path.is_file()  # ConfigWriter doesn't delete files
+    # The file of a category with no picks left goes, backed up like any save.
+    assert not imdb_path.exists()
+    assert cleared.removed == ["studio/Movies/imdb.yml"] and cleared.saved["removed"] == ["studio/Movies/imdb.yml"]
+    backup = config / ".studio" / "backups" / cleared.saved["backup"] / "studio" / "Movies" / "imdb.yml"
+    assert backup.is_file()
 
 
 def test_write_library_missing_default_refused(writer_env):
@@ -233,3 +241,40 @@ def test_write_library_missing_default_refused(writer_env):
             )
         )
     assert raised.value.status == 409
+
+
+def test_write_library_keeps_files_studio_didnt_write(writer_env):
+    writer, kometa_root, config = writer_env
+    folder = config / "studio" / "Movies"
+    folder.mkdir(parents=True)
+    (folder / "mine.yml").write_text("collections:\n  Mine:\n    plex_all: true\n")
+    written = asyncio.run(
+        write_library(writer, kometa_root, "Movies", "movie", {"genre": [Ref("genre", "Genre", "Action")]}, ["Movies"], "picks")
+    )
+    assert (folder / "mine.yml").is_file() and written.removed == []
+
+
+def test_hand_edits_are_noticed_and_replaced_on_the_next_save(writer_env):
+    from kometa_studio import db as studio_db
+
+    writer, kometa_root, config = writer_env
+    (config / ".studio").mkdir(exist_ok=True)
+    database = studio_db.open_database(config / ".studio" / "studio.db")
+    picks = {"genre": [Ref("genre", "Genre", "Action")]}
+    written = asyncio.run(write_library(writer, kometa_root, "Movies", "movie", picks, ["Movies"], "picks"))
+    with database:
+        record(database, written)
+    assert hand_edited(database, config) == []
+
+    genre = config / "studio" / "Movies" / "genre.yml"
+    original = genre.read_text()
+    genre.write_text(original + "# my own note\n")
+    assert hand_edited(database, config) == ["studio/Movies/genre.yml"]
+    assert hand_edited(database, config, "Movies", ["Movies"]) == ["studio/Movies/genre.yml"]
+    assert hand_edited(database, config, "TV Shows", ["Movies", "TV Shows"]) == []
+
+    again = asyncio.run(write_library(writer, kometa_root, "Movies", "movie", picks, ["Movies"], "picks again"))
+    with database:
+        record(database, again)
+    assert genre.read_text() == original
+    assert hand_edited(database, config) == []
