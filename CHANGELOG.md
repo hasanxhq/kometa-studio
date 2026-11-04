@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Collection builder **Get something new**: start a collection from a TMDb / IMDb / Letterboxd / MDBList / Trakt list or chart (paste a link, or pick a source kind), with a preview split into In your library and Missing. Cards show "Smart filter" or the list's name under the title.
+
 - A library's **Operations** tab: Kometa's library operations and the library's own `settings:` overrides as forms you can save (from Kometa's config schema), instead of editing config.yml by hand. Clearing every field removes that section; a stale open form is refused so another edit isn't overwritten.
 - **Poster** on the collection builder: Plex's own mosaic (the default), an image you upload, an image link, or Kometa's artwork when you opened a Ready-made Genre (and similar) collection with Customise. Uploads are stored under `studio/posters/`; Kometa applies the poster on the collection's next run.
 
