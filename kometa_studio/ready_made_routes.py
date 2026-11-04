@@ -112,6 +112,11 @@ def _config_library(settings: Settings, name: str):
     return library, [lib.name for lib in kometa.libraries]
 
 
+def _defaults_on(library) -> set[str]:
+    """Kometa defaults the library's collection_files turn on directly (``- default: genre``)."""
+    return {ref.value for ref in library.collection_files if ref.kind == "default"}
+
+
 def _plex_title(library) -> str:
     return str(library.settings.get("library_name") or library.name)
 
@@ -152,6 +157,7 @@ def _summary(
     category: ready_made.Category,
     rows: list[sqlite3.Row],
     cached: dict[str, Any] | None,
+    also_default: bool = False,
 ) -> dict:
     entries = _entry_dicts(cached, category)
     if cached is None and _plex_valued(category):
@@ -172,6 +178,8 @@ def _summary(
         "in_plex": sum(1 for r in rows if r["plex_exists"]),
         "picked": sum(1 for r in rows if r["desired"]),
         "run_scope": run_scope,
+        # Kometa's own default for this category is on too (Defaults), so Kometa builds all of it, picked or not.
+        "also_default": also_default,
     }
 
 
@@ -229,6 +237,7 @@ async def library_gallery(library: str, request: Request, db: Db, settings: AppS
     root = _kometa_root(settings)
     cats = ready_made.categories(root, library_type or "movie") if root else []
     cached = col.counts(db, library)
+    defaults_on = _defaults_on(lib)
     counted_at = None
     for info in cached.values():
         at = info.get("counted_at")
@@ -242,7 +251,7 @@ async def library_gallery(library: str, request: Request, db: Db, settings: AppS
         "library_type": library_type if library_type in ("movie", "show") else None,
         "counted_at": counted_at,
         "counting": tasks.running("ready_made_counts"),
-        "categories": [_summary(cat, rows_by_cat.get(cat.name, []), cached.get(cat.name)) for cat in cats],
+        "categories": [_summary(cat, rows_by_cat.get(cat.name, []), cached.get(cat.name), cat.name in defaults_on) for cat in cats],
     }
 
 
@@ -309,7 +318,7 @@ async def category_detail(library: str, name: str, request: Request, db: Db, set
                 "build_seconds": _build_seconds(db, row["last_run_id"]),
             }
         )
-    summary = _summary(category, rows, cached)
+    summary = _summary(category, rows, cached, name in _defaults_on(lib))
     return {**summary, "counted_at": cached["counted_at"] if cached else None, "collections": collections_out}
 
 
@@ -522,6 +531,7 @@ async def build(
         "build": [{"category": ref.category, "title": entry.title} for ref, entry in add_entries],
         "remove": remove_plan,
         "run": run_plan,
+        "also_default": sorted({ref.category for ref, _ in add_entries} & _defaults_on(library)),
     }
     if body.dry_run:
         return plan

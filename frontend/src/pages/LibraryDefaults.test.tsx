@@ -105,6 +105,21 @@ describe("The Defaults gallery", () => {
     expect(within(await card("Streaming Collections")).getByRole("checkbox", { name: "Enabled" })).not.toBeChecked();
   });
 
+  it("points out a default that also has picks in Ready-made", async () => {
+    const readyMade = (name: string, picked: number) => ({ name, title: name, group: "both", kind: "per_value", listable: true, reason: null, count: 3, in_plex: 0, picked, run_scope: "collection", also_default: false });
+    mockApi({
+      ...routes,
+      "GET /ready-made/libraries/Movies": () => ({ library: "Movies", library_type: "movie", counted_at: null, counting: false, categories: [readyMade("streaming", 2), readyMade("oscars", 1)] }),
+    });
+    renderAt("/defaults?library=Movies");
+    await gallery();
+    // On in both: Kometa builds the whole default anyway.
+    expect(within(await card("Streaming Collections")).getByText("2 picked in Ready-made: Kometa builds all of it anyway")).toBeInTheDocument();
+    // Only picked in Ready-made: just a note.
+    expect(within(await card("Oscars Collections")).getByText("1 picked in Ready-made")).toBeInTheDocument();
+    expect(within(await card("Basic Charts Collections")).queryByText(/picked in Ready-made/)).not.toBeInTheDocument();
+  });
+
   it("shows a collection's cover, and keeps the colour banner if it can't be had", async () => {
     mockApi(routes);
     renderAt("/defaults");

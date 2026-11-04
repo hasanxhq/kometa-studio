@@ -349,7 +349,25 @@ function Pill({ pressed, onClick, children }: { pressed: boolean; onClick: () =>
   );
 }
 
-function Tile({ item, library, selected, onSelect, busy, onAdd, onDrop }: { item: Listed; library: string; selected: boolean; onSelect: () => void; busy: boolean; onAdd: () => void; onDrop: () => void }) {
+function Tile({
+  item,
+  library,
+  selected,
+  onSelect,
+  busy,
+  onAdd,
+  onDrop,
+  readyMadePicked = 0,
+}: {
+  item: Listed;
+  library: string;
+  selected: boolean;
+  onSelect: () => void;
+  busy: boolean;
+  onAdd: () => void;
+  onDrop: () => void;
+  readyMadePicked?: number;
+}) {
   const [asking, setAsking] = useState(false);
   const title = titleOf(item);
   const [noCover, setNoCover] = useState(item.kind !== "collection"); // overlays have no real artwork of their own to show
@@ -388,6 +406,12 @@ function Tile({ item, library, selected, onSelect, busy, onAdd, onDrop }: { item
         )}
         {selected && <span className="text-xs text-accent">Editing</span>}
       </div>
+      {readyMadePicked > 0 && (
+        // Both on: Kometa builds the whole default and Studio's picks from it again.
+        <p className={`px-3.5 pb-3 text-xs ${item.reference ? "text-warn" : "text-muted"}`}>
+          {readyMadePicked} picked in Ready-made{item.reference ? ": Kometa builds all of it anyway" : ""}
+        </p>
+      )}
     </li>
   );
 }
@@ -411,6 +435,9 @@ export function DefaultsGallery({ config, libraryType }: { config: ConfigLibrary
   const add = useSave((item: Listed) => api.config.useDefault(library, item.kind, item.name, {}));
   const drop = useSave((item: Listed) => api.config.dropDefault(library, item.kind, item.name));
   const libraryVariables = useSave((values: Values) => api.config.setLibraryVariables(library, values));
+  // Collections picked in Ready-made per default, to point out when both are on.
+  const readyMade = useQuery({ queryKey: ["ready-made", "library", library], queryFn: () => api.readyMade.library(library), retry: false });
+  const readyMadePicked = new Map((readyMade.data?.categories ?? []).map((c) => [c.name, c.picked]));
 
   // Below the grid on a narrow screen, so picking a card has to bring it into view.
   useEffect(() => {
@@ -496,6 +523,7 @@ export function DefaultsGallery({ config, libraryType }: { config: ConfigLibrary
                 selected={idOf(item) === selectedId}
                 onSelect={() => idOf(item) !== selectedId && leaveEditor(() => setSelectedId(idOf(item)))}
                 busy={changing === idOf(item) && (add.isPending || drop.isPending)}
+                readyMadePicked={item.kind === "collection" ? (readyMadePicked.get(item.name) ?? 0) : 0}
                 onAdd={() => {
                   setChanging(idOf(item));
                   setAdded(titleOf(item));

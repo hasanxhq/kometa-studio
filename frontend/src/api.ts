@@ -546,6 +546,7 @@ export type ReadyMadeCategorySummary = {
   in_plex: number;
   picked: number; // rows Studio wants (desired)
   run_scope: ReadyMadeRunScope;
+  also_default: boolean; // Kometa's own default for it is on too (Defaults), so Kometa builds all of it
 };
 
 export type ReadyMadeLibrary = {
@@ -582,6 +583,7 @@ export type ReadyMadeBuildPlan = {
   build: { category: string; title: string }[];
   remove: { category: string; title: string; deletable: boolean; reason: string | null }[];
   run: { libraries: string[]; collections: string[]; files: string[] } | null;
+  also_default: string[]; // picked categories whose Kometa default is on too
 };
 
 export type ReadyMadeBuildResult = ReadyMadeBuildPlan & {

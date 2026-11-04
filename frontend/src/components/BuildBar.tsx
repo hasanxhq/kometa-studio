@@ -145,6 +145,19 @@ export function BuildBar({ library }: { library: string }) {
                     </ul>
                   </section>
                 )}
+                {plan.also_default.length > 0 && (
+                  <section>
+                    <h3 className="text-sm font-semibold text-warn">Also on in Defaults</h3>
+                    <p className="mt-1 text-sm">
+                      Kometa's own default is on for <span className="font-mono">{plan.also_default.join(", ")}</span> too, so Kometa builds all of
+                      those collections, not only your picks.{" "}
+                      <Link className="underline" to={`/defaults?library=${encodeURIComponent(library)}`} onClick={() => setPlan(null)}>
+                        Turn it off in Defaults
+                      </Link>{" "}
+                      first, or build anyway.
+                    </p>
+                  </section>
+                )}
                 {plan.build.length === 0 && plan.remove.length === 0 && <p className="text-sm text-muted">Nothing to build or remove.</p>}
               </>
             )}

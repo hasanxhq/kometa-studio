@@ -392,3 +392,25 @@ def test_a_category_the_count_couldnt_list_shows_why(root):
         assert detail["listable"] is False and detail["reason"] == "Kometa names these with TMDb's names"
         basic = next(c for c in gallery["categories"] if c["name"] == "basic")
         assert basic["listable"] is True and basic["reason"] is None
+
+
+def test_a_category_whose_kometa_default_is_also_on_says_so(root):
+    # Defaults and Ready-made both on for Genre: Kometa would build every Genre collection, picked or not.
+    config = root / "config" / "config.yml"
+    config.write_text(config.read_text().replace("  Movies: {}\n", "  Movies:\n    collection_files:\n      - default: genre\n"))
+    with make_client(root)[0] as client:
+        wait_for_task(client, "ready_made_counts")
+        gallery = client.get("/api/v1/ready-made/libraries/Movies").json()
+        flags = {c["name"]: c["also_default"] for c in gallery["categories"]}
+        assert flags["genre"] is True and flags["basic"] is False
+        assert client.get("/api/v1/ready-made/libraries/Movies/categories/genre").json()["also_default"] is True
+        genre = client.get("/api/v1/ready-made/libraries/Movies/categories/genre").json()["collections"][0]
+        plan = client.post(
+            "/api/v1/ready-made/build",
+            json={
+                "library": "Movies",
+                "add": [{"category": "genre", "block": genre["block"], "key": genre["key"]}, {"category": "basic", "block": "", "key": "Newly Released"}],
+                "dry_run": True,
+            },
+        ).json()
+        assert plan["also_default"] == ["genre"]

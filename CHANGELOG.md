@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ready-made and the Defaults gallery say when the same default is on in both. Kometa then builds every collection in that default, not only the ones picked in Ready-made. The category card and page, Build's confirmation (with a link to Defaults) and the Defaults card all point it out.
+
 - Ready-made: audio and subtitle language collections get the names Kometa gives them, such as "French Audio" instead of "Français Audio", so Build and "In Plex" find them. Studio reads the names from TMDb with your TMDb key. If it can't, the category says so instead of listing.
 - Ready-made: TV libraries list their audio and subtitle language collections. They were empty, because Plex keeps languages on episodes.
 - A Ready-made category's header shows the category's name instead of "Category".

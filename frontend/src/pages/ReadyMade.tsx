@@ -54,7 +54,8 @@ function CategoryCard({ category, library, counting }: { category: ReadyMadeCate
   const body = (
     <>
       <CategoryCover category={category} />
-      <span className="px-3.5 pt-1 pb-3.5 text-[13px] text-muted">{muted ? category.reason : countLine(category, counting)}</span>
+      <span className={`px-3.5 pt-1 text-[13px] text-muted ${category.also_default ? "" : "pb-3.5"}`}>{muted ? category.reason : countLine(category, counting)}</span>
+      {category.also_default && <span className="px-3.5 pb-3.5 text-[13px] text-warn">Also on in Defaults: Kometa builds all of it</span>}
       {category.picked > 0 && (
         <span className="absolute top-2 right-2">
           <Tag tone="info">{category.picked} picked</Tag>

@@ -119,6 +119,15 @@ export function ReadyMadeCategory() {
             {library}
           </p>
           <h2 className="mt-1 text-[32px] leading-tight font-semibold">{data.data?.title ?? category}</h2>
+          {data.data?.also_default && (
+            <p className="mt-2 max-w-2xl text-sm text-warn">
+              Kometa's own {data.data.title} default is also on for {library}, so Kometa builds every collection in it, picked here or not.{" "}
+              <Link className="underline" to={`/defaults?library=${encodeURIComponent(library)}`}>
+                Turn it off in Defaults
+              </Link>{" "}
+              to build only your picks.
+            </p>
+          )}
           {data.data?.run_scope === "file" && (
             <p className="mt-2 text-sm text-warn">Kometa builds this category as a whole: Build runs all of its collections.</p>
           )}

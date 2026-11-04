@@ -28,6 +28,7 @@ const summary = {
   in_plex: 3,
   picked: 4,
   run_scope: "collection" as const,
+  also_default: false,
 };
 
 const gallery: ReadyMadeLibrary = {
@@ -164,6 +165,14 @@ describe("Ready-made category picks", () => {
     expect(await screen.findByRole("heading", { level: 1, name: imdbCategory().title })).toBeInTheDocument();
   });
 
+  it("says when Kometa's own default for the category is on too", async () => {
+    mockApi(routes({ ...imdbCategory(), also_default: true }, { ...gallery, categories: gallery.categories.map((c) => ({ ...c, also_default: c.name === "imdb" })) }));
+    renderAt("/ready-made?library=Movies");
+    const card = await screen.findByRole("listitem", { name: "IMDb Collections" });
+    expect(within(card).getByText(/Also on in Defaults/)).toBeInTheDocument();
+    expect(screen.getByRole("listitem", { name: "Genre Collections" })).not.toHaveTextContent(/Also on in Defaults/);
+  });
+
   it("notes when Kometa builds the category as a whole", async () => {
     mockApi(routes());
     renderAt("/ready-made/genre?library=Movies");
@@ -251,6 +260,7 @@ describe("Ready-made Build bar", () => {
               { category: "imdb", title: "Maintainerr Watchlist", deletable: false, reason: "Maintainerr collection" },
             ],
             run: { libraries: ["Movies"], collections: ["IMDb Popular"], files: [] },
+            also_default: ["imdb"],
           };
         }
         return {
@@ -260,6 +270,7 @@ describe("Ready-made Build bar", () => {
             { category: "imdb", title: "Maintainerr Watchlist", deletable: false, reason: "Maintainerr collection" },
           ],
           run: { libraries: ["Movies"], collections: ["IMDb Popular"], files: [] },
+          also_default: ["imdb"],
           run_id: 77,
           removed: ["IMDb Top 250"],
           kept: [{ title: "Maintainerr Watchlist", reason: "Maintainerr collection" }],
@@ -280,6 +291,8 @@ describe("Ready-made Build bar", () => {
     expect(within(dialog).getByText("IMDb Top 250")).toBeInTheDocument();
     expect(within(dialog).getByText(/won't be deleted: Maintainerr Watchlist/)).toBeInTheDocument();
     expect(within(dialog).getByText(/Maintainerr collection/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Also on in Defaults")).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "Turn it off in Defaults" })).toHaveAttribute("href", "/defaults?library=Movies");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(screen.getByText(/Building in/)).toBeInTheDocument());
