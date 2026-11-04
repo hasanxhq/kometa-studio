@@ -115,6 +115,30 @@ describe("Collections list", () => {
     expect(within(screen.getByRole("listitem", { name: "Chart" })).getByText("imdb_chart")).toBeInTheDocument();
   });
 
+  it("retries a failed collection", async () => {
+    let failed = true;
+    const calls = mockApi({
+      ...config,
+      "GET /collections?library=Movies": () => ({
+        collections: [
+          collection({ id: 1, title: "Action Picks", state: "in_plex" }),
+          collection({ id: 4, title: "Broken", state: failed ? "failed" : "queued", last_error: failed ? "TMDb Error: Connection reset" : null }),
+        ],
+      }),
+      "POST /collections/4/retry": () => {
+        failed = false;
+        return collection({ id: 4, title: "Broken", state: "queued", run_id: 9 });
+      },
+    });
+    renderCollections("/collections?library=Movies");
+    const broken = await screen.findByRole("listitem", { name: "Broken" });
+    expect(within(screen.getByRole("listitem", { name: "Action Picks" })).queryByRole("button", { name: /Retry/ })).toBeNull();
+    fireEvent.click(within(broken).getByRole("button", { name: "Retry Broken" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /collections/4/retry")).toBe(true));
+    expect(await within(screen.getByRole("listitem", { name: "Broken" })).findByText("Queued")).toBeInTheDocument();
+    expect(within(screen.getByRole("listitem", { name: "Broken" })).queryByRole("button", { name: /Retry/ })).toBeNull();
+  });
+
   it("shows the empty state", async () => {
     mockApi({
       ...config,

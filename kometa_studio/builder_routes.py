@@ -632,6 +632,22 @@ async def update_collection(row_id: int, body: CollectionIn, request: Request, d
     return _built_json(db, col.built_row(db, row_id))
 
 
+@router.post("/collections/{row_id}/retry")
+async def retry_collection(row_id: int, request: Request, db: Db, settings: AppSettings, writer: Writer, runner: AppRunner) -> dict:
+    """Build the collection again as it stands, e.g. after a run failed on a network blip."""
+    row = col.built_row(db, row_id)
+    if row is None:
+        raise HTTPException(404, "No such collection")
+    if _run_status(db, row["last_run_id"]) in ("queued", "running"):
+        raise HTTPException(409, {"message": f"{row['title']} is already being built"})
+    context = await _context(request, settings, row["library"])
+    try:
+        await _save_and_run(db, settings, writer, runner, context, row_id, f"Built the collection {row['title']!r} again")
+    except SaveRefused as refused:
+        raise HTTPException(refused.status, refused.detail()) from None
+    return _built_json(db, col.built_row(db, row_id))
+
+
 @router.delete("/collections/{row_id}")
 async def delete_collection(row_id: int, request: Request, db: Db, settings: AppSettings, writer: Writer) -> dict:
     row = col.built_row(db, row_id)

@@ -132,6 +132,7 @@ export const builderApi = {
   get: (id: number) => request<BuiltCollection>("GET", `/collections/${id}`),
   create: (body: CollectionInput) => request<BuiltCollection>("POST", "/collections", body),
   update: (id: number, body: CollectionInput) => request<BuiltCollection>("PUT", `/collections/${id}`, body),
+  retry: (id: number) => request<BuiltCollection>("POST", `/collections/${id}/retry`),
   remove: (id: number) => request<{ removed: boolean; reason: string | null }>("DELETE", `/collections/${id}`),
   customise: (library: string, category: string, block: string, key: string) => {
     const q = new URLSearchParams({ block, key });

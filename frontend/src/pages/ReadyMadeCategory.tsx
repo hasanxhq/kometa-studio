@@ -1,12 +1,13 @@
 // One Ready-made category: poster grid of its collections; tap to pick, Save keeps them in the bar.
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
-import { ApiError, api, type ReadyMadeEntry } from "../api";
+import { ApiError, api, type ReadyMadeBuildResult, type ReadyMadeEntry } from "../api";
 import { BuildBar } from "../components/BuildBar";
 import { useHeaderTitle } from "../components/HeaderTitle";
 import { PlexPoster } from "../components/PlexPoster";
+import { RetryButton } from "../components/RetryButton";
 import { Button } from "../components/ui";
 import { categoryOf } from "../defaults";
 import { isSelected, useReadyMadePicks } from "../readyMadePicks";
@@ -31,7 +32,21 @@ function statusLine(entry: ReadyMadeEntry, selected: boolean, wasBuilt: boolean)
   }
 }
 
-function CollectionTile({ entry, banner, selected, onToggle, customise }: { entry: ReadyMadeEntry; banner: string; selected: boolean; onToggle: () => void; customise?: string }) {
+function CollectionTile({
+  entry,
+  banner,
+  selected,
+  onToggle,
+  customise,
+  retry,
+}: {
+  entry: ReadyMadeEntry;
+  banner: string;
+  selected: boolean;
+  onToggle: () => void;
+  customise?: string;
+  retry?: { run: () => Promise<string | null>; onDone: () => void };
+}) {
   const status = statusLine(entry, selected, entry.state === "in_plex");
   return (
     <li>
@@ -60,6 +75,7 @@ function CollectionTile({ entry, banner, selected, onToggle, customise }: { entr
         )}
         {entry.build_seconds != null && <span className="text-xs text-muted">built in {entry.build_seconds} s</span>}
       </button>
+      {entry.state === "failed" && retry && <RetryButton title={entry.title} run={retry.run} onDone={retry.onDone} />}
       {customise && (
         // A template: the builder opens prefilled, and saving makes it the user's own collection.
         <Link className="inline-flex min-h-11 items-center text-xs text-muted underline hover:text-text" to={customise} aria-label={`Customise ${entry.title}`}>
@@ -80,6 +96,7 @@ export function ReadyMadeCategory() {
   const asked = params.get("library");
   const library = asked && names.includes(asked) ? asked : (names[0] ?? null);
   const picksApi = useReadyMadePicks();
+  const queryClient = useQueryClient();
 
   const data = useQuery({
     queryKey: ["ready-made", "category", library, category],
@@ -165,6 +182,14 @@ export function ReadyMadeCategory() {
               banner={banner}
               selected={isSelected(entry, category, local)}
               onToggle={() => picksApi.setPicked(library, category, entry, !isSelected(entry, category, local))}
+              retry={{
+                // Building a pick again: the same Build the bar does, for just this one.
+                run: async () => {
+                  const result = (await api.readyMade.build({ library, add: [{ category, block: entry.block, key: entry.key }], remove: [], dry_run: false })) as ReadyMadeBuildResult;
+                  return result.blocked[0]?.reason ?? null;
+                },
+                onDone: () => queryClient.invalidateQueries({ queryKey: ["ready-made"] }),
+              }}
               customise={
                 data.data.customisable && entry.block
                   ? `/collections/new?${new URLSearchParams({ library, category, block: entry.block, key: entry.key })}`

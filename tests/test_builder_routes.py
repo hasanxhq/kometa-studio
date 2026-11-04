@@ -252,3 +252,27 @@ def test_preview_keeps_plexs_or_grouping_in_order(root):
         assert client.post("/api/v1/builder/preview", json={"library": "Movies", "filters": spec}).json()["problems"] == []
         asked = [r for r in plex.requests if r.url.path == "/library/sections/1/all" and r.url.params.get("X-Plex-Container-Size") == "30"]
         assert "push=1&genre=Action&or=1&genre=Drama&pop=1" in str(asked[-1].url)
+
+
+def test_retry_builds_a_failed_collection_again(root):
+    client, _, _ = make_client(root)
+    with client:
+        wait_for_flags(client)
+        built = client.post("/api/v1/collections", json=body()).json()
+        wait_for_run(client, built["run_id"])
+        db = client.app.state.db
+        with db:
+            db.execute("UPDATE collections SET plex_exists = 0, last_error = ? WHERE id = ?", ("TMDb Error: Connection reset", built["id"]))
+        assert client.get(f"/api/v1/collections/{built['id']}").json()["state"] == "failed"
+        retried = client.post(f"/api/v1/collections/{built['id']}/retry")
+        assert retried.status_code == 200, retried.text
+        again = retried.json()
+        assert again["run_id"] != built["run_id"] and again["state"] in ("queued", "building")
+        run = wait_for_run(client, again["run_id"])
+        assert run["trigger"] == "builder" and run["request"]["collections"] == ["Action Picks"]
+        # Already building: refused rather than queued twice.
+        with db:
+            db.execute("UPDATE runs SET status = 'queued' WHERE id = ?", (again["run_id"],))
+        busy = client.post(f"/api/v1/collections/{built['id']}/retry")
+        assert busy.status_code == 409 and "already being built" in busy.json()["detail"]["message"]
+        assert client.post("/api/v1/collections/9999/retry").status_code == 404
