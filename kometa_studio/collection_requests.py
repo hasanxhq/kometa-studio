@@ -8,6 +8,9 @@ Kometa's missing report (the ``wanted`` table, keyed by the collection's Kometa 
 A title is asked for once: anything already in ``requests`` for it (requested, imported, already in the app, failed or
 cancelled) isn't asked for again. After a run, up to ``confirm_over`` new titles are requested on their own; more than
 that wait for the user's go-ahead (``waiting`` on the card, and ``POST /collections/{id}/request-missing``).
+
+When a requested title reaches Plex (``RequestService`` labels it ``starr``), ``rebuild_arrived`` queues a run of just
+the collection that asked for it, so the collection fills itself without waiting for a scheduled run.
 """
 
 from __future__ import annotations
@@ -18,6 +21,7 @@ from datetime import UTC, datetime
 
 from .config_sections import read_section, save_section
 from .config_write import ConfigWriter, SaveRefused
+from . import collections as col
 from .kometa_command import RunRequest
 from .requesting import Item, RequestOutcome, RequestService, RequestsDisabled, load_settings
 
@@ -84,6 +88,43 @@ async def request_items(service: RequestService, db: sqlite3.Connection, row: sq
     return await service.request(
         items, row["library"], int(row["id"]), datetime.now(UTC), cap=int(cap) if cap is not None else None, profile=row["request_profile"]
     )
+
+
+def arrived(db: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Collections a requested title reached Plex for after their last run was queued (or that never ran).
+
+    Keyed on the last run rather than a flag, so a restart doesn't lose one, and a run that fails isn't retried
+    every few minutes: the next import or the user's Retry builds it again.
+    """
+    return db.execute(
+        """
+        SELECT c.*, MAX(r.labelled_at) AS arrived_at
+        FROM requests r
+        JOIN collections c ON c.id = r.collection_id
+        LEFT JOIN runs ON runs.id = c.last_run_id
+        WHERE r.labelled_at IS NOT NULL AND c.desired = 1
+        GROUP BY c.id
+        HAVING MAX(runs.queued_at) IS NULL OR MAX(r.labelled_at) > MAX(runs.queued_at)
+        ORDER BY c.library, c.id
+        """
+    ).fetchall()
+
+
+def rebuild_arrived(db: sqlite3.Connection, runner) -> list[int]:
+    """Queue one run per library for the collections whose requested titles are now in Plex. Returns the run ids."""
+    by_library: dict[str, list[sqlite3.Row]] = {}
+    for row in arrived(db):
+        by_library.setdefault(row["library"], []).append(row)
+    run_ids = []
+    for library, rows in by_library.items():
+        run_id = runner.enqueue(
+            RunRequest(mode="collections", libraries=[library], collections=[r["kometa_name"] for r in rows]), trigger="requests"
+        )
+        with db:
+            col.set_run(db, [int(r["id"]) for r in rows], run_id)
+        log.info("Requested titles reached Plex; rebuilding %s in %s", ", ".join(repr(r["title"]) for r in rows), library)
+        run_ids.append(run_id)
+    return run_ids
 
 
 class MissingRequester:

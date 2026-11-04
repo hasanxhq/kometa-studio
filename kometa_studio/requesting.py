@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -239,6 +240,8 @@ class RequestService:
         self.config = config
         self.data_dir = data_dir
         self._task: asyncio.Task | None = None
+        # Called after each check; the app uses it to rebuild collections whose requested titles reached Plex.
+        self.after_labelling: Callable[[], object] | None = None
 
     def start(self) -> None:
         self._task = asyncio.create_task(self._loop(), name="requests-refresh")
@@ -252,16 +255,21 @@ class RequestService:
     async def _loop(self) -> None:
         while True:
             try:
-                settings = self.load_settings()
-                if settings.enabled:
-                    now = datetime.now(UTC)
-                    await self.refresh(now)
-                    server = self.plex_server()
-                    if server is not None:
-                        await self.label_imported(server, now)
+                if self.load_settings().enabled:
+                    await self.check(datetime.now(UTC))
             except Exception:
                 log.exception("Refreshing requests failed")
             await asyncio.sleep(POLL_EVERY)
+
+    async def check(self, now: datetime) -> dict[str, int]:
+        """Bring statuses up to date from the apps, label what reached Plex, then let ``after_labelling`` act on it."""
+        counts = await self.refresh(now)
+        server = self.plex_server()
+        if server is not None:
+            await self.label_imported(server, now)
+        if self.after_labelling is not None:
+            self.after_labelling()
+        return counts
 
     def load_settings(self) -> RequestSettings:
         return load_settings(self.db)

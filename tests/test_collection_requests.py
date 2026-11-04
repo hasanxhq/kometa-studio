@@ -193,3 +193,52 @@ def test_a_collection_keeps_its_own_quality_profile_for_requests(root):
         again = client.put(f"/api/v1/collections/{built['id']}", json=dune(download_missing=True))
         assert again.status_code == 200, again.text
         assert again.json()["request_profile"] is None
+
+
+def test_a_requested_title_reaching_plex_rebuilds_just_its_collection_once(root):
+    with tmdb_client(root, []) as client:
+        wait_for_flags(client)
+        requests_on(client)
+        record_requests(client)
+        made = client.post("/api/v1/collections", json=dune(download_missing=True)).json()
+        wait_for_run(client, made["run_id"])
+        db, runner = client.app.state.db, client.app.state.runner
+        queued_at = db.execute("SELECT queued_at FROM runs WHERE id = ?", (made["run_id"],)).fetchone()[0]
+
+        def labelled(item: str, at: str) -> None:
+            with db:
+                db.execute(
+                    "INSERT INTO requests (item, media, library, collection_id, via, status, requested_at, updated_at, imported_at, labelled_at)"
+                    " VALUES (?, 'movie', 'Movies', ?, 'radarr', 'imported', ?, ?, ?, ?)",
+                    (item, made["id"], at, at, at, at),
+                )
+
+        # Reached Plex before the last build was queued: that build already had it.
+        labelled("tmdb-movie:1", "2000-01-01T00:00:00Z")
+        assert cr.rebuild_arrived(db, runner) == []
+
+        labelled("tmdb-movie:693134", "2999-01-01T00:00:00Z")
+        assert queued_at < "2999"
+        (run_id,) = cr.rebuild_arrived(db, runner)
+        run = db.execute("SELECT request, trigger FROM runs WHERE id = ?", (run_id,)).fetchone()
+        assert RunRequest.model_validate_json(run["request"]).collections == ["Dune"]
+        assert run["trigger"] == "requests"
+        assert col.built_row(db, made["id"])["last_run_id"] == run_id
+        wait_for_run(client, run_id)
+
+
+def test_a_check_rebuilds_after_labelling(root):
+    with tmdb_client(root, []) as client:
+        wait_for_flags(client)
+        service = client.app.state.requests
+        assert service.after_labelling is not None  # the app wires it to rebuild_arrived
+        order: list[str] = []
+
+        async def refresh(now):
+            order.append("refresh")
+            return {}
+
+        service.refresh = refresh
+        service.after_labelling = lambda: order.append("after")
+        assert client.post("/api/v1/requests/refresh").status_code == 200
+        assert order == ["refresh", "after"]
