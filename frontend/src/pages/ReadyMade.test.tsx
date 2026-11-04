@@ -178,6 +178,19 @@ describe("Ready-made category picks", () => {
     expect(await screen.findByRole("heading", { level: 1, name: imdbCategory().title })).toBeInTheDocument();
   });
 
+  it("retries a failed pick with a Build of just that pick", async () => {
+    const failed = entry({ block: "collections", key: "popular", title: "IMDb Popular", desired: true, state: "failed", last_error: "TMDb Error", id: 5 });
+    const calls = mockApi({
+      ...routes({ ...imdbCategory(), collections: [failed] }),
+      "POST /ready-made/build": () => ({ build: [], remove: [], run: null, blocked: [{ category: "imdb", title: "IMDb Popular", reason: "Maintainerr has a collection with this name" }], run_id: null, removed: [], kept: [] }),
+    });
+    renderAt("/ready-made/imdb?library=Movies");
+    fireEvent.click(await screen.findByRole("button", { name: "Retry IMDb Popular" }));
+    expect(await screen.findByText("Maintainerr has a collection with this name")).toBeInTheDocument();
+    const sent = calls.find((c) => c.route === "POST /ready-made/build");
+    expect(sent?.body).toEqual({ library: "Movies", add: [{ category: "imdb", block: "collections", key: "popular" }], remove: [], dry_run: false });
+  });
+
   it("notes when Kometa builds the category as a whole", async () => {
     mockApi(routes());
     renderAt("/ready-made/genre?library=Movies");

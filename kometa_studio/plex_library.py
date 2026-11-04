@@ -317,6 +317,10 @@ class PlexServer:
         """Every movie or show as (ratingKey, updatedAt), in Kometa's order."""
         return [(str(m["ratingKey"]), str(m.get("updatedAt", ""))) for m in await self._all(library_key, library_type)]
 
+    async def all_items(self, library_key: str, library_type: str) -> list[PlexItem]:
+        """Every movie or show, with title, year, poster and guids, in Kometa's order."""
+        return [_item(m) for m in await self._all(library_key, library_type)]
+
     async def all_ids(self, library_key: str, library_type: str) -> list[tuple[str, dict[str, str]]]:
         """Every movie or show as (ratingKey, {tmdb, imdb, tvdb}) from its guids, in Kometa's order."""
         return [(item.rating_key, item.ids) for item in map(_item, await self._all(library_key, library_type))]
