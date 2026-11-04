@@ -26,12 +26,14 @@ import { Playlists } from "./pages/Playlists";
 import { ReadyMade } from "./pages/ReadyMade";
 import { ReadyMadeCategory } from "./pages/ReadyMadeCategory";
 import { RunDetail } from "./pages/RunDetail";
+import { Requests } from "./pages/Requests";
 import { SettingsConnect } from "./pages/SettingsConnect";
 import { SettingsGeneral } from "./pages/SettingsGeneral";
 import { SettingsKometa } from "./pages/SettingsKometa";
 import { SettingsNetwork } from "./pages/SettingsNetwork";
 import { SettingsNotifications } from "./pages/SettingsNotifications";
 import { SettingsPlex } from "./pages/SettingsPlex";
+import { SettingsRequests } from "./pages/SettingsRequests";
 import { SettingsUI } from "./pages/SettingsUI";
 import { Setup } from "./pages/Setup";
 import { SystemBackup } from "./pages/SystemBackup";
@@ -46,6 +48,7 @@ const built: Record<string, ComponentType> = {
   "/libraries": Libraries,
   "/ready-made": ReadyMade,
   "/collections": Collections,
+  "/requests": Requests,
   "/overlays": Overlays,
   "/playlists": Playlists,
   "/activity/queue": ActivityQueue,
@@ -58,6 +61,7 @@ const built: Record<string, ComponentType> = {
   "/settings/general": SettingsGeneral,
   "/settings/plex": SettingsPlex,
   "/settings/connect": SettingsConnect,
+  "/settings/requests": SettingsRequests,
   "/settings/notifications": SettingsNotifications,
   "/settings/network": SettingsNetwork,
   "/settings/kometa": SettingsKometa,

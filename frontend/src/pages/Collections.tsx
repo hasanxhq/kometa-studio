@@ -5,6 +5,7 @@ import { Link, useSearchParams } from "react-router";
 
 import { ApiError, api } from "../api";
 import { builderApi, type BuiltCollection } from "../builderApi";
+import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
 import { PlexPoster } from "../components/PlexPoster";
 import { RetryButton } from "../components/RetryButton";
 
@@ -36,6 +37,7 @@ function sourceLine(collection: BuiltCollection): string {
 function CollectionCard({ collection }: { collection: BuiltCollection }) {
   const status = statusLine(collection);
   const queryClient = useQueryClient();
+  const waiting = collection.requests?.waiting ?? 0;
   return (
     <li aria-label={collection.title} className="relative flex flex-col overflow-hidden rounded-card border border-border bg-surface">
       <Link to={`/collections/${collection.id}`} className="flex min-h-11 grow flex-col text-left hover:bg-surface-2/40">
@@ -50,16 +52,21 @@ function CollectionCard({ collection }: { collection: BuiltCollection }) {
         <span className="px-3.5 pt-1 text-[13px] text-muted">{sourceLine(collection)}</span>
         <span className={`px-3.5 pt-1 pb-3.5 text-[13px] ${status.tone === "err" ? "text-err" : "text-muted"}`}>{status.text}</span>
       </Link>
-      {collection.state === "failed" && (
-        <div className="px-3.5 pb-3.5">
-          <RetryButton
-            title={collection.title}
-            run={async () => {
-              await builderApi.retry(collection.id);
-              return null;
-            }}
-            onDone={() => queryClient.invalidateQueries({ queryKey: ["collections", collection.library] })}
-          />
+      {(collection.download_missing || collection.requests || collection.state === "failed" || waiting > 0) && (
+        <div className="flex flex-col gap-2 px-3.5 pb-3.5">
+          <DownloadMissingBadge id={collection.id} downloadMissing={collection.download_missing} library={collection.library} />
+          <RequestCountsLine summary={collection.requests} />
+          {collection.state === "failed" && (
+            <RetryButton
+              title={collection.title}
+              run={async () => {
+                await builderApi.retry(collection.id);
+                return null;
+              }}
+              onDone={() => queryClient.invalidateQueries({ queryKey: ["collections", collection.library] })}
+            />
+          )}
+          <RequestWaitingButton id={collection.id} waiting={waiting} library={collection.library} />
         </div>
       )}
     </li>

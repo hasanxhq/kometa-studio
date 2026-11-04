@@ -2,6 +2,9 @@
 
 import { ApiError, SIGNED_OUT_EVENT, request } from "./api";
 import { urlBase } from "./base";
+import type { RequestSummary } from "./requestsApi";
+
+export type { RequestSummary };
 
 export type FilterRule = { field: string; modifier: string; value: string | number | boolean | string[] };
 export type FilterSpec = { match: "all" | "any"; rules: FilterRule[] };
@@ -76,7 +79,11 @@ export type CollectionInput = {
   summary: string | null;
   sort_title: string | null;
   poster: Poster;
+  download_missing: boolean;
+  request_cap: number | null;
 };
+
+export type CollectionSaveBody = CollectionInput & { confirm_requests?: boolean };
 
 export type BuiltCollection = CollectionInput & {
   id: number;
@@ -86,6 +93,7 @@ export type BuiltCollection = CollectionInput & {
   last_built_at: string | null;
   last_error: string | null;
   run_id: number | null;
+  requests: RequestSummary;
 };
 
 export function isKometaPosterUrl(url: string): boolean {
@@ -130,8 +138,8 @@ export const builderApi = {
     request<SourcePreview>("POST", "/builder/sources/preview", body),
   list: (library: string) => request<{ collections: BuiltCollection[] }>("GET", `/collections?library=${encodeURIComponent(library)}`),
   get: (id: number) => request<BuiltCollection>("GET", `/collections/${id}`),
-  create: (body: CollectionInput) => request<BuiltCollection>("POST", "/collections", body),
-  update: (id: number, body: CollectionInput) => request<BuiltCollection>("PUT", `/collections/${id}`, body),
+  create: (body: CollectionSaveBody) => request<BuiltCollection>("POST", "/collections", body),
+  update: (id: number, body: CollectionSaveBody) => request<BuiltCollection>("PUT", `/collections/${id}`, body),
   retry: (id: number) => request<BuiltCollection>("POST", `/collections/${id}/retry`),
   remove: (id: number) => request<{ removed: boolean; reason: string | null }>("DELETE", `/collections/${id}`),
   customise: (library: string, category: string, block: string, key: string) => {
