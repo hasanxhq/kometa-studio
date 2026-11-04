@@ -761,3 +761,21 @@ async def count(
                 cat.collections.extend(kept_entries)
 
     return categories_list
+
+
+def customisable(kometa_root: Path, name: str, library_type: str) -> bool:
+    """True when the category's collections are Plex filters (genre, decade, people…), so each can open in the builder."""
+    defaults_folder = kometa_root / "defaults" if (kometa_root / "defaults").is_dir() else kometa_root
+    for folder in (library_type, "both", "chart", "award"):
+        path = defaults_folder / folder / f"{name}.yml"
+        if path.is_file():
+            try:
+                data = _yaml().load(_read(path)) or {}
+            except YAMLError:
+                return False
+            blocks = data.get("dynamic_collections") if isinstance(data, dict) else None
+            if not isinstance(blocks, dict) or not blocks:
+                return False
+            types = [DYNAMIC_TYPE_SOURCES.get(str(b.get("type", "")).lower()) for b in blocks.values() if isinstance(b, dict)]
+            return bool(types) and all(t is not None and t.source in ("plex", "people") for t in types)
+    return False

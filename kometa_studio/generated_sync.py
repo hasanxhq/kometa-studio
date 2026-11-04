@@ -78,12 +78,12 @@ class GeneratedFiles:
                 continue
             edited = studio_files.hand_edited(self.db, settings.kometa_config.parent, library.name, all_names)
             try:
-                written = await studio_files.write_library(
+                written = await studio_files.write_from_db(
                     writer,
                     settings.kometa_entry.parent,
+                    self.db,
                     library.name,
                     library_type,
-                    col.desired(self.db, library.name),
                     all_names,
                     f"Put Studio's generated files for {library.name} back before a run",
                 )

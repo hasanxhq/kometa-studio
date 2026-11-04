@@ -202,3 +202,44 @@ def forget_generated(db: sqlite3.Connection, paths: list[str]) -> None:
 def generated(db: sqlite3.Connection) -> dict[str, str]:
     """path → the sha256 Studio last wrote there."""
     return {row["path"]: row["hash"] for row in db.execute("SELECT path, hash FROM generated_files")}
+
+
+# --- Builder collections (phase 2) -------------------------------------------------------
+# One row each, category BUILT, block '', key a stable random id (the title can change), origin 'built',
+# and the user's definition as JSON. They share Plex state, the run hook and removal with ready-made rows.
+
+BUILT = "built"
+
+
+def built_rows(db: sqlite3.Connection, library: str | None = None) -> list[sqlite3.Row]:
+    if library is None:
+        return list(db.execute("SELECT * FROM collections WHERE category = ? ORDER BY library, title", (BUILT,)))
+    return list(db.execute("SELECT * FROM collections WHERE library = ? AND category = ? ORDER BY title", (library, BUILT)))
+
+
+def built_row(db: sqlite3.Connection, row_id: int) -> sqlite3.Row | None:
+    return db.execute("SELECT * FROM collections WHERE id = ? AND category = ?", (row_id, BUILT)).fetchone()
+
+
+def insert_built(db: sqlite3.Connection, library: str, key: str, title: str, definition: dict) -> int:
+    stamp = now()
+    cursor = db.execute(
+        """
+        INSERT INTO collections (library, category, block, key, kometa_name, title, origin, desired, definition, created_at, updated_at)
+        VALUES (?, ?, '', ?, ?, ?, 'built', 1, ?, ?, ?)
+        """,
+        (library, BUILT, key, title, title, json.dumps(definition), stamp, stamp),
+    )
+    return int(cursor.lastrowid)
+
+
+def update_built(db: sqlite3.Connection, row_id: int, title: str, definition: dict) -> None:
+    db.execute(
+        "UPDATE collections SET title = ?, kometa_name = ?, definition = ?, last_error = NULL, updated_at = ? WHERE id = ?",
+        (title, title, json.dumps(definition), now(), row_id),
+    )
+
+
+def built_definitions(db: sqlite3.Connection, library: str) -> list[tuple[str, dict]]:
+    """(title, definition) for the library's builder collections that should exist, by title."""
+    return [(row["title"], json.loads(row["definition"] or "{}")) for row in built_rows(db, library) if row["desired"]]

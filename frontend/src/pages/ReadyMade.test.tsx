@@ -158,6 +158,20 @@ describe("Ready-made category picks", () => {
     expect(screen.getByText("Remove 1")).toBeInTheDocument();
   });
 
+  it("opens a Plex-filter collection in the builder with Customise", async () => {
+    mockApi(routes({ ...imdbCategory(), customisable: true }));
+    renderAt("/ready-made/imdb?library=Movies");
+    const link = await screen.findByRole("link", { name: "Customise IMDb Popular" });
+    expect(link).toHaveAttribute("href", "/collections/new?library=Movies&category=imdb&block=collections&key=popular");
+  });
+
+  it("has no Customise for a category that comes from a list", async () => {
+    mockApi(routes({ ...imdbCategory(), customisable: false }));
+    renderAt("/ready-made/imdb?library=Movies");
+    await screen.findByRole("button", { name: "IMDb Popular" });
+    expect(screen.queryByRole("link", { name: /^Customise/ })).not.toBeInTheDocument();
+  });
+
   it("names the category in the header, not just Category", async () => {
     mockApi(routes());
     renderAt("/ready-made/imdb?library=Movies");

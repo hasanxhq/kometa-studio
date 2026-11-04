@@ -14,6 +14,8 @@ import { FileEditor } from "./pages/FileEditor";
 
 // The form editor brings Kometa's schema checking; load it when it's opened.
 const ItemEditor = lazy(() => import("./pages/ItemEditor"));
+import { CollectionBuilder } from "./pages/CollectionBuilder";
+import { Collections } from "./pages/Collections";
 import { Libraries } from "./pages/Libraries";
 import { OverlayDesigner } from "./pages/OverlayDesigner";
 import { Overlays } from "./pages/Overlays";
@@ -43,6 +45,7 @@ const built: Record<string, ComponentType> = {
   "/": Overview,
   "/libraries": Libraries,
   "/ready-made": ReadyMade,
+  "/collections": Collections,
   "/overlays": Overlays,
   "/playlists": Playlists,
   "/activity/queue": ActivityQueue,
@@ -78,6 +81,8 @@ export function App({ queryClient = new QueryClient() }: { queryClient?: QueryCl
                 <Route path="/libraries/:name" element={<LibraryDetail />} />
                 <Route path="/libraries/:name/collections/:key" element={<CollectionDetail />} />
                 <Route path="/ready-made/:category" element={<ReadyMadeCategory />} />
+                <Route path="/collections/new" element={<CollectionBuilder />} />
+                <Route path="/collections/:id" element={<CollectionBuilder />} />
                 <Route path="/overlays/designer" element={<OverlayDesigner />} />
                 <Route path="/files" element={<FileEditor />} />
                 <Route
