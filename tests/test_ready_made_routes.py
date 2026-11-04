@@ -419,3 +419,18 @@ def test_removing_a_categorys_last_pick_removes_its_file(root):
         assert not studio.exists()
         assert "studio/Movies/basic" not in (root / "config" / "config.yml").read_text()
         assert col.generated(client.app.state.db) == {}
+
+
+def test_a_category_the_count_couldnt_list_shows_why(root):
+    # E.g. language categories when Studio couldn't get TMDb's language names.
+    with make_client(root)[0] as client:
+        wait_for_task(client, "ready_made_counts")
+        with client.app.state.db:
+            col.save_counts(client.app.state.db, "Movies", "genre", {"entries": []}, "Kometa names these with TMDb's names")
+        gallery = client.get("/api/v1/ready-made/libraries/Movies").json()
+        genre = next(c for c in gallery["categories"] if c["name"] == "genre")
+        assert genre["listable"] is False and genre["reason"] == "Kometa names these with TMDb's names"
+        detail = client.get("/api/v1/ready-made/libraries/Movies/categories/genre").json()
+        assert detail["listable"] is False and detail["reason"] == "Kometa names these with TMDb's names"
+        basic = next(c for c in gallery["categories"] if c["name"] == "basic")
+        assert basic["listable"] is True and basic["reason"] is None

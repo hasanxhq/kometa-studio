@@ -156,7 +156,7 @@ class Tasks:
 
     async def _ready_made_counts(self, options: dict) -> str:
         from . import collections as col
-        from . import ready_made
+        from . import ready_made, tmdb_languages
         from .kometa_config import read_plex
         from .kometa_files import ConfigReader
         from .plex_library import PlexServer, PlexUnavailable
@@ -182,6 +182,7 @@ class Tasks:
         except (FileNotFoundError, ValueError, OSError) as error:
             raise RuntimeError(str(error)) from None
 
+        languages = await tmdb_languages.english_names(self.http, self.settings.kometa_config, self.settings.data_dir)
         counted = 0
         for library in config_libs:
             plex_title = str(library.settings.get("library_name") or library.name)
@@ -190,7 +191,7 @@ class Tasks:
                 continue
             self.notes["ready_made_counts"] = f"Counting in {library.name}"
             try:
-                categories = await ready_made.count(server, plex.key, plex.type, root)
+                categories = await ready_made.count(server, plex.key, plex.type, root, languages)
             except PlexUnavailable as error:
                 raise RuntimeError(str(error)) from None
             with self.db:
@@ -208,7 +209,7 @@ class Tasks:
                             for e in cat.collections
                         ]
                     }
-                    col.save_counts(self.db, library.name, cat.name, data, None)
+                    col.save_counts(self.db, library.name, cat.name, data, cat.count_error)
                     counted += 1
         return f"Counted {counted} categor{'y' if counted == 1 else 'ies'}"
 

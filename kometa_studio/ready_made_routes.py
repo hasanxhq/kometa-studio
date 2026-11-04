@@ -159,13 +159,15 @@ def _summary(
     else:
         count = len(entries)
     run_scope: Literal["collection", "file"] = "file" if any(r["run_scope"] == "file" for r in rows) else "collection"
+    # The counting task's reason why it couldn't list a category (e.g. no TMDb language names).
+    count_error = cached.get("error") if cached and category.listable else None
     return {
         "name": category.name,
         "title": category.title,
         "group": category.group,
         "kind": category.kind,
-        "listable": category.listable,
-        "reason": category.reason,
+        "listable": category.listable and not count_error,
+        "reason": count_error or category.reason,
         "count": count,
         "in_plex": sum(1 for r in rows if r["plex_exists"]),
         "picked": sum(1 for r in rows if r["desired"]),

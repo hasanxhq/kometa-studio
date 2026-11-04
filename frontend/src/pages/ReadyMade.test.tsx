@@ -167,6 +167,12 @@ describe("Ready-made category picks", () => {
     expect(screen.getByText("Remove 1")).toBeInTheDocument();
   });
 
+  it("names the category in the header, not just Category", async () => {
+    mockApi(routes());
+    renderAt("/ready-made/imdb?library=Movies");
+    expect(await screen.findByRole("heading", { level: 1, name: imdbCategory().title })).toBeInTheDocument();
+  });
+
   it("notes when Kometa builds the category as a whole", async () => {
     mockApi(routes());
     renderAt("/ready-made/genre?library=Movies");
