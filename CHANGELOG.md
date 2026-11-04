@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Requests backend:** send missing media to Radarr, Sonarr, or Overseerr/Jellyseerr (tagged `starr`), with deduplication, per-collection daily caps, status refresh, import tracking from Arr history, and Plex `starr` labelling upon import.
 - A library's **Operations** tab: Kometa's library operations and the library's own `settings:` overrides as forms you can save (from Kometa's config schema), instead of editing config.yml by hand. Clearing every field removes that section; a stale open form is refused so another edit isn't overwritten.
 - **Poster** on the collection builder: Plex's own mosaic (the default), an image you upload, an image link, or Kometa's artwork when you opened a Ready-made Genre (and similar) collection with Customise. Uploads are stored under `studio/posters/`; Kometa applies the poster on the collection's next run.
 

@@ -44,6 +44,7 @@ class FakePlex:
         self.LABELLED = {k: list(v) for k, v in self.DEFAULT_LABELLED.items()}
         self.COLLECTION_META = {k: {**v, "Label": [dict(lab) for lab in v.get("Label", [])]} for k, v in self.DEFAULT_COLLECTION_META.items()}
         self.ITEMS = {k: [dict(i) for i in v] for k, v in self.DEFAULT_ITEMS.items()}
+        self.item_labels: dict[str, list[str]] = {}
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
@@ -287,6 +288,19 @@ class FakePlex:
 
     def library(self, request: httpx.Request) -> httpx.Response:
         parts = request.url.path.strip("/").split("/")  # library, sections, <key>, <what>
+        if request.method == "PUT" and len(parts) == 4 and parts[1] == "sections" and parts[3] == "all":
+            rating_key = request.url.params.get("id")
+            label_name = request.url.params.get("label[0].tag.tag")
+            if rating_key and label_name:
+                self.item_labels.setdefault(rating_key, []).append(label_name)
+                for m in self.TITLES.get(parts[2], []):
+                    if m.get("ratingKey") == rating_key:
+                        m.setdefault("Label", []).append({"tag": label_name})
+                for col_items in self.ITEMS.values():
+                    for m in col_items:
+                        if m.get("ratingKey") == rating_key:
+                            m.setdefault("Label", []).append({"tag": label_name})
+            return httpx.Response(200)
         if parts == ["library", "sections"]:
             return httpx.Response(200, json={"MediaContainer": {"Directory": self.SECTIONS}})
         if len(parts) == 4 and parts[1] == "sections" and parts[2] in self.COLLECTIONS:

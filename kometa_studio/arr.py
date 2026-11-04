@@ -138,11 +138,20 @@ def connection(db: sqlite3.Connection, box: SecretBox, config: Path | None, kind
     return Connection(url, token, proxy_login(db, box, kind)) if url and token else None
 
 
-async def _get(http: httpx.AsyncClient, conn: Connection, path: str, params: dict | None = None) -> Any:
+async def _request(
+    http: httpx.AsyncClient,
+    conn: Connection,
+    method: str,
+    path: str,
+    params: dict | None = None,
+    json: Any = None,
+) -> Any:
     try:
-        response = await http.get(
+        response = await http.request(
+            method,
             conn.url.rstrip("/") + path,
             params=params,
+            json=json,
             headers={"X-Api-Key": conn.api_key, "Accept": "application/json"},
             timeout=TIMEOUT,
             auth=conn.login or httpx.USE_CLIENT_DEFAULT,
@@ -155,12 +164,41 @@ async def _get(http: httpx.AsyncClient, conn: Connection, path: str, params: dic
         if response.headers.get("www-authenticate", "").lower().startswith("basic"):
             raise ArrProblem("The proxy in front of it wants a username and password" + (" (these were refused)" if conn.login else ""))
         raise ArrProblem("The API key was rejected")
-    if response.status_code != 200:
-        raise ArrProblem(f"It answered HTTP {response.status_code}")
+    if response.status_code not in (200, 201, 202, 204):
+        detail = ""
+        try:
+            err_data = response.json()
+            if isinstance(err_data, list) and err_data and isinstance(err_data[0], dict):
+                detail = f": {err_data[0].get('errorMessage') or err_data[0].get('message')}"
+            elif isinstance(err_data, dict):
+                msg = err_data.get("message") or err_data.get("error")
+                if msg:
+                    detail = f": {msg}"
+        except Exception:
+            pass
+        raise ArrProblem(f"It answered HTTP {response.status_code}{detail}")
+    if response.status_code == 204 or not response.content:
+        return None
     try:
         return response.json()
     except ValueError:
         raise ArrProblem("That address answered, but not like Radarr or Sonarr") from None
+
+
+async def _get(http: httpx.AsyncClient, conn: Connection, path: str, params: dict | None = None) -> Any:
+    return await _request(http, conn, "GET", path, params=params)
+
+
+async def _post(http: httpx.AsyncClient, conn: Connection, path: str, json: Any = None) -> Any:
+    return await _request(http, conn, "POST", path, json=json)
+
+
+async def _put(http: httpx.AsyncClient, conn: Connection, path: str, json: Any = None) -> Any:
+    return await _request(http, conn, "PUT", path, json=json)
+
+
+async def _delete(http: httpx.AsyncClient, conn: Connection, path: str) -> Any:
+    return await _request(http, conn, "DELETE", path)
 
 
 async def test_connection(http: httpx.AsyncClient, conn: Connection, kind: Kind) -> dict:
@@ -224,6 +262,7 @@ class Arr:
         self.kometa_root = kometa_root
         self._task: asyncio.Task | None = None
         self._types: tuple[float, dict[str, str]] | None = None  # Plex library title -> type, and when it was read
+        self.on_imports = None
         shared = get_setting(db, PENDING)
         if shared:  # one pending run for both apps, from before each app had its own
             for kind in shared.get("kinds", []):
@@ -268,6 +307,10 @@ class Arr:
                 continue
             set_setting(self.db, f"arr.status.{kind}", {"checked_at": utc_text(now), "ok": True, "error": None})
             if records:
+                if self.on_imports:
+                    res = self.on_imports(kind, records, now)
+                    if asyncio.iscoroutine(res):
+                        await res
                 await self._count(kind, settings.app(kind), records, now)
                 last = records[-1]
                 cursor = {"date": str(last.get("date") or utc_text(now))[:19] + "Z", "id": last["id"]}
