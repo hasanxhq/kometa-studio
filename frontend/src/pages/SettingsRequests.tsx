@@ -271,7 +271,7 @@ function SettingsForm({ state }: { state: RequestsSettingsState }) {
               {options.data?.errors.radarr && <p className="text-sm text-warn">{options.data.errors.radarr}</p>}
               <div className="flex flex-wrap gap-3">
                 <div className="min-w-0 flex-1 basis-48">
-                  <Field label="Quality profile">
+                  <Field label="Default quality profile" hint="A collection can pick another in the builder.">
                     <select
                       className={inputClass}
                       value={draft.radarr.quality_profile ?? ""}
@@ -343,7 +343,7 @@ function SettingsForm({ state }: { state: RequestsSettingsState }) {
               {options.data?.errors.sonarr && <p className="text-sm text-warn">{options.data.errors.sonarr}</p>}
               <div className="flex flex-wrap gap-3">
                 <div className="min-w-0 flex-1 basis-48">
-                  <Field label="Quality profile">
+                  <Field label="Default quality profile" hint="A collection can pick another in the builder.">
                     <select
                       className={inputClass}
                       value={draft.sonarr.quality_profile ?? ""}

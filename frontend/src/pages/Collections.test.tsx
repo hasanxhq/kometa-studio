@@ -22,6 +22,7 @@ const collection = (partial: Partial<BuiltCollection> & Pick<BuiltCollection, "i
   poster: null,
   download_missing: false,
   request_cap: null,
+  request_profile: null,
   plex_items: null,
   thumb: null,
   last_built_at: null,

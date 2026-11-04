@@ -53,12 +53,18 @@ def summary(db: sqlite3.Connection, row: sqlite3.Row) -> dict[str, int]:
     return {"waiting": wants, **counts}
 
 
-def set_download_missing(db: sqlite3.Connection, ids: list[int], on: bool, cap: int | None = None, *, keep_cap: bool = False) -> None:
+def set_download_missing(
+    db: sqlite3.Connection, ids: list[int], on: bool, cap: int | None = None, profile: str | None = None, *, keep_cap: bool = False
+) -> None:
+    """Turn Download missing on or off. ``keep_cap`` leaves the collection's cap and quality profile as they are."""
     for row_id in ids:
         if keep_cap:
             db.execute("UPDATE collections SET download_missing = ? WHERE id = ?", (int(on), row_id))
         else:
-            db.execute("UPDATE collections SET download_missing = ?, request_cap = ? WHERE id = ?", (int(on), cap, row_id))
+            db.execute(
+                "UPDATE collections SET download_missing = ?, request_cap = ?, request_profile = ? WHERE id = ?",
+                (int(on), cap, profile or None, row_id),
+            )
 
 
 def reports_on(writer: ConfigWriter) -> bool:
@@ -75,7 +81,9 @@ async def ensure_reports(writer: ConfigWriter) -> bool:
 
 async def request_items(service: RequestService, db: sqlite3.Connection, row: sqlite3.Row, items: list[Item]) -> RequestOutcome:
     cap = row["request_cap"]
-    return await service.request(items, row["library"], int(row["id"]), datetime.now(UTC), cap=int(cap) if cap is not None else None)
+    return await service.request(
+        items, row["library"], int(row["id"]), datetime.now(UTC), cap=int(cap) if cap is not None else None, profile=row["request_profile"]
+    )
 
 
 class MissingRequester:

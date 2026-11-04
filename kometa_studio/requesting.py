@@ -215,6 +215,15 @@ async def probe_seerr_connection(http: httpx.AsyncClient, conn: SeerrConnection)
 test_seerr_connection = probe_seerr_connection
 
 
+def _profile_id(profiles: list, name: str | None) -> int | None:
+    if not name:
+        return None
+    for p in profiles:
+        if isinstance(p, dict) and p.get("name") == name:
+            return p.get("id")
+    return None
+
+
 class RequestService:
     def __init__(
         self,
@@ -388,7 +397,7 @@ class RequestService:
             return int(created["id"])
         raise ArrProblem("Could not create tag 'starr'")
 
-    async def _resolve_radarr_options(self, conn: Connection, radarr_settings: RadarrRequestSettings) -> tuple[int, str]:
+    async def _resolve_radarr_options(self, conn: Connection, radarr_settings: RadarrRequestSettings, profile: str | None = None) -> tuple[int, str]:
         profiles = await arr._get(self.http, conn, "/api/v3/qualityprofile")
         if not isinstance(profiles, list) or not profiles:
             raise ArrProblem("No quality profile available in Radarr")
@@ -396,12 +405,11 @@ class RequestService:
         if not isinstance(folders, list) or not folders:
             raise ArrProblem("No root folder available in Radarr")
 
-        qp_id = None
-        if radarr_settings.quality_profile:
-            for p in profiles:
-                if isinstance(p, dict) and p.get("name") == radarr_settings.quality_profile:
-                    qp_id = p.get("id")
-                    break
+        qp_id = _profile_id(profiles, profile)
+        if qp_id is None and profile:
+            log.info("The collection's quality profile %r isn't in Radarr any more; using the default", profile)
+        if qp_id is None:
+            qp_id = _profile_id(profiles, radarr_settings.quality_profile)
         if qp_id is None:
             qp_id = profiles[0].get("id")
 
@@ -418,7 +426,7 @@ class RequestService:
             raise ArrProblem("Invalid Radarr quality profile or root folder")
         return int(qp_id), str(rf_path)
 
-    async def _resolve_sonarr_options(self, conn: Connection, sonarr_settings: SonarrRequestSettings) -> tuple[int, str]:
+    async def _resolve_sonarr_options(self, conn: Connection, sonarr_settings: SonarrRequestSettings, profile: str | None = None) -> tuple[int, str]:
         profiles = await arr._get(self.http, conn, "/api/v3/qualityprofile")
         if not isinstance(profiles, list) or not profiles:
             raise ArrProblem("No quality profile available in Sonarr")
@@ -426,12 +434,11 @@ class RequestService:
         if not isinstance(folders, list) or not folders:
             raise ArrProblem("No root folder available in Sonarr")
 
-        qp_id = None
-        if sonarr_settings.quality_profile:
-            for p in profiles:
-                if isinstance(p, dict) and p.get("name") == sonarr_settings.quality_profile:
-                    qp_id = p.get("id")
-                    break
+        qp_id = _profile_id(profiles, profile)
+        if qp_id is None and profile:
+            log.info("The collection's quality profile %r isn't in Sonarr any more; using the default", profile)
+        if qp_id is None:
+            qp_id = _profile_id(profiles, sonarr_settings.quality_profile)
         if qp_id is None:
             qp_id = profiles[0].get("id")
 
@@ -454,6 +461,7 @@ class RequestService:
         radarr_settings: RadarrRequestSettings,
         it: Item,
         kind_id: tuple[str, str],
+        profile: str | None = None,
     ) -> tuple[str, str | None, str | None]:
         try:
             _, raw_id = kind_id
@@ -467,7 +475,7 @@ class RequestService:
             if movies:
                 return "exists", str(movies[0]["id"]), None
 
-            qp_id, rf_path = await self._resolve_radarr_options(conn, radarr_settings)
+            qp_id, rf_path = await self._resolve_radarr_options(conn, radarr_settings, profile)
             starr_tag = await self._ensure_tag(conn)
 
             lookup = await arr._get(self.http, conn, "/api/v3/movie/lookup/tmdb", {"tmdbId": tmdb_id})
@@ -497,6 +505,7 @@ class RequestService:
         sonarr_settings: SonarrRequestSettings,
         it: Item,
         kind_id: tuple[str, str],
+        profile: str | None = None,
     ) -> tuple[str, str | None, str | None]:
         kind, raw_id = kind_id
         if kind == "tvdb":
@@ -521,7 +530,7 @@ class RequestService:
             if series_list:
                 return "exists", str(series_list[0]["id"]), None
 
-            qp_id, rf_path = await self._resolve_sonarr_options(conn, sonarr_settings)
+            qp_id, rf_path = await self._resolve_sonarr_options(conn, sonarr_settings, profile)
             starr_tag = await self._ensure_tag(conn)
 
             lookup = await arr._get(self.http, conn, "/api/v3/series/lookup", {"term": f"tvdb:{tvdb_id}"})
@@ -673,7 +682,10 @@ class RequestService:
         collection_id: int | None,
         now: datetime,
         cap: int | None = None,
+        profile: str | None = None,
     ) -> RequestOutcome:
+        """Ask for ``items``. ``profile`` names the Radarr/Sonarr quality profile to use instead of the default
+        (Overseerr/Jellyseerr pick their own)."""
         settings = self.load_settings()
         if not settings.enabled:
             raise RequestsDisabled("Requests are disabled")
@@ -766,7 +778,7 @@ class RequestService:
                     outcome.failed += 1
                     outcome.items.append(RequestItemResult(item=it.item, status=status, error=error_msg))
                     continue
-                status, external_id, error_msg = await self._request_radarr(radarr_conn, settings.radarr, it, kind_id)
+                status, external_id, error_msg = await self._request_radarr(radarr_conn, settings.radarr, it, kind_id, profile)
             else:  # sonarr
                 via_record = "sonarr"
                 sonarr_conn = arr.connection(self.db, self.box, self.config, "sonarr")
@@ -778,7 +790,7 @@ class RequestService:
                     outcome.failed += 1
                     outcome.items.append(RequestItemResult(item=it.item, status=status, error=error_msg))
                     continue
-                status, external_id, error_msg = await self._request_sonarr(sonarr_conn, settings.sonarr, it, kind_id)
+                status, external_id, error_msg = await self._request_sonarr(sonarr_conn, settings.sonarr, it, kind_id, profile)
 
             self._record(it.item, media, it.title, it.year, library, collection_id, via_record, external_id, status, error_msg, now)
             if status == "requested":

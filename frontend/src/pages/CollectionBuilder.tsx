@@ -43,6 +43,7 @@ type Draft = {
   poster: Poster;
   download_missing: boolean;
   request_cap: number | null;
+  request_profile: string | null;
 };
 
 const EMPTY_FILTERS: FilterSpec = { match: "all", rules: [] };
@@ -83,6 +84,7 @@ function toInput(draft: Draft): CollectionInput {
     poster: draft.poster,
     download_missing: list ? draft.download_missing : false,
     request_cap: list && draft.download_missing ? draft.request_cap : null,
+    request_profile: list && draft.download_missing ? draft.request_profile : null,
   };
 }
 
@@ -105,6 +107,7 @@ function fromInput(input: CollectionInput): Draft {
     poster: input.poster ?? null,
     download_missing: input.download_missing ?? false,
     request_cap: input.request_cap ?? null,
+    request_profile: input.request_profile ?? null,
   };
 }
 
@@ -128,6 +131,7 @@ function blankDraft(library: string, fields: BuilderField[], source: Source = { 
     poster: null,
     download_missing: false,
     request_cap: null,
+    request_profile: null,
   };
 }
 
@@ -404,7 +408,7 @@ function BuilderForm({
 }: {
   id: number | null;
   library: string;
-  fields: { fields: BuilderField[]; sorts: { key: string; label: string }[] };
+  fields: { fields: BuilderField[]; sorts: { key: string; label: string }[]; library_type?: "movie" | "show" };
   baseline: Draft;
   templateError: string | null;
   /** null = new collection waiting for the start choice */
@@ -769,6 +773,9 @@ function BuilderForm({
                 value={list.value}
                 downloadMissing={draft.download_missing}
                 requestCap={draft.request_cap}
+                libraryType={fields.library_type ?? "movie"}
+                requestProfile={draft.request_profile}
+                onRequestProfile={(request_profile) => setDraft({ ...draft, request_profile })}
                 onDownloadMissing={(download_missing) => setDraft({ ...draft, download_missing })}
                 onRequestCap={(request_cap) => setDraft({ ...draft, request_cap })}
               />
