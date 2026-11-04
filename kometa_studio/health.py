@@ -200,12 +200,13 @@ def _generated_file_checks(db: sqlite3.Connection, settings: Settings) -> list[C
     if not edited:
         return []
     names = ", ".join(edited)
+    one = len(edited) == 1
     return [
         Check(
             "generated_files",
             "warning",
-            f"Studio's generated {'file was' if len(edited) == 1 else 'files were'} changed by hand: {names}. "
-            "The next Build in Ready-made replaces them; change those collections in Ready-made instead.",
+            f"Studio's generated {'file was' if one else 'files were'} changed by hand: {names}. "
+            f"The next Build in Ready-made replaces {'it' if one else 'them'}; change those collections in Ready-made instead.",
             "/ready-made",
         )
     ]
