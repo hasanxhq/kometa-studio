@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ready-made: audio and subtitle language collections get the names Kometa gives them, such as "French Audio" instead of "Français Audio", so Build and "In Plex" find them. Studio reads the names from TMDb with your TMDb key. If it can't, the category says so instead of listing.
+- Ready-made: TV libraries list their audio and subtitle language collections. They were empty, because Plex keeps languages on episodes.
+- A Ready-made category's header shows the category's name instead of "Category".
 - A library whose operations are a list (Kometa's way to run more than one block, each with its own schedule) was treated as having none. An import then skipped that library's operations, and its Operations tab was empty.
 
 ### Removed

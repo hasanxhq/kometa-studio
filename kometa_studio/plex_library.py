@@ -99,10 +99,10 @@ class PlexServer:
         container = await self._get("/library/sections")
         return [PlexLibrary(str(d["key"]), str(d["title"]), str(d.get("type", ""))) for d in container.get("Directory", [])]
 
-    async def tag_values(self, library_key: str, tag: str, library_type: str = "") -> list[tuple[str, str]]:
-        """Tag values from /library/sections/{library_key}/{tag} as (title, key) tuples."""
+    async def tag_values(self, library_key: str, tag: str, library_type: str = "", episode: bool = False) -> list[tuple[str, str]]:
+        """Tag values from /library/sections/{library_key}/{tag} as (title, key) tuples; ``episode`` reads episodes' tags."""
         try:
-            container = await self._get(f"/library/sections/{library_key}/{tag}")
+            container = await self._get(f"/library/sections/{library_key}/{tag}", {"type": "4"} if episode else None)
         except PlexNotFound:
             return []
         return [

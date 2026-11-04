@@ -283,7 +283,8 @@ class FakePlex:
                     start, size = int(request.url.params.get("X-Plex-Container-Start", "0")), int(request.url.params["X-Plex-Container-Size"])
                     return httpx.Response(200, json={"MediaContainer": {"size": len(found[start : start + size]), "totalSize": len(found), "offset": start, "Metadata": found[start : start + size]}})
                 counts = self.TAG_COUNTS.get(key, {})
-                for tag_param in ("genre", "contentRating", "studio", "country", "network", "decade", "year", "resolution", "audioLanguage", "subtitleLanguage"):
+                tag_params = ("genre", "contentRating", "studio", "country", "network", "decade", "year", "resolution", "audioLanguage", "subtitleLanguage")
+                for tag_param in (*tag_params, *(f"episode.{t}" for t in ("resolution", "audioLanguage", "subtitleLanguage"))):
                     if tag_param in request.url.params:
                         val = request.url.params[tag_param]
                         cnt = counts.get((tag_param, val), 0)

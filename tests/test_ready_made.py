@@ -268,3 +268,69 @@ async def test_real_kometa_defaults_count(plex_server):
     resolution = cat_by_name["resolution"]
     assert len(resolution.collections) > 0
     assert all(e.items is not None and e.items > 0 for e in resolution.collections)
+
+
+AUDIO_DEFAULT = """dynamic_collections:
+  Audio Language:
+    type: audio_language
+    title_format: <<key_name>> Audio
+    include:
+      - en
+      - fr
+      - ko
+"""
+NAMES = {"en": "English", "fr": "French", "ko": "Korean"}
+
+
+def _audio_default(root: Path) -> Path:
+    path = root / "defaults" / "both" / "audio_language.yml"
+    path.parent.mkdir(parents=True)
+    path.write_text(AUDIO_DEFAULT)
+    return root
+
+
+@pytest.mark.anyio
+async def test_count_names_languages_as_kometa_does(plex_server, tmp_path):
+    # Plex titles a language in itself ("Français"); Kometa uses TMDb's English name for the key.
+    fake, server = plex_server
+    fake.TAGS["1"]["audioLanguage"] = [{"key": "en", "title": "English"}, {"key": "fr", "title": "Français"}, {"key": "ko", "title": "한국어"}]
+    fake.TAG_COUNTS["1"][("audioLanguage", "ko")] = 2
+    counted = await count(server, "1", "movie", _audio_default(tmp_path), NAMES)
+    cat = next(c for c in counted if c.name == "audio_language")
+    assert cat.count_error is None
+    assert {e.key: e.kometa_name for e in cat.collections} == {"en": "English Audio", "fr": "French Audio", "ko": "Korean Audio"}
+    assert {e.key: e.title for e in cat.collections}["fr"] == "French Audio"
+
+
+@pytest.mark.anyio
+async def test_count_falls_back_to_plex_title_for_keys_tmdb_lacks(plex_server, tmp_path):
+    fake, server = plex_server
+    fake.TAGS["1"]["audioLanguage"] = [{"key": "fr", "title": "Français"}]
+    counted = await count(server, "1", "movie", _audio_default(tmp_path), {"en": "English"})
+    cat = next(c for c in counted if c.name == "audio_language")
+    assert [e.kometa_name for e in cat.collections] == ["Français Audio"]
+
+
+@pytest.mark.anyio
+async def test_count_without_language_names_says_why(plex_server, tmp_path):
+    fake, server = plex_server
+    counted = await count(server, "1", "movie", _audio_default(tmp_path), None)
+    cat = next(c for c in counted if c.name == "audio_language")
+    assert cat.collections == []
+    assert "TMDb" in (cat.count_error or "")
+
+
+@pytest.mark.anyio
+async def test_count_reads_show_languages_from_episodes(plex_server, tmp_path):
+    # In a show library Kometa lists and filters these by episode (episode.audioLanguage).
+    fake, server = plex_server
+    fake.TAGS["2"]["audioLanguage"] = [{"key": "en", "title": "English"}, {"key": "fr", "title": "Français"}]
+    fake.TAG_COUNTS["2"][("episode.audioLanguage", "en")] = 4
+    fake.TAG_COUNTS["2"][("episode.audioLanguage", "fr")] = 1
+    counted = await count(server, "2", "show", _audio_default(tmp_path), NAMES)
+    cat = next(c for c in counted if c.name == "audio_language")
+    assert {e.kometa_name: e.items for e in cat.collections} == {"English Audio": 4, "French Audio": 1}
+    listing = [r for r in fake.requests if r.url.path.endswith("/library/sections/2/audioLanguage")]
+    assert listing and all(r.url.params.get("type") == "4" for r in listing)
+    counts = [r for r in fake.requests if r.url.path.endswith("/library/sections/2/all")]
+    assert counts and all("episode.audioLanguage" in r.url.params for r in counts)

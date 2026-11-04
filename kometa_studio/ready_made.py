@@ -12,6 +12,7 @@ from typing import Any
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
+from kometa_studio import tmdb_languages
 from kometa_studio.kometa_files import _banner, _read
 from kometa_studio.plex_library import PlexServer
 
@@ -34,6 +35,7 @@ class Category:
     listable: bool  # False when Studio can't list its collections yet
     reason: str | None  # why not, in plain words for the UI, e.g. "Kometa picks these from TMDb at build time"
     collections: list[Entry]
+    count_error: str | None = None  # set by count(): why the counted list couldn't be made, shown instead of it
 
 
 @dataclass(frozen=True)
@@ -94,6 +96,15 @@ DYNAMIC_TYPE_SOURCES: dict[str, DynamicTypeSource] = {
     "album_style": DynamicTypeSource(source="external", listable=False, reason="Music collections are not supported in phase 1"),
     "track_mood": DynamicTypeSource(source="external", listable=False, reason="Music collections are not supported in phase 1"),
 }
+
+
+# Kometa reads these from episodes in a show library (meta.py: library.get_tags(f"episode.{search_tag}")).
+EPISODE_TYPES = {"resolution", "audio_language", "subtitle_language"}
+LANGUAGE_TYPES = {"audio_language", "subtitle_language"}
+NO_LANGUAGE_NAMES = (
+    "Kometa names these collections with TMDb's language names, and Studio couldn't get them. "
+    "Check the TMDb key in Settings → Connect, then count again."
+)
 
 
 def _yaml() -> YAML:
@@ -462,8 +473,18 @@ def categories(kometa_root: Path, library_type: str) -> list[Category]:
     return result
 
 
-async def count(plex: PlexServer, library_key: str, library_type: str, kometa_root: Path) -> list[Category]:
-    """Categories with dynamic collections expanded and counted against Plex."""
+async def count(
+    plex: PlexServer,
+    library_key: str,
+    library_type: str,
+    kometa_root: Path,
+    languages: dict[str, str] | None = None,
+) -> list[Category]:
+    """Categories with dynamic collections expanded and counted against Plex.
+
+    ``languages`` is TMDb's English names (``tmdb_languages.english_names``); without it, language categories
+    get a ``count_error`` instead of titles that wouldn't match Kometa's.
+    """
     library_type = library_type.lower()
     categories_list = categories(kometa_root, library_type)
     defaults_folder = kometa_root / "defaults" if (kometa_root / "defaults").is_dir() else kometa_root
@@ -538,22 +559,29 @@ async def count(plex: PlexServer, library_key: str, library_type: str, kometa_ro
                     item_query_tags[dec] = "year"
             else:
                 tag_name = type_info.tag or auto_type
-                raw_tags = await plex.tag_values(library_key, tag_name, library_type)
+                episode = library_type == "show" and auto_type in EPISODE_TYPES
+                raw_tags = await plex.tag_values(library_key, tag_name, library_type, episode=episode)
+                query_name = f"episode.{tag_name}" if episode else tag_name
 
-                if auto_type in ("subtitle_language", "audio_language"):
+                if auto_type in LANGUAGE_TYPES:
+                    if languages is None:
+                        cat.count_error = NO_LANGUAGE_NAMES
+                        continue
+                    # meta.py: final_title is TMDb's english_name for the key, else Plex's title.
                     for title_val, key_val in raw_tags:
                         k = str(key_val)
-                        all_keys[k] = title_val
-                        if title_val not in exclude and k not in exclude:
-                            auto_list[k] = title_val
-                        item_query_tags[k] = tag_name
+                        final_title = tmdb_languages.kometa_title(languages, k, str(title_val))
+                        all_keys[k] = final_title
+                        if all(x not in exclude for x in (final_title, str(title_val), k)):
+                            auto_list[k] = final_title
+                        item_query_tags[k] = query_name
                 elif auto_type in ("resolution", "decade"):
                     for title_val, key_val in raw_tags:
                         k = str(key_val)
                         all_keys[k] = title_val
                         if title_val not in exclude and k not in exclude:
                             auto_list[k] = title_val
-                        item_query_tags[k] = tag_name
+                        item_query_tags[k] = query_name
                 else:
                     for title_val, key_val in raw_tags:
                         t = str(title_val)
@@ -570,7 +598,7 @@ async def count(plex: PlexServer, library_key: str, library_type: str, kometa_ro
                             if add_key not in auto_list:
                                 auto_list[add_key] = add_key
                             addons[add_key] = final_keys
-                            item_query_tags[add_key] = tag_name
+                            item_query_tags[add_key] = query_name
 
             if include:
                 auto_list = {k: v for k, v in auto_list.items() if k in include}
