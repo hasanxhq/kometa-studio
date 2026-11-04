@@ -409,6 +409,36 @@ async def _remove_plan(
     return planned
 
 
+async def _not_taken(
+    server: PlexServer | None,
+    library_key: str | None,
+    add_entries: list[tuple[col.Ref, ready_made.Entry]],
+    maintainerr_titles: set[str],
+) -> tuple[list[tuple[col.Ref, ready_made.Entry]], list[dict]]:
+    """The picks safe to build, and the ones that aren't, with why."""
+    if not add_entries:
+        return [], []
+    if server is None or library_key is None:
+        reason = "Plex can't be reached, so Studio can't check the name is free"
+        return [], [{"category": ref.category, "title": entry.title, "reason": reason} for ref, entry in add_entries]
+    try:
+        studio = {c.title.casefold() for c in await server.labelled_collections(library_key, STUDIO_LABEL)}
+        everyone = {c.title.casefold() for c in await server.collections(library_key)}
+    except PlexUnavailable as error:
+        reason = f"Plex can't be checked ({error})"
+        return [], [{"category": ref.category, "title": entry.title, "reason": reason} for ref, entry in add_entries]
+    kept, blocked = [], []
+    for ref, entry in add_entries:
+        title = entry.title.casefold()
+        if title in maintainerr_titles:
+            blocked.append({"category": ref.category, "title": entry.title, "reason": "Maintainerr has a collection with this name"})
+        elif title in everyone and title not in studio:
+            blocked.append({"category": ref.category, "title": entry.title, "reason": "a collection with this name that Studio didn't make is already in Plex"})
+        else:
+            kept.append((ref, entry))
+    return kept, blocked
+
+
 @router.post("/build")
 async def build(
     body: BuildIn,
@@ -496,6 +526,9 @@ async def build(
         server = None
 
     remove_plan = await _remove_plan(server, library_key, remove_rows, maintainerr_titles)
+    # Kometa takes over any collection with the same title, so a pick whose title is already used by a
+    # collection Studio didn't make is never built: the label would land on someone else's collection.
+    add_entries, blocked = await _not_taken(server, library_key, add_entries, maintainerr_titles)
 
     # Run plan for adds.
     rows_by_cat = {name: col.rows(db, body.library, name) for name in {r.category for r, _ in add_entries}}
@@ -523,6 +556,7 @@ async def build(
         "build": [{"category": ref.category, "title": entry.title} for ref, entry in add_entries],
         "remove": remove_plan,
         "run": run_plan,
+        "blocked": blocked,
     }
     if body.dry_run:
         return plan
