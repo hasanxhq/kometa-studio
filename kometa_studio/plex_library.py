@@ -256,6 +256,32 @@ class PlexServer:
         items = [_item(m) for m in container.get("Metadata") or []]
         return items, int(container.get("totalSize", container.get("size", len(items))) or 0)
 
+    async def all_keys(self, library_key: str, library_type: str, page: int = 500) -> list[tuple[str, str]]:
+        """Every movie or show as (ratingKey, updatedAt), in the order Kometa's ``get_all`` reads them (the section's own order)."""
+        plex_type = {"movie": "1", "show": "2"}[library_type]
+        found: list[tuple[str, str]] = []
+        start = 0
+        while True:
+            container = await self._get(
+                f"/library/sections/{library_key}/all",
+                {"type": plex_type, "includeGuids": "1", "X-Plex-Container-Start": str(start), "X-Plex-Container-Size": str(page)},
+            )
+            batch = container.get("Metadata", [])
+            found += [(str(m["ratingKey"]), str(m.get("updatedAt", ""))) for m in batch]
+            total = int(container.get("totalSize", container.get("size", 0)) or 0)
+            start += len(batch)
+            if not batch or start >= total:
+                return found
+
+    async def credits(self, rating_key: str) -> dict[str, list[tuple[str, str]]]:
+        """A title's people as Kometa reads them after reloading it: role (actors), director, writer, producer, each [(id, name)] in Plex's order."""
+        container = await self._get(f"/library/metadata/{rating_key}")
+        item = (container.get("Metadata") or [{}])[0]
+        return {
+            kind: [(str(p.get("id", p.get("tag", ""))), str(p.get("tag", ""))) for p in item.get(field, []) if p.get("tag")]
+            for kind, field in (("actor", "Role"), ("director", "Director"), ("writer", "Writer"), ("producer", "Producer"))
+        }
+
     async def image(self, path: str, width: int, height: int) -> tuple[bytes, str]:
         """A poster, resized by Plex. ``path`` must be one Plex gave Studio (IMAGE_PATH)."""
         if not IMAGE_PATH.match(path):

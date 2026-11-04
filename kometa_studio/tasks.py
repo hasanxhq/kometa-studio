@@ -156,7 +156,7 @@ class Tasks:
 
     async def _ready_made_counts(self, options: dict) -> str:
         from . import collections as col
-        from . import ready_made, tmdb_languages
+        from . import plex_people, ready_made, tmdb_languages
         from .kometa_config import read_plex
         from .kometa_files import ConfigReader
         from .plex_library import PlexServer, PlexUnavailable
@@ -172,6 +172,7 @@ class Tasks:
         if not current.url or not current.token:
             raise RuntimeError("Kometa isn't connected to Plex yet. Connect it in Settings → Plex.")
         server = PlexServer(self.http, current.url, current.token)
+        people = plex_people.PeopleScan(server, self.settings.data_dir)
         try:
             plex_libs = {lib.title.casefold(): lib for lib in await server.libraries()}
         except PlexUnavailable as error:
@@ -191,7 +192,7 @@ class Tasks:
                 continue
             self.notes["ready_made_counts"] = f"Counting in {library.name}"
             try:
-                categories = await ready_made.count(server, plex.key, plex.type, root, languages)
+                categories = await ready_made.count(server, plex.key, plex.type, root, languages, people)
             except PlexUnavailable as error:
                 raise RuntimeError(str(error)) from None
             with self.db:
