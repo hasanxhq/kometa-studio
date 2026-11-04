@@ -1,11 +1,12 @@
 // Studio-built smart collections for one library.
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
 
 import { ApiError, api } from "../api";
 import { builderApi, type BuiltCollection } from "../builderApi";
 import { PlexPoster } from "../components/PlexPoster";
+import { RetryButton } from "../components/RetryButton";
 
 function statusLine(collection: BuiltCollection): { text: string; tone: "muted" | "err" } {
   switch (collection.state) {
@@ -28,6 +29,7 @@ function statusLine(collection: BuiltCollection): { text: string; tone: "muted" 
 
 function CollectionCard({ collection }: { collection: BuiltCollection }) {
   const status = statusLine(collection);
+  const queryClient = useQueryClient();
   return (
     <li aria-label={collection.title} className="relative flex flex-col overflow-hidden rounded-card border border-border bg-surface">
       <Link to={`/collections/${collection.id}`} className="flex min-h-11 grow flex-col text-left hover:bg-surface-2/40">
@@ -41,6 +43,18 @@ function CollectionCard({ collection }: { collection: BuiltCollection }) {
         <span className="px-3.5 pt-3 font-display text-base leading-snug font-semibold">{collection.title}</span>
         <span className={`px-3.5 pt-1 pb-3.5 text-[13px] ${status.tone === "err" ? "text-err" : "text-muted"}`}>{status.text}</span>
       </Link>
+      {collection.state === "failed" && (
+        <div className="px-3.5 pb-3.5">
+          <RetryButton
+            title={collection.title}
+            run={async () => {
+              await builderApi.retry(collection.id);
+              return null;
+            }}
+            onDone={() => queryClient.invalidateQueries({ queryKey: ["collections", collection.library] })}
+          />
+        </div>
+      )}
     </li>
   );
 }
