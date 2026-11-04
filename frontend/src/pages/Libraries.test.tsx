@@ -160,13 +160,11 @@ describe("A library", () => {
     expect(screen.getByText("Spy Kids", { selector: "span.font-semibold" })).toBeInTheDocument();
   });
 
-  it("shows defaults with their template variables, and operations", async () => {
+  it("falls back from an old Defaults tab URL, and shows operations", async () => {
     mockApi(api);
     renderAt("/libraries/Movies?tab=defaults");
-    const basic = await screen.findByRole("listitem", { name: "Basic Charts Collections" }); // in use, even with no catalogue to show the rest
-    expect(await screen.findByRole("alert")).toBeInTheDocument();
-    fireEvent.click(within(basic).getByRole("button", { name: /^Customize/ }));
-    expect(screen.getByLabelText("What this writes to config.yml")).toHaveTextContent("sep_style: purple");
+    expect(await screen.findByRole("tab", { name: "Collections" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.queryByRole("tab", { name: "Defaults" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Operations" }));
     await waitFor(() => expect(screen.getByText("mass_genre_update")).toBeInTheDocument());

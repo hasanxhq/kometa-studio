@@ -49,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- The Defaults gallery (Defaults in the sidebar and a library's Defaults tab). Ready-made replaces it for collections, and the overlay designer for overlays.
 - The "← Libraries" link on a library's page; the sidebar already goes there.
 
 ## [0.0.1-alpha.1] - 2026-10-31

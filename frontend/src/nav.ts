@@ -22,14 +22,13 @@ export const sections: Section[] = [
       {
         label: "Libraries",
         path: "/libraries",
-        summary: "One card per Plex library, with its collections, overlays, defaults and operations.",
+        summary: "One card per Plex library, with its collections, overlays and operations.",
       },
       {
         label: "Ready-made",
         path: "/ready-made",
         summary: "Kometa's ready-made collections as categories: pick the ones you want and build them in one run.",
       },
-      { label: "Defaults", path: "/defaults", summary: "Kometa's ready-made collections and overlays, turned on per library and customized without YAML." },
       { label: "Overlays", path: "/overlays", summary: "Kometa's overlays per library: the designer, what draws them, when, and turning them off and on." },
       { label: "Playlists", path: "/playlists", summary: "Kometa's playlists, from config.yml's playlist_files." },
     ],

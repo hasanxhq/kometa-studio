@@ -16,7 +16,7 @@ import { shortTitle } from "../defaults";
 import { useLibraryType } from "../libraries";
 import { layerBoxes, layerText, resolveLayout, whereItIs, type Box } from "../overlayLayout";
 import { defaultVariablesSchema, loadSchema, type JsonSchema } from "../yaml/schema";
-import { VariablesEditor, useSave, type Featured, type Values } from "./LibraryDefaults";
+import { VariablesEditor, useSave, type Featured, type Values } from "../components/DefaultVariables";
 
 // Read by the controls above the variables, so they stay out of "More variables".
 const PLACEMENT = ["horizontal_align", "vertical_align", "horizontal_offset", "vertical_offset", "horizontal_position", "vertical_position"];
