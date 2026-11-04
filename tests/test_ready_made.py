@@ -45,8 +45,13 @@ def test_type_to_source_table_completeness():
         assert DYNAMIC_TYPE_SOURCES[t].source == "people"
         assert DYNAMIC_TYPE_SOURCES[t].listable is True
 
-    # Unlistable / external
+    # TMDb: every title looked up, as Kometa does
     for t in ("tmdb_collection", "origin_country", "original_language"):
+        assert DYNAMIC_TYPE_SOURCES[t].source == "tmdb"
+        assert DYNAMIC_TYPE_SOURCES[t].listable is True
+
+    # Unlistable / external
+    for t in ("tmdb_popular_people", "letterboxd_user_lists", "edition", "episode_year"):
         assert DYNAMIC_TYPE_SOURCES[t].listable is False
         assert bool(DYNAMIC_TYPE_SOURCES[t].reason)
 
@@ -384,3 +389,77 @@ async def test_count_without_a_people_scan_says_why(plex_server, tmp_path):
     counted = await count(server, "1", "movie", tmp_path, None, None)
     director = next(c for c in counted if c.name == "director")
     assert director.collections == [] and "credits" in (director.count_error or "")
+
+
+FRANCHISE_DEFAULT = """dynamic_collections:
+  TMDb Collections:
+    type: tmdb_collection
+    remove_suffix: "Collection"
+    custom_keys: false
+    addons:
+      8091:
+        - 135416
+    title_override:
+      10: "Star Wars: Skywalker Saga"
+"""
+SHOW_COUNTRY_DEFAULT = """dynamic_collections:
+  Country:
+    type: origin_country
+    title_format: <<key_name>>
+    include:
+      - gb
+      - kr
+"""
+
+
+class StubLookup:
+    def __init__(self, found, countries=None, languages=None):
+        self.found, self.countries, self.languages = found, countries, languages
+
+    async def items(self, library_key, library_type):
+        return self.found
+
+
+def _default(root: Path, folder: str, name: str, text: str) -> Path:
+    path = root / "defaults" / folder / f"{name}.yml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return root
+
+
+@pytest.mark.anyio
+async def test_count_lists_franchises_as_kometa_does(plex_server, tmp_path):
+    fake, server = plex_server
+    movie = lambda cid, name: {"collection": (cid, name), "countries": [], "language": "en"}  # noqa: E731
+    found = [
+        ("1", movie("8091", "Alien Collection")), ("2", movie("8091", "Alien Collection")),
+        ("3", movie("135416", "Prometheus Collection")),  # an addon of Alien: counted there, not on its own
+        ("4", movie("10", "Star Wars Collection")), ("5", movie("10", "Star Wars Collection")),
+        ("6", movie("99", "Lonely Collection")),  # one title: minimum_items 2 keeps it out
+        ("7", {"collection": None, "countries": [], "language": "en"}),
+    ]
+    counted = await count(server, "1", "movie", _default(tmp_path, "movie", "franchise", FRANCHISE_DEFAULT), tmdb=StubLookup(found))
+    franchise = next(c for c in counted if c.name == "franchise")
+    assert [(e.key, e.kometa_name, e.items) for e in franchise.collections] == [
+        ("8091", "Alien", 3),
+        ("10", "Star Wars: Skywalker Saga", 2),
+    ]
+
+
+@pytest.mark.anyio
+async def test_count_names_show_countries_with_tmdbs_english_names(plex_server, tmp_path):
+    fake, server = plex_server
+    show = lambda *codes: {"collection": None, "countries": list(codes), "language": "en"}  # noqa: E731
+    found = [("1", show("gb")), ("2", show("kr")), ("3", show("kr", "us")), ("4", show("us"))]
+    lookup = StubLookup(found, countries={"gb": "United Kingdom", "kr": "South Korea", "us": "United States of America"})
+    counted = await count(server, "2", "show", _default(tmp_path, "show", "country", SHOW_COUNTRY_DEFAULT), tmdb=lookup)
+    country = next(c for c in counted if c.name == "country")
+    assert [(e.key, e.kometa_name, e.items) for e in country.collections] == [("gb", "United Kingdom", 1), ("kr", "South Korea", 2)]
+
+
+@pytest.mark.anyio
+async def test_count_without_tmdb_says_why(plex_server, tmp_path):
+    fake, server = plex_server
+    counted = await count(server, "1", "movie", _default(tmp_path, "movie", "franchise", FRANCHISE_DEFAULT), tmdb=None)
+    franchise = next(c for c in counted if c.name == "franchise")
+    assert franchise.collections == [] and "TMDb" in (franchise.count_error or "")

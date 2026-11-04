@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Ready-made lists Franchise (TMDb collections) in movie libraries, and Country, Region and Continent in TV libraries. Kometa finds these by looking every title up on TMDb, and Studio does the same with your TMDb key. It keeps TMDb's answers for 30 days, so later counts are quick. A franchise needs at least two titles in the library, as in Kometa.
+
 - Ready-made lists Top Actors, Top Directors, Top Writers and Top Producers: the people Kometa would make collections for in each library, ranked the way Kometa ranks them from Plex's credits, with how many titles each one has. The first count reads every title's credits from Plex, and later counts read only titles Plex has changed.
 
 - **Ready-made** in the sidebar (Libraries, before Defaults): Kometa's collection defaults as categories. Open a category, pick the collections you want (or mark built ones for removal), then **Build** once from the bar at the bottom. Build writes Studio's generated files, queues one Kometa run, and Remove deletes only `Studio`-labelled collections (never Maintainerr's). A counting job fills per-library preview counts (after Plex connects, after runs, and daily). Covers and library picker match the Defaults gallery.
