@@ -390,7 +390,15 @@ async def customise_ready_made(library: str, category: str, block: str, key: str
     if field is None:
         raise HTTPException(422, {"message": "This ready-made comes from a list, which the builder can't use yet"})
     addons = {str(k): [str(v) for v in (vs if isinstance(vs, list) else [vs])] for k, vs in (attrs.get("addons") or {}).items()}
-    values = [key] + [v for v in addons.get(key, []) if v != key]
+    extra = [v for v in addons.get(key, []) if v != key]
+    if extra and field.plex_tag:
+        # Kometa uses only the add-ons the library has (meta.py: `a in all_keys`).
+        try:
+            have = {name for pair in await context.server.tag_values(context.section, field.plex_tag, context.library_type, episode=field.episode) for name in pair}
+        except PlexUnavailable as error:
+            raise HTTPException(503, f"Plex can't be reached: {error}") from None
+        extra = [v for v in extra if v in have]
+    values = [key] + extra
     cached = col.counts(db, library).get(category) or {}
     entry = next((e for e in (cached.get("data") or {}).get("entries", []) if str(e.get("block")) == block and str(e.get("key")) == key), None)
     title = str(entry.get("title")) if entry else key

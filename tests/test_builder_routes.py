@@ -123,7 +123,8 @@ def test_delete_never_touches_a_collection_studio_didnt_make(root):
 
 
 def test_a_ready_made_plex_collection_opens_in_the_builder(root):
-    with make_client(root)[0] as client:
+    client, plex, _ = make_client(root)
+    with client:
         wait_for_task(client, "ready_made_counts")
         detail = client.get("/api/v1/ready-made/libraries/Movies/categories/genre").json()
         assert detail["customisable"] is True
@@ -138,5 +139,19 @@ def test_a_ready_made_plex_collection_opens_in_the_builder(root):
         rating = client.get("/api/v1/ready-made/libraries/Movies/categories/content_rating/customise", params={"block": "Ratings", "key": "G"})
         assert rating.status_code == 200, rating.text
         assert rating.json()["filters"] == {"match": "any", "rules": [{"field": "content_rating", "modifier": "", "value": ["G", "TV-G"]}]}
+        # An add-on the library doesn't have is left out, as Kometa does.
+        plex.TAGS["1"]["contentRating"] = [t for t in plex.TAGS["1"]["contentRating"] if t["key"] != "TV-G"]
+        alone = client.get("/api/v1/ready-made/libraries/Movies/categories/content_rating/customise", params={"block": "Ratings", "key": "G"}).json()
+        assert alone["filters"]["rules"][0]["value"] == ["G"]
         chart = client.get("/api/v1/ready-made/libraries/Movies/categories/basic/customise", params={"block": "", "key": "Newly Released"})
         assert chart.status_code == 422
+
+
+def test_preview_keeps_plexs_or_grouping_in_order(root):
+    # httpx regroups repeated keys, which would turn push=1&genre=A&or=1&genre=B&pop=1 into an AND.
+    client, plex, _ = make_client(root)
+    with client:
+        spec = {"match": "any", "rules": [{"field": "genre", "modifier": "", "value": ["Action"]}, {"field": "genre", "modifier": "", "value": ["Drama"]}]}
+        assert client.post("/api/v1/builder/preview", json={"library": "Movies", "filters": spec}).json()["problems"] == []
+        asked = [r for r in plex.requests if r.url.path == "/library/sections/1/all" and r.url.params.get("X-Plex-Container-Size") == "30"]
+        assert "push=1&genre=Action&or=1&genre=Drama&pop=1" in str(asked[-1].url)

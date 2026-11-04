@@ -10,6 +10,8 @@ import asyncio
 import re
 from dataclasses import dataclass, field
 
+from urllib.parse import urlencode
+
 import httpx
 
 KOMETA_LABELS = ("Kometa", "PMM")
@@ -292,8 +294,10 @@ class PlexServer:
 
     async def query(self, library_key: str, params: list[tuple[str, str]], size: int = 30) -> tuple[list[PlexItem], int]:
         """The first ``size`` titles for a filter query on /library/sections/<key>/all (as a smart collection would hold them), and how many in all."""
-        query = [*params, ("X-Plex-Container-Start", "0"), ("X-Plex-Container-Size", str(size))]
-        container = await self._get(f"/library/sections/{library_key}/all", query)  # type: ignore[arg-type]
+        # Plex's filter grammar is order-sensitive (push=1&genre=1&or=1&genre=2&pop=1), and httpx regroups repeated
+        # keys when given a list, which turns that OR into an AND. So the query string is built here, in order.
+        query = urlencode([*params, ("X-Plex-Container-Start", "0"), ("X-Plex-Container-Size", str(size))])
+        container = await self._get(f"/library/sections/{library_key}/all?{query}")
         items = [_item(m) for m in container.get("Metadata") or []]
         return items, int(container.get("totalSize", container.get("size", len(items))) or 0)
 
