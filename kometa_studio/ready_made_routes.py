@@ -546,7 +546,7 @@ async def build(
                 col.mark_present(db, body.library, picks)
             col.mark_absent(db, body.library, remove_refs)
             desired = col.desired(db, body.library)
-        await studio_files.write_library(
+        written = await studio_files.write_library(
             writer, root, body.library, library_type, desired, all_libraries, "Ready-made collections"
         )
     except SaveRefused as refused:
@@ -557,6 +557,9 @@ async def build(
         with db:
             _restore_rows(db, body.library, snapshot)
         raise
+
+    with db:
+        studio_files.record(db, written)
 
     removed: list[str] = []
     kept: list[dict] = []

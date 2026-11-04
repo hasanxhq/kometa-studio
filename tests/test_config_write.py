@@ -327,3 +327,30 @@ def test_sandbox_links_unedited_files_instead_of_copying(tmp_path, kometa):
     structure = next(c for c in calls(kometa) if "--validate-dir" not in c["args"])
     assert set(structure["files"]) >= {"config.yml", "Movies.yml"}
     assert os.path.exists(big / "poster.png")  # untouched
+
+
+def test_removing_a_file_is_backed_up_and_restorable(tmp_path, kometa):
+    import asyncio
+
+    from kometa_studio.config_write import ConfigWriter, Edit, SaveRefused, file_hash
+
+    settings = Settings(
+        data_dir=kometa / "config" / ".studio",
+        kometa_config=kometa / "config" / "config.yml",
+        kometa_entry=FAKE_KOMETA,
+        kometa_python=Path(sys.executable),
+    )
+    writer = ConfigWriter(settings)
+    old = kometa / "config" / "Old.yml"
+    old.write_text("collections: {}\n")
+    with pytest.raises(SaveRefused):  # changed since Studio looked
+        asyncio.run(writer.save([Edit("Old.yml", None, file_hash(b"something else"))], "remove"))
+    with pytest.raises(SaveRefused):  # config.yml is never removed
+        asyncio.run(writer.save([Edit("config.yml", None, file_hash((kometa / "config" / "config.yml").read_bytes()))], "remove"))
+    assert old.is_file()
+
+    result = asyncio.run(writer.save([Edit("Old.yml", None, file_hash(old.read_bytes()))], "Removed Old.yml"))
+    assert not old.exists()
+    assert result["removed"] == ["Old.yml"] and result["files"] == []
+    restored = asyncio.run(writer.restore(result["backup"]))
+    assert restored["restored"] == ["Old.yml"] and old.read_text() == "collections: {}\n"

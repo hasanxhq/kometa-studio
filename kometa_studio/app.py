@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .arr import Arr
+from .generated_sync import GeneratedFiles
 from .maintainerr import Maintainerr
 from . import network
 from .arr_routes import router as arr_router
@@ -144,6 +145,8 @@ def create_app(
         runner.extra_env = lambda: network.kometa_env(app.state.db, app.state.secrets, settings.data_dir)
         if app.state.writer is not None:
             app.state.writer.extra_env = runner.extra_env
+        # First, so Kometa and the other hooks see Studio's own generated files, never a hand-edited copy.
+        runner.hooks.append(GeneratedFiles(app.state.db, settings, app.state.writer, app.state.http))
         runner.hooks.append(maintainerr)
         runner.hooks.append(WantedRecorder(app.state.db, runner, settings.kometa_config, kometa_root))
         runner.hooks.append(ReadyMadeRecorder(app.state.db, runner, settings, app.state.http, tasks))

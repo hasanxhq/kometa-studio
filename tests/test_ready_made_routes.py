@@ -379,6 +379,57 @@ def test_remove_keeps_everything_while_plex_cant_be_reached(root):
         assert [r["desired"] for r in col.rows(db, "Movies")] == [0]  # kept, marked for removal, for a later try
 
 
+def test_every_run_puts_studios_generated_files_back_without_asking(root):
+    # A fully managed install: hand edits, a deleted file and a dropped config.yml entry are undone before Kometa runs.
+    client, _, _ = make_client(root)
+    with client:
+        wait_for_flags(client)
+        add = {"library": "Movies", "add": [{"category": "basic", "block": "", "key": "Newly Released"}], "remove": []}
+        first = client.post("/api/v1/ready-made/build", json=add).json()
+        wait_for_run(client, first["run_id"])
+        gallery = client.get("/api/v1/ready-made/libraries/Movies").json()
+        assert "hand_edited" not in gallery  # no warnings: Studio just corrects it
+
+        studio = root / "config" / "studio" / "Movies" / "basic.yml"
+        config = root / "config" / "config.yml"
+        original, original_config = studio.read_text(), config.read_text()
+        studio.write_text(original + "# changed by hand\n")
+        run = wait_for_run(client, client.post("/api/v1/runs", json={"mode": "operations"}).json()["id"])
+        assert studio.read_text() == original
+        log = client.get(f"/api/v1/runs/{run['id']}/log").text
+        assert "studio/Movies/basic.yml had been changed by hand: put Studio's version back" in log
+        assert not any(c["source"] == "generated_files" for c in client.get("/api/v1/status").json()["health"])
+
+        # Deleted, and its entry taken out of config.yml: both come back on the next run.
+        studio.unlink()
+        config.write_text(original_config.replace("studio/Movies/basic.yml", "studio/Movies/gone.yml"))
+        run = wait_for_run(client, client.post("/api/v1/runs", json={"mode": "operations"}).json()["id"])
+        assert studio.read_text() == original
+        assert "studio/Movies/basic.yml" in config.read_text()
+        assert "brought Studio's generated files for Movies up to date" in client.get(f"/api/v1/runs/{run['id']}/log").text
+
+        # Nothing to put right: no save, nothing in the log.
+        backups = len(client.get("/api/v1/backups").json()["backups"])
+        run = wait_for_run(client, client.post("/api/v1/runs", json={"mode": "operations"}).json()["id"])
+        assert len(client.get("/api/v1/backups").json()["backups"]) == backups
+        assert "generated files" not in client.get(f"/api/v1/runs/{run['id']}/log").text
+
+
+def test_removing_a_categorys_last_pick_removes_its_file(root):
+    client, _, _ = make_client(root)
+    with client:
+        wait_for_flags(client)
+        ref = {"category": "basic", "block": "", "key": "Newly Released"}
+        built = client.post("/api/v1/ready-made/build", json={"library": "Movies", "add": [ref], "remove": []}).json()
+        wait_for_run(client, built["run_id"])
+        studio = root / "config" / "studio" / "Movies" / "basic.yml"
+        assert studio.is_file()
+        client.post("/api/v1/ready-made/build", json={"library": "Movies", "add": [], "remove": [ref]}).json()
+        assert not studio.exists()
+        assert "studio/Movies/basic" not in (root / "config" / "config.yml").read_text()
+        assert col.generated(client.app.state.db) == {}
+
+
 def test_a_category_the_count_couldnt_list_shows_why(root):
     # E.g. language categories when Studio couldn't get TMDb's language names.
     with make_client(root)[0] as client:
