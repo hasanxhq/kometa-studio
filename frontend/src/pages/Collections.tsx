@@ -26,6 +26,12 @@ function statusLine(collection: BuiltCollection): { text: string; tone: "muted" 
   }
 }
 
+function sourceLine(collection: BuiltCollection): string {
+  const source = collection.source ?? { kind: "filters" as const };
+  if (source.kind === "list") return source.label?.trim() || source.builder;
+  return "Smart filter";
+}
+
 function CollectionCard({ collection }: { collection: BuiltCollection }) {
   const status = statusLine(collection);
   return (
@@ -39,6 +45,7 @@ function CollectionCard({ collection }: { collection: BuiltCollection }) {
           </span>
         )}
         <span className="px-3.5 pt-3 font-display text-base leading-snug font-semibold">{collection.title}</span>
+        <span className="px-3.5 pt-1 text-[13px] text-muted">{sourceLine(collection)}</span>
         <span className={`px-3.5 pt-1 pb-3.5 text-[13px] ${status.tone === "err" ? "text-err" : "text-muted"}`}>{status.text}</span>
       </Link>
     </li>

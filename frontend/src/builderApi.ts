@@ -6,6 +6,35 @@ import { urlBase } from "./base";
 export type FilterRule = { field: string; modifier: string; value: string | number | boolean | string[] };
 export type FilterSpec = { match: "all" | "any"; rules: FilterRule[] };
 
+export type Source =
+  | { kind: "filters" }
+  | { kind: "list"; builder: string; value: string; label: string | null };
+
+export type SourceKind = {
+  builder: string;
+  label: string;
+  group: "TMDb" | "IMDb" | "Letterboxd" | "MDBList" | "Trakt";
+  input: "search" | "link" | "choice" | "count";
+  placeholder: string | null;
+  choices: { value: string; label: string }[] | null;
+  previewable: boolean;
+  available: boolean;
+  why: string | null;
+};
+
+export type SourceSearchResult = { value: string; title: string; year: number | null; poster: string | null };
+
+export type SourcePreview = {
+  previewable: boolean;
+  why: string | null;
+  total: number | null;
+  in_library: { rating_key: string; title: string; year: number | null; thumb: string | null }[];
+  in_library_count: number;
+  missing: { id: string; title: string; year: number | null; poster: string | null }[];
+  missing_count: number;
+  problems: string[];
+};
+
 export type Poster =
   | null
   | { kind: "file"; path: string }
@@ -38,6 +67,7 @@ export type BuilderPreview = {
 export type CollectionInput = {
   library: string;
   title: string;
+  source: Source;
   filters: FilterSpec;
   sort_by: string | null;
   limit: number | null;
@@ -88,6 +118,16 @@ export const builderApi = {
   values: (library: string, field: string) =>
     request<BuilderValues>("GET", `/builder/values?library=${encodeURIComponent(library)}&field=${encodeURIComponent(field)}`),
   preview: (body: { library: string; filters: FilterSpec; sort_by: string | null }) => request<BuilderPreview>("POST", "/builder/preview", body),
+  sources: (library: string) => request<{ sources: SourceKind[] }>("GET", `/builder/sources?library=${encodeURIComponent(library)}`),
+  sourceFromLink: (body: { library: string; url: string }) =>
+    request<{ builder: string; value: string; label: string | null }>("POST", "/builder/sources/link", body),
+  searchSource: (library: string, builder: string, q: string) =>
+    request<{ results: SourceSearchResult[] }>(
+      "GET",
+      `/builder/sources/search?library=${encodeURIComponent(library)}&builder=${encodeURIComponent(builder)}&q=${encodeURIComponent(q)}`,
+    ),
+  previewSource: (body: { library: string; source: { builder: string; value: string } }) =>
+    request<SourcePreview>("POST", "/builder/sources/preview", body),
   list: (library: string) => request<{ collections: BuiltCollection[] }>("GET", `/collections?library=${encodeURIComponent(library)}`),
   get: (id: number) => request<BuiltCollection>("GET", `/collections/${id}`),
   create: (body: CollectionInput) => request<BuiltCollection>("POST", "/collections", body),
