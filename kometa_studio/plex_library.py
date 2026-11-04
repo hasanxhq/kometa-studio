@@ -218,6 +218,44 @@ class PlexServer:
         if response.status_code not in (200, 204):
             raise PlexUnavailable(f"Plex answered HTTP {response.status_code} deleting {rating_key}")
 
+    async def add_label(self, rating_key: str, label: str, media: str, library_key: str | None = None) -> bool:
+        """Add a label to a movie or show, keeping its other labels. False if it already had it.
+
+        Plex's ``label[i].tag.tag`` edit sets the item's whole label list, so the labels it has are sent back with
+        the new one (as python-plexapi's ``addLabel`` does). Sending only the new one would drop the rest, such as
+        Kometa's ``Overlay`` label.
+        """
+        found = (await self._get(f"/library/metadata/{rating_key}", {"includeLabels": "1"})).get("Metadata") or []
+        if not found:
+            raise PlexNotFound(f"Plex has no item {rating_key}")
+        current = [str(tag["tag"]) for tag in found[0].get("Label") or [] if tag.get("tag")]
+        if label.casefold() in {tag.casefold() for tag in current}:
+            return False
+        section = library_key or str(found[0].get("librarySectionID", ""))
+        if not section:
+            raise PlexUnavailable(f"Could not determine library section for item {rating_key}")
+        params = {"type": "1" if media == "movie" else "2", "id": rating_key, "label.locked": "1"}
+        for i, tag in enumerate([*current, label]):
+            params[f"label[{i}].tag.tag"] = tag
+        try:
+            response = await self.client.put(
+                f"{self.url}/library/sections/{section}/all",
+                params=params,
+                headers={"Accept": "application/json", "X-Plex-Token": self.token},
+                timeout=TIMEOUT,
+            )
+        except httpx.TimeoutException:
+            raise PlexUnavailable(f"Plex didn't answer within {TIMEOUT:g} s") from None
+        except httpx.HTTPError as error:
+            raise PlexUnavailable(f"Can't reach Plex: {error}") from None
+        if response.status_code == 401:
+            raise PlexUnavailable("Plex rejected the token in config.yml. Connect again in Settings → Plex.")
+        if response.status_code == 404:
+            raise PlexNotFound(f"Plex has no section {section}")
+        if response.status_code not in (200, 204):
+            raise PlexUnavailable(f"Plex answered HTTP {response.status_code} labelling {rating_key}")
+        return True
+
     async def collection(self, rating_key: str) -> tuple[str, PlexCollection]:
         """One collection and the key of the library it's in. Managed by Kometa if it carries Kometa's label."""
         found = (await self._get(f"/library/metadata/{rating_key}")).get("Metadata") or []

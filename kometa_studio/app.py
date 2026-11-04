@@ -44,6 +44,8 @@ from .plex_routes import router as plex_router
 from .ready_made_routes import needs_count, plex_is_configured
 from .ready_made_routes import router as ready_made_router
 from .builder_routes import router as builder_router
+from .requesting import RequestService
+from .requests_routes import router as requests_router
 from .ready_made_runs import ReadyMadeRecorder
 from .runner import Runner
 from .runs_routes import router as runs_router
@@ -140,6 +142,15 @@ def create_app(
         kometa_root = settings.kometa_entry.parent if settings.kometa_entry else None
         app.state.arr = Arr(app.state.db, runner, app.state.http, app.state.secrets, settings.kometa_config, kometa_root)
         app.state.arr.start()
+        app.state.requests = RequestService(
+            app.state.db,
+            app.state.http,
+            app.state.secrets,
+            settings.kometa_config,
+            settings.data_dir,
+        )
+        app.state.requests.start()
+        app.state.arr.on_imports = app.state.requests.on_imports
         maintainerr = Maintainerr(app.state.db, app.state.http, app.state.secrets, settings.kometa_config, settings.kometa_entry.parent if settings.kometa_entry else None)
         app.state.maintainerr = maintainerr
         maintainerr.runner = runner
@@ -170,6 +181,7 @@ def create_app(
                 await probe
             await scheduler.stop()
             await tasks.stop()
+            await app.state.requests.stop()
             await app.state.arr.stop()
             await maintainerr.stop()
             await runner.stop()
@@ -204,5 +216,6 @@ def create_app(
     app.include_router(notifications_router)
     app.include_router(ready_made_router)
     app.include_router(builder_router)
+    app.include_router(requests_router)
     mount_frontend(app, static_dir)
     return app
