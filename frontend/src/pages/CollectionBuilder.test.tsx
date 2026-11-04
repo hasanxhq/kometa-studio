@@ -78,6 +78,7 @@ const sample: BuiltCollection = {
   minimum_items: 1,
   summary: "Action films",
   sort_title: "!Action",
+  poster: null,
   state: "in_plex",
   plex_items: 12,
   thumb: null,
@@ -85,6 +86,8 @@ const sample: BuiltCollection = {
   last_error: null,
   run_id: 3,
 };
+
+const KOMETA_POSTER = "https://raw.githubusercontent.com/Kometa-Team/Default-Images/master/genre/Action.jpg";
 
 function renderBuilder(path: string) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -267,6 +270,7 @@ describe("CollectionBuilder", () => {
       minimum_items: 1,
       summary: null,
       sort_title: null,
+      poster: null,
     });
     await waitFor(() => expect(router.state.location.pathname).toBe("/collections"));
     expect(router.state.location.search).toBe("?library=Movies");
@@ -339,6 +343,7 @@ describe("CollectionBuilder", () => {
       minimum_items: 1,
       summary: "From ready-made",
       sort_title: null,
+      poster: { kind: "url", url: KOMETA_POSTER },
     };
     mockApi(
       baseRoutes({
@@ -349,6 +354,63 @@ describe("CollectionBuilder", () => {
     expect(await screen.findByLabelText("Title")).toHaveValue("Action Movies");
     expect(screen.getByLabelText("Summary")).toHaveValue("From ready-made");
     expect(await screen.findByRole("checkbox", { name: "Action" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "Kometa's artwork" })).toBeChecked();
+  });
+
+  it("picks, uploads and previews a poster; Create sends it", async () => {
+    const uploaded = { kind: "file" as const, path: "studio/posters/abcd1234abcd1234.png" };
+    const calls: { route: string; body: unknown }[] = [];
+    const routes: Record<string, (body: unknown) => unknown> = {
+      "GET /auth": () => ({ allowed: true, reason: null, message: null, configured: true, signed_in: true, local: true }),
+      ...baseRoutes({
+        "POST /collections": (body) => ({
+          ...(body as CollectionInput),
+          id: 11,
+          state: "queued",
+          plex_items: null,
+          thumb: null,
+          last_built_at: null,
+          last_error: null,
+          run_id: 2,
+        }),
+      }),
+      "POST /builder/posters": () => uploaded,
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const route = `${init?.method ?? "GET"} ${String(input).replace("/api/v1", "")}`;
+      let body: unknown;
+      if (route === "POST /builder/posters") body = init?.body;
+      else if (init?.body) body = JSON.parse(String(init.body));
+      calls.push({ route, body });
+      const handler = routes[route];
+      if (!handler) return new Response(JSON.stringify({ detail: `no mock for ${route}` }), { status: 404 });
+      const result = handler(body);
+      if (result instanceof Response) return result;
+      return new Response(JSON.stringify(result), { headers: { "Content-Type": "application/json" } });
+    });
+
+    renderBuilder("/collections/new?library=Movies");
+    expect(await screen.findByRole("heading", { name: "Poster", level: 3 })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Plex's own" })).toBeChecked();
+    expect(screen.queryByRole("radio", { name: "Kometa's artwork" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Upload an image" }));
+    const file = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "poster.png", { type: "image/png" });
+    fireEvent.change(screen.getByLabelText("Upload poster"), { target: { files: [file] } });
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /builder/posters")).toBe(true));
+    expect(screen.getByLabelText("Poster preview").querySelector("img")).toHaveAttribute("src", "/api/v1/builder/posters/abcd1234abcd1234.png");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Image link" }));
+    fireEvent.change(screen.getByLabelText("Poster URL"), { target: { value: "https://example.com/p.jpg" } });
+    expect(screen.getByLabelText("Poster preview").querySelector("img")).toHaveAttribute("src", "https://example.com/p.jpg");
+
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "With Poster" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /collections")).toBe(true));
+    expect((calls.find((c) => c.route === "POST /collections")!.body as CollectionInput).poster).toEqual({
+      kind: "url",
+      url: "https://example.com/p.jpg",
+    });
   });
 
   it("shows a 422 template message and starts empty", async () => {
