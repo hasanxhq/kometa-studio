@@ -377,3 +377,45 @@ def test_remove_keeps_everything_while_plex_cant_be_reached(root):
         assert [k["title"] for k in result["kept"]] == ["Studio Chart"] and "Plex" in result["kept"][0]["reason"]
         assert plex.deletions == []
         assert [r["desired"] for r in col.rows(db, "Movies")] == [0]  # kept, marked for removal, for a later try
+
+
+def test_hand_edits_to_generated_files_are_flagged_then_replaced(root):
+    client, _, _ = make_client(root)
+    with client:
+        wait_for_flags(client)
+        add = {"library": "Movies", "add": [{"category": "basic", "block": "", "key": "Newly Released"}], "remove": []}
+        first = client.post("/api/v1/ready-made/build", json=add).json()
+        wait_for_run(client, first["run_id"])
+        assert client.get("/api/v1/ready-made/libraries/Movies").json()["hand_edited"] == []
+
+        studio = root / "config" / "studio" / "Movies" / "basic.yml"
+        original = studio.read_text()
+        studio.write_text(original + "# changed by hand\n")
+        assert client.get("/api/v1/ready-made/libraries/Movies").json()["hand_edited"] == ["studio/Movies/basic.yml"]
+        health = client.get("/api/v1/status").json()["health"]
+        check = next(c for c in health if c["source"] == "generated_files")
+        assert check["level"] == "warning" and "studio/Movies/basic.yml" in check["message"]
+        plan = client.post("/api/v1/ready-made/build", json=add | {"dry_run": True}).json()
+        assert plan["replaces_edits"] == ["studio/Movies/basic.yml"]
+
+        # The next Build puts Studio's text back and the warning goes.
+        again = client.post("/api/v1/ready-made/build", json=add).json()
+        wait_for_run(client, again["run_id"])
+        assert studio.read_text() == original
+        assert client.get("/api/v1/ready-made/libraries/Movies").json()["hand_edited"] == []
+        assert not any(c["source"] == "generated_files" for c in client.get("/api/v1/status").json()["health"])
+
+
+def test_removing_a_categorys_last_pick_removes_its_file(root):
+    client, _, _ = make_client(root)
+    with client:
+        wait_for_flags(client)
+        ref = {"category": "basic", "block": "", "key": "Newly Released"}
+        built = client.post("/api/v1/ready-made/build", json={"library": "Movies", "add": [ref], "remove": []}).json()
+        wait_for_run(client, built["run_id"])
+        studio = root / "config" / "studio" / "Movies" / "basic.yml"
+        assert studio.is_file()
+        client.post("/api/v1/ready-made/build", json={"library": "Movies", "add": [], "remove": [ref]}).json()
+        assert not studio.exists()
+        assert "studio/Movies/basic" not in (root / "config" / "config.yml").read_text()
+        assert col.generated(client.app.state.db) == {}

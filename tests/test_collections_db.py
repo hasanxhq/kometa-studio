@@ -21,14 +21,17 @@ def test_migration_on_fresh_database(tmp_path: Path):
 
 def test_migration_from_schema_9(tmp_path: Path):
     migrations = load_migrations()
-    assert migrations[-1].version == 10
     db = connect(tmp_path / "studio.db")
     apply_migrations(db, migrations[:9])
     assert schema_version(db) == 9
     assert "collections" not in table_names(db)
-    apply_migrations(db, migrations)
+    apply_migrations(db, migrations[:10])
     assert schema_version(db) == 10
     assert {"collections", "preview_counts"} <= table_names(db)
+    assert "generated_files" not in table_names(db)
+    apply_migrations(db, migrations)
+    assert schema_version(db) == len(migrations) >= 11
+    assert "generated_files" in table_names(db)
 
 
 @pytest.fixture

@@ -8,10 +8,13 @@ variable for extra labels). Saves go through ``ConfigWriter`` like any other edi
 from __future__ import annotations
 
 import re
+import sqlite3
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
+from . import collections as col
 from .collections import Ref
 from .config_sections import with_library_file, without_library_file
 from .config_write import ConfigWriter, Edit, SaveRefused, file_hash
@@ -210,6 +213,46 @@ def _studio_prefix(library: str, all_libraries: list[str]) -> str:
     return f"{STUDIO_FOLDER}/{library_folders(all_libraries)[library]}/"
 
 
+def is_generated(text: str) -> bool:
+    """True for a file Studio wrote: its header is in the first lines."""
+    return any("Written by Kometa Studio from Kometa's" in line for line in text.splitlines()[:3])
+
+
+@dataclass
+class Written:
+    saved: dict | None  # ConfigWriter.save's result; None when nothing changed
+    generated: dict[str, str] = field(default_factory=dict)  # config-relative path → sha256 of Studio's text there now
+    removed: list[str] = field(default_factory=list)  # generated files removed because their category has no picks left
+
+
+def record(db: sqlite3.Connection, written: Written) -> None:
+    """Remember what Studio wrote, so a later hand edit can be told apart (``hand_edited``)."""
+    col.record_generated(db, written.generated)
+    col.forget_generated(db, written.removed)
+
+
+def hand_edited(db: sqlite3.Connection, config_dir: Path, library: str | None = None, all_libraries: list[str] | None = None) -> list[str]:
+    """Generated files whose text isn't what Studio last wrote there (config-relative), for one library or all.
+
+    Files Studio hasn't recorded (written before it kept hashes) and files that are gone don't count.
+    """
+    prefix = f"{STUDIO_FOLDER}/"
+    if library:
+        libraries = all_libraries or []
+        prefix = _studio_prefix(library, libraries if library in libraries else [*libraries, library])
+    found = []
+    for rel, digest in sorted(col.generated(db).items()):
+        if not rel.startswith(prefix):
+            continue
+        try:
+            data = (config_dir / rel).read_bytes()
+        except OSError:
+            continue
+        if file_hash(data) != digest:
+            found.append(rel)
+    return found
+
+
 def _file_entries(text: str, library: str) -> list[str]:
     """``file:`` references currently listed under the library's ``collection_files``."""
     document, _ = _parse(text)
@@ -243,16 +286,19 @@ async def write_library(
     picks: dict[str, list[Ref]],
     all_libraries: list[str],
     reason: str,
-) -> dict | None:
+) -> Written:
     """Write every category file for ``library`` and update config.yml in one ``ConfigWriter.save``.
 
-    Returns ``writer.save``'s result, or ``None`` when nothing changed.
+    A hand-edited generated file is replaced like any other. A generated file whose category has no picks
+    left is removed (backed up first, like every save); files in the folder that Studio didn't write stay.
     """
     if library not in all_libraries:
         all_libraries = [*all_libraries, library]
     prefix = _studio_prefix(library, all_libraries)
     edits: list[Edit] = []
     active_rels: dict[str, str] = {}  # category → relative path still referenced
+    generated: dict[str, str] = {}
+    removed: list[str] = []
 
     for category, refs in sorted(picks.items()):
         if not refs:
@@ -265,6 +311,7 @@ async def write_library(
             continue
         rel = relative_path(library, category, all_libraries)
         active_rels[category] = rel
+        generated[rel] = file_hash(text.encode("utf-8"))
         path = writer.config_dir / rel
         current = path.read_bytes() if path.is_file() else None
         if current is not None and current.decode("utf-8") == text:
@@ -297,6 +344,19 @@ async def write_library(
     if new_config != config_text:
         edits.append(Edit(writer.relative(config_path), new_config, file_hash(config_path.read_bytes())))
 
+    # Generated files of categories with no picks left: config.yml no longer lists them, so they go.
+    folder = writer.config_dir / prefix
+    if folder.is_dir():
+        for path in sorted(folder.glob("*.yml")):
+            if path.stem in active_rels:
+                continue
+            data = path.read_bytes()
+            if not is_generated(data.decode("utf-8", errors="replace")):
+                continue
+            rel = writer.relative(path)
+            edits.append(Edit(rel, None, file_hash(data)))
+            removed.append(rel)
+
     if not edits:
-        return None
-    return await writer.save(edits, reason)
+        return Written(None, generated, removed)
+    return Written(await writer.save(edits, reason), generated, removed)

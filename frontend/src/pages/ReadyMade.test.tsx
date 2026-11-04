@@ -35,6 +35,7 @@ const gallery: ReadyMadeLibrary = {
   library_type: "movie",
   counted_at: new Date(Date.now() - 2 * 3600_000).toISOString(),
   counting: false,
+  hand_edited: [],
   categories: [
     summary,
     { ...summary, name: "oscars", title: "Oscars Collections", group: "award", kind: "award", count: 12, in_plex: 0, picked: 0 },
@@ -110,6 +111,14 @@ describe("Ready-made gallery", () => {
 
     expect(within(screen.getByRole("listitem", { name: "Genre Collections" })).getByText("Not counted yet")).toBeInTheDocument();
     expect(screen.getByText(/Counted 2 h ago/)).toBeInTheDocument();
+  });
+
+  it("warns when Studio's generated files were changed by hand", async () => {
+    mockApi(routes(imdbCategory(), { ...gallery, hand_edited: ["studio/Movies/genre.yml"] }));
+    renderAt("/ready-made?library=Movies");
+    const warning = await screen.findByText(/Changed by hand/);
+    expect(warning.closest("p")).toHaveTextContent("studio/Movies/genre.yml");
+    expect(warning.closest("p")).toHaveTextContent(/next Build puts its own version back/);
   });
 
   it("says Counting… when counts are still running", async () => {
@@ -245,6 +254,7 @@ describe("Ready-made Build bar", () => {
               { category: "imdb", title: "Maintainerr Watchlist", deletable: false, reason: "Maintainerr collection" },
             ],
             run: { libraries: ["Movies"], collections: ["IMDb Popular"], files: [] },
+            replaces_edits: ["studio/Movies/imdb.yml"],
           };
         }
         return {
@@ -254,6 +264,7 @@ describe("Ready-made Build bar", () => {
             { category: "imdb", title: "Maintainerr Watchlist", deletable: false, reason: "Maintainerr collection" },
           ],
           run: { libraries: ["Movies"], collections: ["IMDb Popular"], files: [] },
+          replaces_edits: ["studio/Movies/imdb.yml"],
           run_id: 77,
           removed: ["IMDb Top 250"],
           kept: [{ title: "Maintainerr Watchlist", reason: "Maintainerr collection" }],
@@ -274,6 +285,8 @@ describe("Ready-made Build bar", () => {
     expect(within(dialog).getByText("IMDb Top 250")).toBeInTheDocument();
     expect(within(dialog).getByText(/won't be deleted: Maintainerr Watchlist/)).toBeInTheDocument();
     expect(within(dialog).getByText(/Maintainerr collection/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Will replace hand edits")).toBeInTheDocument();
+    expect(within(dialog).getByText("studio/Movies/imdb.yml")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Confirm" }));
     await waitFor(() => expect(screen.getByText(/Building in/)).toBeInTheDocument());

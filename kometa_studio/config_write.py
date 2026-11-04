@@ -11,7 +11,8 @@ A save is all or nothing:
 4. Studio's own guard (``guard``: Maintainerr's collections) mustn't find a problem the files didn't have.
 5. Only then are the current versions backed up and the new ones written, atomically.
 
-Only the files that were edited are ever written.
+Only the files that were edited are ever written. An edit without text removes its file (Studio's own
+generated files only): it's backed up like any other, so restoring the backup brings it back.
 """
 
 import asyncio
@@ -44,7 +45,7 @@ def file_hash(data: bytes) -> str:
 @dataclass
 class Edit:
     path: str  # relative to the config folder
-    text: str
+    text: str | None  # None: remove the file (it must exist, unchanged since base_hash)
     base_hash: str | None  # None: a new file, which must not exist yet
 
 
@@ -155,8 +156,8 @@ class ConfigWriter:
 
     # --- Preparing a save -----------------------------------------------------------
 
-    def _prepare(self, edits: list[Edit]) -> dict[Path, str]:
-        """Check hashes, put secrets back and parse each file. Returns the new text per path."""
+    def _prepare(self, edits: list[Edit]) -> dict[Path, str | None]:
+        """Check hashes, put secrets back and parse each file. Returns the new text per path (None: remove it)."""
         if not edits:
             raise SaveRefused(422, "Nothing to save")
         prepared: dict[Path, str] = {}
@@ -171,6 +172,11 @@ class ConfigWriter:
                 raise SaveRefused(
                     409, f"{edit.path} changed on disk since you opened it. Reload it to see the new version.", path=edit.path
                 )
+            if edit.text is None:
+                if current is None or path == self.config_path.resolve():
+                    raise SaveRefused(422, f"{edit.path} can't be removed", path=edit.path)
+                prepared[path] = None
+                continue
             secrets = mask_secrets(current.decode("utf-8"))[1] if current is not None else []
             try:
                 text = unmask_secrets(edit.text, secrets)
@@ -315,15 +321,17 @@ class ConfigWriter:
             if refused.validation is not None:
                 return refused.validation
             raise
-        return await self.validate(changes)
+        return await self.validate(_written(changes))
 
     async def save(self, edits: list[Edit], reason: str) -> dict:
         async with self.lock:  # one save at a time, so hashes can't go stale between check and write
             changes = self._prepare(edits)
-            validation = await self.validate(changes)
+            # A removed file is one config.yml no longer references, so Kometa's check doesn't need to see it go.
+            written = _written(changes)
+            validation = await self.validate(written)
             if not validation.ok:
                 raise SaveRefused(422, "Kometa found problems, so nothing was saved.", validation)
-            added = self._guarded(changes)
+            added = self._guarded(written)
             if added:
                 raise SaveRefused(
                     422, "This would let Kometa touch Maintainerr's collections, so nothing was saved.", Validation(False, added, checked_by_kometa=False)
@@ -332,11 +340,15 @@ class ConfigWriter:
             self._prepare(edits)
             backup = backups.take_backup(self.backup_root, self.config_dir.resolve(), list(changes), reason)
             for path, text in changes.items():
+                if text is None:
+                    path.unlink(missing_ok=True)
+                    continue
                 path.parent.mkdir(parents=True, exist_ok=True)
                 write_atomic(path, text)
         return {
             "backup": backup.name,
-            "files": [{"path": self.relative(path), "hash": file_hash(path.read_bytes())} for path in changes],
+            "files": [{"path": self.relative(path), "hash": file_hash(path.read_bytes())} for path in written],
+            "removed": [self.relative(path) for path, text in changes.items() if text is None],
             "validation": asdict(validation),
         }
 
@@ -403,6 +415,10 @@ class ConfigWriter:
     async def full_check(self) -> Validation:
         """Tier 3: Kometa connects to Plex and every service in config.yml, and changes nothing."""
         return await self.validate({}, level="full")
+
+
+def _written(changes: dict[Path, str | None]) -> dict[Path, str]:
+    return {path: text for path, text in changes.items() if text is not None}
 
 
 def yaml_problem(text: str) -> str | None:

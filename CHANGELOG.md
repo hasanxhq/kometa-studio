@@ -36,6 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Ready-made: Studio notices when one of its generated files (`config/studio/…`) was changed by hand. Ready-made and System → Status warn about it, and Build's confirmation lists the files it will put Studio's version back into.
+- Ready-made: when a category's last collection is removed, its generated file goes too, instead of staying on disk unused. It's backed up first, like every save.
+
 - A library whose operations are a list (Kometa's way to run more than one block, each with its own schedule) was treated as having none. An import then skipped that library's operations, and its Operations tab was empty.
 
 ### Removed

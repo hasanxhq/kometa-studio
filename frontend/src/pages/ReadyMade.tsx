@@ -141,6 +141,14 @@ export function ReadyMade() {
         </label>
       </header>
 
+      {data.data && data.data.hand_edited.length > 0 && (
+        <p role="status" className="rounded-card border border-warn/40 bg-warn/10 p-3 text-sm">
+          <span className="font-semibold text-warn">Changed by hand: </span>
+          <span className="font-mono">{data.data.hand_edited.join(", ")}</span>. Studio writes these files, so the next Build puts its own
+          version back. Change these collections here instead.
+        </p>
+      )}
+
       {data.isPending ? (
         <p className="text-muted">Loading…</p>
       ) : data.isError ? (

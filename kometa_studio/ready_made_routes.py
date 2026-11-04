@@ -220,9 +220,15 @@ def _row_key(row: sqlite3.Row) -> tuple[str, str]:
     return (row["block"], row["key"])
 
 
+def _hand_edited(db: sqlite3.Connection, settings: Settings, library: str, all_libraries: list[str]) -> list[str]:
+    if settings.kometa_config is None:
+        return []
+    return studio_files.hand_edited(db, settings.kometa_config.parent, library, all_libraries)
+
+
 @router.get("/libraries/{library}")
 async def library_gallery(library: str, request: Request, db: Db, settings: AppSettings, tasks: AppTasks) -> dict:
-    lib, _ = _config_library(settings, library)
+    lib, all_libraries = _config_library(settings, library)
     library_type = await _library_type(request, settings, lib)
     root = _kometa_root(settings)
     cats = ready_made.categories(root, library_type or "movie") if root else []
@@ -240,6 +246,8 @@ async def library_gallery(library: str, request: Request, db: Db, settings: AppS
         "library_type": library_type if library_type in ("movie", "show") else None,
         "counted_at": counted_at,
         "counting": tasks.running("ready_made_counts"),
+        # Generated files someone changed by hand: the next Build replaces them.
+        "hand_edited": _hand_edited(db, settings, library, all_libraries),
         "categories": [_summary(cat, rows_by_cat.get(cat.name, []), cached.get(cat.name)) for cat in cats],
     }
 
@@ -520,6 +528,7 @@ async def build(
         "build": [{"category": ref.category, "title": entry.title} for ref, entry in add_entries],
         "remove": remove_plan,
         "run": run_plan,
+        "replaces_edits": _hand_edited(db, settings, body.library, all_libraries),
     }
     if body.dry_run:
         return plan
@@ -534,7 +543,7 @@ async def build(
                 col.mark_present(db, body.library, picks)
             col.mark_absent(db, body.library, remove_refs)
             desired = col.desired(db, body.library)
-        await studio_files.write_library(
+        written = await studio_files.write_library(
             writer, root, body.library, library_type, desired, all_libraries, "Ready-made collections"
         )
     except SaveRefused as refused:
@@ -545,6 +554,9 @@ async def build(
         with db:
             _restore_rows(db, body.library, snapshot)
         raise
+
+    with db:
+        studio_files.record(db, written)
 
     removed: list[str] = []
     kept: list[dict] = []
