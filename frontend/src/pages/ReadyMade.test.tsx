@@ -14,6 +14,8 @@ const entry = (partial: Partial<ReadyMadeEntry> & Pick<ReadyMadeEntry, "block" |
   last_built_at: null,
   last_error: null,
   build_seconds: null,
+  download_missing: false,
+  requests: null,
   ...partial,
 });
 
@@ -188,7 +190,13 @@ describe("Ready-made category picks", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Retry IMDb Popular" }));
     expect(await screen.findByText("Maintainerr has a collection with this name")).toBeInTheDocument();
     const sent = calls.find((c) => c.route === "POST /ready-made/build");
-    expect(sent?.body).toEqual({ library: "Movies", add: [{ category: "imdb", block: "collections", key: "popular" }], remove: [], dry_run: false });
+    expect(sent?.body).toEqual({
+      library: "Movies",
+      add: [{ category: "imdb", block: "collections", key: "popular" }],
+      remove: [],
+      dry_run: false,
+      download_missing: false,
+    });
   });
 
   it("notes when Kometa builds the category as a whole", async () => {
@@ -323,6 +331,40 @@ describe("Ready-made Build bar", () => {
       add: [{ category: "imdb", block: "collections", key: "popular" }],
       remove: [{ category: "imdb", block: "collections", key: "top" }],
       dry_run: false,
+      download_missing: false,
     });
+  });
+
+  it("sends download_missing from the build bar when requests are on", async () => {
+    const calls = mockApi({
+      ...routes({
+        ...imdbCategory(),
+        collections: [entry({ block: "collections", key: "popular", title: "IMDb Popular" })],
+      }),
+      "GET /requests/settings": () => ({
+        settings: {
+          enabled: true,
+          via: "arr",
+          radarr: { quality_profile: null, root_folder: null, minimum_availability: "released", search: true },
+          sonarr: { quality_profile: null, root_folder: null, monitor: "all", search: true, series_type: "standard" },
+          daily_cap: null,
+          confirm_over: 25,
+        },
+        seerr: null,
+        connected: { radarr: true, sonarr: false, seerr: false },
+      }),
+      "POST /ready-made/build": (body) => {
+        const req = body as { dry_run: boolean };
+        if (req.dry_run) return { build: [{ category: "imdb", title: "IMDb Popular" }], remove: [], run: null, blocked: [] };
+        return { build: [{ category: "imdb", title: "IMDb Popular" }], remove: [], run: null, blocked: [], run_id: 1, removed: [], kept: [] };
+      },
+    });
+    renderAt("/ready-made/imdb?library=Movies");
+    fireEvent.click(await screen.findByRole("button", { name: "IMDb Popular" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Download missing/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Build" }));
+    await screen.findByRole("dialog");
+    const dry = calls.find((c) => c.route === "POST /ready-made/build" && (c.body as { dry_run: boolean }).dry_run === true);
+    expect(dry?.body).toMatchObject({ download_missing: true });
   });
 });

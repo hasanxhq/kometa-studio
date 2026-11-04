@@ -20,11 +20,14 @@ const collection = (partial: Partial<BuiltCollection> & Pick<BuiltCollection, "i
   summary: null,
   sort_title: null,
   poster: null,
+  download_missing: false,
+  request_cap: null,
   plex_items: null,
   thumb: null,
   last_built_at: null,
   last_error: null,
   run_id: null,
+  requests: { waiting: 0, requested: 0, downloading: 0, imported: 0, failed: 0 },
   ...partial,
 });
 
@@ -113,6 +116,39 @@ describe("Collections list", () => {
     expect(within(await screen.findByRole("listitem", { name: "Action Picks" })).getByText("Smart filter")).toBeInTheDocument();
     expect(within(screen.getByRole("listitem", { name: "Die Hard" })).getByText("Die Hard Collection")).toBeInTheDocument();
     expect(within(screen.getByRole("listitem", { name: "Chart" })).getByText("imdb_chart")).toBeInTheDocument();
+  });
+
+  it("shows request counts, Request N titles, and Turn off for download_missing", async () => {
+    const calls = mockApi({
+      ...config,
+      "GET /collections?library=Movies": () => ({
+        collections: [
+          collection({
+            id: 9,
+            title: "Franchise",
+            state: "in_plex",
+            plex_items: 3,
+            download_missing: true,
+            requests: { waiting: 4, requested: 0, downloading: 2, imported: 5, failed: 1 },
+          }),
+        ],
+      }),
+      "POST /collections/9/request-missing": () => ({ requested: 4, exists: 0, failed: 0, capped: 0, skipped: 0, items: [] }),
+      "PUT /collections/9/download-missing": () => ({ download_missing: false }),
+    });
+    renderCollections("/collections?library=Movies");
+    const card = await screen.findByRole("listitem", { name: "Franchise" });
+    expect(within(card).getByText(/2 downloading/)).toBeInTheDocument();
+    expect(within(card).getByText(/5 imported/)).toBeInTheDocument();
+    expect(within(card).getByText(/1 failed/)).toHaveClass("text-err");
+    expect(within(card).getByText(/Downloads missing/)).toBeInTheDocument();
+
+    fireEvent.click(within(card).getByRole("button", { name: "Request 4 titles" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /collections/9/request-missing")).toBe(true));
+
+    fireEvent.click(within(card).getByRole("button", { name: "Turn off" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "PUT /collections/9/download-missing")).toBe(true));
+    expect(calls.find((c) => c.route === "PUT /collections/9/download-missing")!.body).toEqual({ download_missing: false });
   });
 
   it("retries a failed collection", async () => {

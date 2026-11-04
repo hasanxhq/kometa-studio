@@ -80,12 +80,15 @@ const sample: BuiltCollection = {
   summary: "Action films",
   sort_title: "!Action",
   poster: null,
+  download_missing: false,
+  request_cap: null,
   state: "in_plex",
   plex_items: 12,
   thumb: null,
   last_built_at: null,
   last_error: null,
   run_id: 3,
+  requests: { waiting: 0, requested: 0, downloading: 0, imported: 0, failed: 0 },
 };
 
 const listSample: BuiltCollection = {
@@ -101,12 +104,15 @@ const listSample: BuiltCollection = {
   summary: null,
   sort_title: null,
   poster: null,
+  download_missing: false,
+  request_cap: null,
   state: "in_plex",
   plex_items: 5,
   thumb: null,
   last_built_at: null,
   last_error: null,
   run_id: 4,
+  requests: { waiting: 0, requested: 0, downloading: 0, imported: 0, failed: 0 },
 };
 
 const sourceKinds: SourceKind[] = [
@@ -394,6 +400,9 @@ describe("CollectionBuilder", () => {
       summary: null,
       sort_title: null,
       poster: null,
+      download_missing: false,
+      request_cap: null,
+      confirm_requests: false,
     });
     await waitFor(() => expect(router.state.location.pathname).toBe("/collections"));
     expect(router.state.location.search).toBe("?library=Movies");
@@ -469,6 +478,8 @@ describe("CollectionBuilder", () => {
       summary: "From ready-made",
       sort_title: null,
       poster: { kind: "url", url: KOMETA_POSTER },
+      download_missing: false,
+      request_cap: null,
     };
     mockApi(
       baseRoutes({
@@ -708,7 +719,96 @@ describe("CollectionBuilder", () => {
       summary: null,
       sort_title: null,
       poster: null,
+      download_missing: false,
+      request_cap: null,
+      confirm_requests: false,
     });
+    await waitFor(() => expect(router.state.location.pathname).toBe("/collections"));
+  });
+
+  it("Download missing is only for list sources, and disabled when requests are off", async () => {
+    mockApi(
+      baseRoutes({
+        "GET /requests/settings": () => ({
+          settings: {
+            enabled: false,
+            via: "auto",
+            radarr: { quality_profile: null, root_folder: null, minimum_availability: "released", search: true },
+            sonarr: { quality_profile: null, root_folder: null, monitor: "all", search: true, series_type: "standard" },
+            daily_cap: null,
+            confirm_over: 25,
+          },
+          seerr: null,
+          connected: { radarr: true, sonarr: false, seerr: false },
+        }),
+        "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickOrganise();
+    expect(screen.queryByRole("heading", { name: "Missing titles" })).not.toBeInTheDocument();
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    expect(await screen.findByRole("heading", { name: "Missing titles" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: /Download missing/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Why Download missing is off" }));
+    expect(screen.getByRole("link", { name: "Settings → Requests" })).toHaveAttribute("href", "/settings/requests");
+  });
+
+  it("resends Create with confirm_requests after a 409 needs_confirm", async () => {
+    let calls_n = 0;
+    const calls = mockApi(
+      baseRoutes({
+        "GET /requests/settings": () => ({
+          settings: {
+            enabled: true,
+            via: "arr",
+            radarr: { quality_profile: null, root_folder: null, minimum_availability: "released", search: true },
+            sonarr: { quality_profile: null, root_folder: null, monitor: "all", search: true, series_type: "standard" },
+            daily_cap: null,
+            confirm_over: 25,
+          },
+          seerr: null,
+          connected: { radarr: true, sonarr: false, seerr: false },
+        }),
+        "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+        "POST /collections": (body) => {
+          calls_n += 1;
+          const req = body as { confirm_requests?: boolean };
+          if (!req.confirm_requests) {
+            return new Response(
+              JSON.stringify({ detail: { message: "Request 40 titles now?", needs_confirm: true, count: 40 } }),
+              { status: 409, headers: { "Content-Type": "application/json" } },
+            );
+          }
+          return {
+            ...(body as CollectionInput),
+            id: 20,
+            state: "queued",
+            plex_items: null,
+            thumb: null,
+            last_built_at: null,
+            last_error: null,
+            run_id: 9,
+            requests: { waiting: 0, requested: 40, downloading: 0, imported: 0, failed: 0 },
+          };
+        },
+      }),
+    );
+    const { router } = renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    await screen.findByLabelText("Chosen source");
+    fireEvent.click(screen.getByRole("checkbox", { name: /Download missing/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent(/Request 40 titles now/);
+    fireEvent.click(screen.getByRole("button", { name: "Request 40" }));
+    await waitFor(() => expect(calls_n).toBe(2));
+    const confirmed = calls.filter((c) => c.route === "POST /collections").at(-1)?.body as { confirm_requests?: boolean; download_missing?: boolean };
+    expect(confirmed.confirm_requests).toBe(true);
+    expect(confirmed.download_missing).toBe(true);
     await waitFor(() => expect(router.state.location.pathname).toBe("/collections"));
   });
 

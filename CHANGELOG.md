@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Requests** UI: Settings → Requests (turn it on with a warning, choose Radarr/Sonarr or Overseerr/Jellyseerr, limits), a Requests page under Libraries (status chips, cancel, Check now, 30 s polling while active), and **Download missing** on the collection builder (list sources), Ready-made Build bar, and collection cards/tiles (counts, Request N titles, Turn off).
+
 - Collections **from a list** (the builder's **Get something new**): a TMDb collection (franchise) or list, TMDb's popular, top rated, trending and now-playing charts, an IMDb chart or list, a Letterboxd list or an MDBList list. Paste a link or pick a kind; TMDb collections can be searched by name. Before you save, the preview splits the list into **In your library** and **Missing** (TMDb and MDBList lists; IMDb and Letterboxd lists show theirs after the first build). Studio writes it as that Kometa builder, kept in sync with the list, with Kometa's own Radarr/Sonarr requests off. Order: list order, release date or title. Cards show "Smart filter" or the list's name. Trakt lists aren't offered: Kometa 2.5 dropped Trakt (MDBList can mirror one).
 
 - **Retry** on a collection whose last build failed, in Collections and on Ready-made category pages. It builds the collection again as it stands, for when a run failed on something passing, such as TMDb dropping the connection.

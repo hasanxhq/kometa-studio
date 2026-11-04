@@ -11,6 +11,8 @@ describe("The header's title", () => {
     expect(pageTitle("/activity/queue")).toBe("Queue");
     expect(pageTitle("/ready-made/imdb")).toBe("Category");
     expect(pageTitle("/ready-made")).toBe("Ready-made");
+    expect(pageTitle("/requests")).toBe("Requests");
+    expect(pageTitle("/settings/requests")).toBe("Requests");
     expect(pageTitle("/items")).toBe("Edit");
     expect(pageTitle("/")).toBe("Overview");
     expect(pageTitle("/nowhere")).toBe("Kometa Studio");

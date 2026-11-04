@@ -1,6 +1,7 @@
 // Typed calls to the Studio API (/api/v1).
 
 import { urlBase } from "./base";
+import type { RequestSummary } from "./requestsApi";
 import type { SchemaKind } from "./yaml/schema";
 
 export type HealthCheck = { source: string; level: "error" | "warning" | "info"; message: string; link: string | null };
@@ -570,6 +571,8 @@ export type ReadyMadeEntry = {
   last_built_at: string | null;
   last_error: string | null;
   build_seconds: number | null;
+  download_missing: boolean;
+  requests: RequestSummary | null;
 };
 
 export type ReadyMadeCategory = ReadyMadeCategorySummary & {
@@ -577,7 +580,7 @@ export type ReadyMadeCategory = ReadyMadeCategorySummary & {
   collections: ReadyMadeEntry[];
 };
 
-export type ReadyMadeBuildBody = { library: string; add: ReadyMadeRef[]; remove: ReadyMadeRef[]; dry_run: boolean };
+export type ReadyMadeBuildBody = { library: string; add: ReadyMadeRef[]; remove: ReadyMadeRef[]; dry_run: boolean; download_missing: boolean };
 
 export type ReadyMadeBuildPlan = {
   build: { category: string; title: string }[];
