@@ -256,10 +256,10 @@ class PlexServer:
         items = [_item(m) for m in container.get("Metadata") or []]
         return items, int(container.get("totalSize", container.get("size", len(items))) or 0)
 
-    async def all_keys(self, library_key: str, library_type: str, page: int = 500) -> list[tuple[str, str]]:
-        """Every movie or show as (ratingKey, updatedAt), in the order Kometa's ``get_all`` reads them (the section's own order)."""
+    async def _all(self, library_key: str, library_type: str, page: int = 500) -> list[dict]:
+        """Every movie or show's listing, with its guids, in the order Kometa's ``get_all`` reads them (the section's own order)."""
         plex_type = {"movie": "1", "show": "2"}[library_type]
-        found: list[tuple[str, str]] = []
+        found: list[dict] = []
         start = 0
         while True:
             container = await self._get(
@@ -267,11 +267,19 @@ class PlexServer:
                 {"type": plex_type, "includeGuids": "1", "X-Plex-Container-Start": str(start), "X-Plex-Container-Size": str(page)},
             )
             batch = container.get("Metadata", [])
-            found += [(str(m["ratingKey"]), str(m.get("updatedAt", ""))) for m in batch]
+            found += batch
             total = int(container.get("totalSize", container.get("size", 0)) or 0)
             start += len(batch)
             if not batch or start >= total:
                 return found
+
+    async def all_keys(self, library_key: str, library_type: str) -> list[tuple[str, str]]:
+        """Every movie or show as (ratingKey, updatedAt), in Kometa's order."""
+        return [(str(m["ratingKey"]), str(m.get("updatedAt", ""))) for m in await self._all(library_key, library_type)]
+
+    async def all_ids(self, library_key: str, library_type: str) -> list[tuple[str, dict[str, str]]]:
+        """Every movie or show as (ratingKey, {tmdb, imdb, tvdb}) from its guids, in Kometa's order."""
+        return [(item.rating_key, item.ids) for item in map(_item, await self._all(library_key, library_type))]
 
     async def credits(self, rating_key: str) -> dict[str, list[tuple[str, str]]]:
         """A title's people as Kometa reads them after reloading it: role (actors), director, writer, producer, each [(id, name)] in Plex's order."""
