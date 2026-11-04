@@ -44,6 +44,7 @@ from .plex_routes import router as plex_router
 from .ready_made_routes import needs_count, plex_is_configured
 from .ready_made_routes import router as ready_made_router
 from .builder_routes import router as builder_router
+from .collection_requests import MissingRequester
 from .requesting import RequestService
 from .requests_routes import router as requests_router
 from .ready_made_runs import ReadyMadeRecorder
@@ -162,6 +163,7 @@ def create_app(
         runner.hooks.append(maintainerr)
         runner.hooks.append(WantedRecorder(app.state.db, runner, settings.kometa_config, kometa_root))
         runner.hooks.append(ReadyMadeRecorder(app.state.db, runner, settings, app.state.http, tasks))
+        runner.hooks.append(MissingRequester(app.state.db, app.state.writer, app.state.requests))  # after WantedRecorder fills `wanted`
         runner.hooks.append(ApiCalls(app.state.db, runner, settings.kometa_config))
         if app.state.writer is not None:
             app.state.writer.guard = lambda path, root: [risk.message for risk in maintainerr.risks(path, root)]
