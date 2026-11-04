@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 import secrets
 import sqlite3
 from pathlib import Path
@@ -53,6 +54,7 @@ PREVIEW_SIZE = 30
 TEMPLATE_SORT = "release.desc"
 
 POSTER_MAX_BYTES = 10 * 1024 * 1024
+POSTER_GRACE = 3600  # seconds an unreferenced upload is kept, for editors still open
 POSTER_FOLDER = "studio/posters"
 POSTER_NAME = re.compile(r"^[0-9a-f]{16}\.(jpg|jpeg|png|webp)$")
 # Magic bytes, not the filename: a renamed text file must not pass.
@@ -200,8 +202,10 @@ def _cleanup_posters(config_dir: Path, db: sqlite3.Connection) -> None:
             path = poster.get("path")
             if isinstance(path, str) and path.startswith(f"{POSTER_FOLDER}/"):
                 referenced.add(Path(path).name)
+    young = time.time() - POSTER_GRACE
     for path in folder.iterdir():
-        if path.is_file() and path.name not in referenced and not path.name.endswith(".part"):
+        # An upload not saved yet belongs to an editor still open (maybe another tab): keep it for a while.
+        if path.is_file() and path.name not in referenced and not path.name.endswith(".part") and path.stat().st_mtime < young:
             try:
                 path.unlink()
             except OSError:

@@ -16,9 +16,9 @@ from test_ready_made_routes import make_client, root, wait_for_flags, wait_for_r
 ACTION = {"match": "all", "rules": [{"field": "genre", "modifier": "", "value": ["Action"]}]}
 
 
-def tiny_image(fmt: str = "PNG") -> bytes:
+def tiny_image(fmt: str = "PNG", color: str = "red") -> bytes:
     buf = io.BytesIO()
-    Image.new("RGB", (2, 3), "red").save(buf, fmt)
+    Image.new("RGB", (2, 3), color).save(buf, fmt)
     return buf.getvalue()
 
 
@@ -188,6 +188,16 @@ def test_poster_upload_is_content_addressed_and_type_checked(root):
         assert client.post("/api/v1/builder/posters", content=huge, headers={"Content-Type": "image/png"}).status_code == 422
 
 
+def age(*paths) -> None:
+    """Make uploads older than the grace period that keeps them for editors still open."""
+    import os
+    import time
+
+    for path in paths:
+        old = time.time() - 2 * 3600
+        os.utime(path, (old, old))
+
+
 def test_create_writes_file_or_url_poster_and_cleanup_drops_unused(root):
     client, _, _ = make_client(root)
     with client:
@@ -212,16 +222,24 @@ def test_create_writes_file_or_url_poster_and_cleanup_drops_unused(root):
         assert "file_poster" not in built_file(root)["collections"]["Plain"]
         assert "url_poster" not in built_file(root)["collections"]["Plain"]
 
-        # Swap the first collection's poster for a URL; the uploaded file becomes unreferenced and is removed.
+        # An upload no collection uses yet survives other saves for a while: another editor may still be open.
+        pending = client.post("/api/v1/builder/posters", content=tiny_image("PNG", color="blue"), headers={"Content-Type": "image/png"}).json()
+        client.put(f"/api/v1/collections/{plain.json()['id']}", json=body(title="Plain"))
+        assert (root / "config" / pending["path"]).is_file()
+
+        # Swap the first collection's poster for a URL; once old enough, the unreferenced files are removed.
+        age(root / "config" / uploaded["path"], root / "config" / pending["path"])
         changed = client.put(f"/api/v1/collections/{made.json()['id']}", json=body(poster={"kind": "url", "url": url}))
         assert changed.status_code == 200, changed.text
         assert not (root / "config" / uploaded["path"]).exists()
+        assert not (root / "config" / pending["path"]).exists()
 
         other = tiny_image("JPEG")
         second = client.post("/api/v1/builder/posters", content=other, headers={"Content-Type": "image/jpeg"}).json()
         with_file = client.put(f"/api/v1/collections/{made.json()['id']}", json=body(poster=second))
         assert with_file.status_code == 200
         assert (root / "config" / second["path"]).is_file()
+        age(root / "config" / second["path"])
         client.delete(f"/api/v1/collections/{made.json()['id']}")
         assert not (root / "config" / second["path"]).exists()
 
