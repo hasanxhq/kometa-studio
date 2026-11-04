@@ -12,7 +12,19 @@ from pydantic import BaseModel, StringConstraints
 
 from . import backups
 from .config_items import ItemProblem, read_item, schema_kind
-from .config_sections import add_library, new_file_for_library, new_playlist_file, read_document, read_section, set_library_default, set_library_variables, set_overlay_order, set_settings
+from .config_sections import (
+    add_library,
+    new_file_for_library,
+    new_playlist_file,
+    read_document,
+    read_section,
+    set_library_default,
+    set_library_operations,
+    set_library_settings,
+    set_library_variables,
+    set_overlay_order,
+    set_settings,
+)
 from .config_write import ConfigWriter, Edit, SaveRefused
 from .db import get_setting, set_setting
 from .kometa_files import ConfigReader, KometaConfig, Library, Reference, mask_secrets, settings_defaults, setup_steps, unavailable_sources
@@ -290,6 +302,16 @@ class SettingsIn(BaseModel):
     values: dict
 
 
+class LibraryOperationsIn(BaseModel):
+    base: dict | list  # the operations the form started from (a mapping, or Kometa's list of blocks)
+    values: dict | list
+
+
+class LibrarySettingsIn(BaseModel):
+    base: dict
+    values: dict
+
+
 @router.get("/config/settings")
 async def kometa_settings(writer: Writer, reader: Reader) -> dict:
     """Kometa's own settings: block, as written (it holds no secrets), and the installed Kometa's default for each key."""
@@ -299,6 +321,18 @@ async def kometa_settings(writer: Writer, reader: Reader) -> dict:
 @router.put("/config/settings")
 async def save_kometa_settings(body: SettingsIn, writer: Writer) -> dict:
     return await _write_call(set_settings(writer, body.base, body.values))
+
+
+@router.put("/config/libraries/{library}/operations")
+async def save_library_operations(library: str, body: LibraryOperationsIn, writer: Writer) -> dict:
+    """A library's ``operations:`` from the Operations form. Empty ``values`` removes the section."""
+    return await _write_call(set_library_operations(writer, library, body.base, body.values))
+
+
+@router.put("/config/libraries/{library}/settings")
+async def save_library_settings(library: str, body: LibrarySettingsIn, writer: Writer) -> dict:
+    """A library's ``settings:`` overrides from the Operations tab. Empty ``values`` removes the section."""
+    return await _write_call(set_library_settings(writer, library, body.base, body.values))
 
 
 @router.get("/config/edit")

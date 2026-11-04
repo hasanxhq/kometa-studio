@@ -37,10 +37,12 @@ def read_section(config: Path | None, key: str) -> dict | None:
     return section if isinstance(section, dict) else None
 
 
-def with_section(text: str | None, key: str | tuple[str, ...], values: dict[str, object] | None) -> str:
+def with_section(text: str | None, key: str | tuple[str, ...], values: dict[str, object] | list | None) -> str:
     """``text`` with one section's keys set (a None value removes that key), or the whole section removed (``values`` None).
 
     ``key`` may be a path to a nested section, such as ``("libraries", "Movies")``; the sections on the way must exist.
+    A ``list`` replaces the section (Kometa's list-form ``operations:``). Empty form values go through
+    ``with_library_option``, which passes ``None`` here to remove the key.
     """
     document, indent = _parse(text) if text else (CommentedMap(), (2, 4, 2))
     *parents, last = (key,) if isinstance(key, str) else key
@@ -51,6 +53,16 @@ def with_section(text: str | None, key: str | tuple[str, ...], values: dict[str,
             raise ValueError(f"config.yml has no {'.'.join(parents)} section")
     if values is None:
         container.pop(last, None)
+    elif isinstance(values, list):
+        current = container.get(last)
+        if isinstance(current, CommentedSeq) and len(current) == len(values):
+            for index, item in enumerate(values):
+                if isinstance(current[index], CommentedMap) and isinstance(item, dict):
+                    _update(current[index], item)
+                else:
+                    current[index] = CommentedMap(item) if isinstance(item, dict) else item
+        else:
+            container[last] = CommentedSeq([CommentedMap(item) if isinstance(item, dict) else item for item in values])
     else:
         section = container.get(last)
         if not isinstance(section, CommentedMap):
@@ -332,3 +344,61 @@ async def set_settings(writer: ConfigWriter, base: dict, values: dict) -> dict:
     if (read_section(writer.config_path, "settings") or {}) != base:
         raise SaveRefused(409, "Kometa's settings in config.yml changed since you opened them. Reload to see the new ones.")
     return await writer.save([_config_edit(writer, lambda text: with_settings(text or "", values))], "Changed Kometa's settings")
+
+
+# --- A library's operations: / settings: overrides ------------------------------------
+
+
+def read_library_option(config: Path | None, library: str, key: str) -> dict | list:
+    """The library's ``operations`` or ``settings`` as plain data. Missing means ``{}``; unknown library raises."""
+    document = read_document(config)
+    libraries = (document or {}).get("libraries")
+    if not isinstance(libraries, dict) or library not in libraries:
+        raise SaveRefused(404, f"config.yml has no library called {library}")
+    body = libraries[library]
+    if not isinstance(body, dict):
+        raise SaveRefused(409, f"{library} in config.yml isn't a mapping")
+    value = body.get(key)
+    if value is None:
+        return {}
+    if isinstance(value, (dict, list)):
+        return value
+    return {}
+
+
+def with_library_option(text: str, library: str, key: str, values: dict | list) -> str:
+    """``text`` with the library's ``operations`` or ``settings`` set to ``values``. Unchanged keys keep their YAML; empty removes the key."""
+    if not values:
+        return with_section(text, ("libraries", library, key), None)
+    if isinstance(values, list):
+        return with_section(text, ("libraries", library, key), values)
+    document, indent = _parse(text)
+    body = _library_body(document, library)
+    current = body.get(key)
+    if isinstance(current, CommentedMap):
+        _update(current, values)
+    else:
+        body[key] = CommentedMap(values)
+    return render(text, document, indent)
+
+
+async def set_library_operations(writer: ConfigWriter, library: str, base: dict | list, values: dict | list) -> dict:
+    """Save the library's Operations form. ``base`` is what the form started from; a stale base refuses the save."""
+    current = read_library_option(writer.config_path, library, "operations")
+    if current != base:
+        raise SaveRefused(409, f"The operations for {library} in config.yml changed since you opened them. Reload to see the new ones.")
+    return await writer.save(
+        [_config_edit(writer, lambda text: with_library_option(text or "", library, "operations", values))],
+        f"Changed the operations for {library}",
+    )
+
+
+async def set_library_settings(writer: ConfigWriter, library: str, base: dict, values: dict) -> dict:
+    """Save the library's settings: overrides. ``base`` is what the form started from; a stale base refuses the save."""
+    current = read_library_option(writer.config_path, library, "settings")
+    if current != base:
+        raise SaveRefused(409, f"The settings for {library} in config.yml changed since you opened them. Reload to see the new ones.")
+    return await writer.save(
+        [_config_edit(writer, lambda text: with_library_option(text or "", library, "settings", values))],
+        f"Changed the settings for {library}",
+    )

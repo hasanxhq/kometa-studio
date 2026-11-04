@@ -72,12 +72,32 @@ const movies: ConfigLibrary = {
   counts,
 };
 
+const configSchema = {
+  type: "object",
+  definitions: {
+    operations: {
+      oneOf: [
+        {
+          type: "object",
+          properties: {
+            mass_genre_update: { enum: ["tmdb", "imdb"] },
+            assets_for_all: { type: "boolean" },
+          },
+        },
+        { type: "array", items: { type: "object" } },
+      ],
+    },
+    settings: { type: "object", properties: { sync_mode: { enum: ["sync", "append"] }, cache: { type: "boolean" } } },
+  },
+};
+
 const api = {
   "GET /plex/libraries": () => ({ libraries: plexLibraries }),
   "GET /config": () => ({ path: "/config/config.yml", libraries: [counts, { ...counts, name: "Anime", plex_name: "Anime" }], playlist_files: [] }),
   "GET /plex/libraries/1/collections": () => ({ library: { key: "1", title: "Movies", type: "movie" }, collections }),
   "GET /config/libraries/Movies": () => movies,
   "GET /config/file?path=Movies.yml": () => ({ path: "Movies.yml", text: "collections:\n  Marvel:\n" }),
+  "GET /config/schemas/config": () => configSchema,
 };
 
 describe("Libraries", () => {
@@ -167,7 +187,8 @@ describe("A library", () => {
     expect(screen.queryByRole("tab", { name: "Defaults" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "Operations" }));
-    await waitFor(() => expect(screen.getByText("mass_genre_update")).toBeInTheDocument());
+    expect(await screen.findByRole("form", { name: "Library operations" })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Mass genre update/)).toHaveValue("tmdb");
   });
 
   it("shows operations written as a list of blocks", async () => {
@@ -180,8 +201,13 @@ describe("A library", () => {
     });
     renderAt("/libraries/Movies?tab=operations");
     expect(await screen.findByText("Operation 1")).toBeInTheDocument();
-    expect(screen.getByText("mass_genre_update")).toBeInTheDocument();
-    expect(screen.getByText("assets_for_all")).toBeInTheDocument();
+    expect(screen.getByText("Operation 2")).toBeInTheDocument();
+    const genres = screen.getAllByLabelText(/Mass genre update/);
+    expect(genres[0]).toHaveValue("tmdb");
+    expect(genres[1]).toHaveValue("");
+    const assets = screen.getAllByLabelText(/Assets for all/);
+    expect(assets[0]).toHaveValue("");
+    expect(assets[1]).toHaveValue("true");
     expect(screen.getByText("weekly(sunday)")).toBeInTheDocument();
   });
 
