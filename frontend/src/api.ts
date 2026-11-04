@@ -705,6 +705,10 @@ export const api = {
     sources: (library: string | null) => request<{ unavailable: Record<string, string> }>("GET", `/config/sources${library ? `?library=${encodeURIComponent(library)}` : ""}`),
     settings: () => request<KometaSettings>("GET", "/config/settings"),
     saveSettings: (base: Record<string, unknown>, values: Record<string, unknown>) => request<SaveResult>("PUT", "/config/settings", { base, values }),
+    saveLibraryOperations: (library: string, base: Record<string, unknown> | Record<string, unknown>[], values: Record<string, unknown> | Record<string, unknown>[]) =>
+      request<SaveResult>("PUT", `/config/libraries/${encodeURIComponent(library)}/operations`, { base, values }),
+    saveLibrarySettings: (library: string, base: Record<string, unknown>, values: Record<string, unknown>) =>
+      request<SaveResult>("PUT", `/config/libraries/${encodeURIComponent(library)}/settings`, { base, values }),
     library: (name: string) => request<ConfigLibrary>("GET", `/config/libraries/${encodeURIComponent(name)}`),
     file: (path: string) => request<{ path: string; text: string }>("GET", `/config/file?path=${encodeURIComponent(path)}`),
     addLibrary: (name: string) => request<SaveResult>("POST", "/config/libraries", { name }),
