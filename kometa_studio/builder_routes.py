@@ -1,9 +1,11 @@
-"""The collection builder (phase 2): smart collections from a library's own data.
+"""The collection builder: collections from a library's own data (phase 2) or from a list (phase 3).
 
 A builder collection is a row in ``collections`` (category ``built``, origin ``built``) with the user's definition as
-JSON. Studio writes it into ``studio/<library>/built.yml`` as a Kometa ``smart_filter`` collection labelled ``Studio``,
-checks the save with Kometa, and runs just that collection. The preview asks Plex directly with the query Kometa's smart
-collection would use (``smart_filters.plex_query``), so it shows before anything is saved.
+JSON. Its ``source`` is ``{"kind": "filters"}`` (a Kometa ``smart_filter``) or ``{"kind": "list", "builder", "value",
+"label"}`` (one of Kometa's list builders, see ``list_sources``). Studio writes it into ``studio/<library>/built.yml``
+labelled ``Studio``, checks the save with Kometa, and runs just that collection. The filter preview asks Plex directly
+with the query Kometa's smart collection would use (``smart_filters.plex_query``); the list preview reads the list and
+splits it into what the library has and what it's missing. Both show before anything is saved.
 """
 
 from __future__ import annotations
@@ -25,7 +27,8 @@ from pydantic import BaseModel, Field
 from ruamel.yaml import YAML
 
 from . import collections as col
-from . import smart_filters, studio_files
+from . import list_sources, smart_filters, studio_files
+from .config_sections import read_section
 from .config_write import SaveRefused
 from .default_covers import DEFAULT_IMAGES
 from .kometa_command import RunRequest
@@ -50,6 +53,7 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["builder"])
 
 PREVIEW_SIZE = 30
+LIST_PREVIEW_SIZE = 60  # posters per half of a list preview
 # The smart_filter sort Kometa's default templates use (defaults/templates.yml, smart_filter: sort_by: release.desc).
 TEMPLATE_SORT = "release.desc"
 
@@ -89,10 +93,20 @@ class PosterIn(BaseModel):
     url: str | None = None
 
 
+class SourceIn(BaseModel):
+    """Where the titles come from: Plex filters (a smart collection), or one of Kometa's list builders."""
+
+    kind: Literal["filters", "list"] = "filters"
+    builder: str | None = None
+    value: str | int | None = None
+    label: str | None = None
+
+
 class CollectionIn(BaseModel):
     library: str
     title: str = Field(min_length=1, max_length=200)
-    filters: FiltersIn
+    source: SourceIn = Field(default_factory=SourceIn)
+    filters: FiltersIn = Field(default_factory=FiltersIn)
     sort_by: str | None = None
     limit: int | None = Field(default=None, ge=1)
     visible: Visible = Field(default_factory=Visible)
@@ -106,6 +120,24 @@ class PreviewIn(BaseModel):
     library: str
     filters: FiltersIn
     sort_by: str | None = None
+
+
+class ListSourceIn(BaseModel):
+    builder: str
+    value: str | int
+
+
+class ListPreviewIn(BaseModel):
+    library: str
+    source: ListSourceIn
+
+
+class LinkIn(BaseModel):
+    library: str
+    url: str = Field(min_length=1, max_length=2000)
+
+
+LIST_ORDERS = ("custom", "release", "alpha")  # Kometa's collection_order for a list collection
 
 
 class Context:
@@ -252,8 +284,15 @@ def _kometa_poster(category: str, key: str, attrs: dict) -> dict | None:
     return {"kind": "url", "url": f"{DEFAULT_IMAGES}/{path}.jpg"}
 
 
+def _source_dict(source: SourceIn) -> dict:
+    if source.kind == "filters":
+        return {"kind": "filters"}
+    return {"kind": "list", "builder": source.builder, "value": str(source.value), "label": (source.label or "").strip() or None}
+
+
 def _definition(body: CollectionIn) -> dict:
     return {
+        "source": _source_dict(body.source),
         "filters": body.filters.model_dump(),
         "sort_by": body.sort_by,
         "limit": body.limit,
@@ -272,6 +311,7 @@ def _built_json(db: sqlite3.Connection, row: sqlite3.Row) -> dict:
         "id": int(row["id"]),
         "library": row["library"],
         "title": row["title"],
+        "source": definition.get("source") or {"kind": "filters"},
         "filters": definition.get("filters") or {"match": "all", "rules": []},
         "sort_by": definition.get("sort_by"),
         "limit": definition.get("limit"),
@@ -291,6 +331,33 @@ def _built_json(db: sqlite3.Connection, row: sqlite3.Row) -> dict:
 
 def _problems(context: Context, filters: FiltersIn, sort_by: str | None) -> list[str]:
     return smart_filters.validate(context.library_type, filters.model_dump(), sort_by)
+
+
+def _connected(settings) -> set[str]:
+    return {name for name in ("tmdb", "mdblist") if (read_section(settings.kometa_config, name) or {}).get("apikey")}
+
+
+def _body_problems(context: Context, body: CollectionIn, settings) -> list[str]:
+    """What's wrong with a collection as given. A list source's value is normalised in place (a pasted link becomes Kometa's value)."""
+    if body.source.kind == "filters":
+        return _problems(context, body.filters, body.sort_by)
+    source = body.source
+    problems = []
+    try:
+        kind = list_sources.kind_for(source.builder or "", context.library_type)
+        source.value, label = list_sources.normalise(kind.builder, str(source.value or ""), context.library_type)
+        source.label = (source.label or "").strip() or label
+        if kind.needs and kind.needs not in _connected(settings):
+            problems.append(f"A {kind.label} needs {list_sources.SERVICE_NAMES[kind.needs]} connected in Settings → Connect")
+    except list_sources.SourceError as error:
+        problems.append(str(error))
+    if body.filters.rules:
+        problems.append("A collection from a list can't have filter rules yet")
+    if body.sort_by not in (None, *LIST_ORDERS):
+        problems.append("A list collection's order is list order, release date or title")
+    if body.limit is not None:
+        problems.append("A list collection takes the whole list; set how many titles in the source instead")
+    return problems
 
 
 async def _title_taken(db: sqlite3.Connection, request: Request, context: Context, title: str, own_id: int | None) -> str | None:
@@ -409,6 +476,85 @@ async def builder_preview(body: PreviewIn, request: Request, settings: AppSettin
     }
 
 
+# --- List sources --------------------------------------------------------------------------------
+
+
+def _lists(request: Request, settings) -> list_sources.Lists:
+    cache = getattr(request.app.state, "list_cache", None)
+    if cache is None:
+        cache = request.app.state.list_cache = {}
+    keys = {name: (read_section(settings.kometa_config, name) or {}).get("apikey") for name in ("tmdb", "mdblist")}
+    return list_sources.Lists(request.app.state.http, keys["tmdb"], keys["mdblist"], cache)
+
+
+@router.get("/builder/sources")
+async def builder_sources(library: str, request: Request, settings: AppSettings) -> dict:
+    context = await _context(request, settings, library)
+    return {"sources": list_sources.catalogue(context.library_type, _connected(settings))}
+
+
+@router.post("/builder/sources/link")
+async def builder_source_from_link(body: LinkIn, request: Request, settings: AppSettings) -> dict:
+    context = await _context(request, settings, body.library)
+    try:
+        builder, value, label = list_sources.from_link(body.url, context.library_type)
+    except list_sources.SourceError as error:
+        raise HTTPException(422, str(error)) from None
+    if label is None:
+        try:
+            label = await _lists(request, settings).label(builder, value)
+        except list_sources.SourceError:
+            label = None  # the name is a nicety; the link is still good
+    return {"builder": builder, "value": value, "label": label}
+
+
+@router.get("/builder/sources/search")
+async def builder_source_search(library: str, builder: str, q: str, request: Request, settings: AppSettings) -> dict:
+    context = await _context(request, settings, library)
+    try:
+        kind = list_sources.kind_for(builder, context.library_type)
+    except list_sources.SourceError as error:
+        raise HTTPException(422, str(error)) from None
+    if kind.input != "search":
+        raise HTTPException(422, f"Studio can't search for a {kind.label}")
+    if len(q.strip()) < 2:
+        return {"results": []}
+    try:
+        return {"results": await _lists(request, settings).search_collections(q.strip())}
+    except list_sources.SourceError as error:
+        raise HTTPException(503, str(error)) from None
+
+
+@router.post("/builder/sources/preview")
+async def builder_source_preview(body: ListPreviewIn, request: Request, settings: AppSettings) -> dict:
+    context = await _context(request, settings, body.library)
+    empty = {"total": None, "in_library": [], "in_library_count": 0, "missing": [], "missing_count": 0}
+    try:
+        value, _label = list_sources.normalise(body.source.builder, str(body.source.value), context.library_type)
+        items = await _lists(request, settings).items(body.source.builder, value, context.library_type)
+    except list_sources.NotPreviewable as why:
+        return {"previewable": False, "why": str(why), **empty, "problems": []}
+    except list_sources.SourceError as error:
+        return {"previewable": True, "why": None, **empty, "problems": [str(error)]}
+    try:
+        library = await context.server.all_items(context.section, context.library_type)
+    except PlexUnavailable as error:
+        raise HTTPException(503, f"Plex can't be reached: {error}") from None
+    have, missing = list_sources.split(items, library)
+    return {
+        "previewable": True,
+        "why": None,
+        "total": len(items),
+        "in_library": [{"rating_key": i.rating_key, "title": i.title, "year": i.year, "thumb": i.thumb} for i in have[:LIST_PREVIEW_SIZE]],
+        "in_library_count": len(have),
+        "missing": [
+            {"id": list_sources.missing_key(m, context.library_type), "title": m.title, "year": m.year, "poster": m.poster} for m in missing[:LIST_PREVIEW_SIZE]
+        ],
+        "missing_count": len(missing),
+        "problems": [],
+    }
+
+
 # --- Collections ---------------------------------------------------------------------------------
 
 
@@ -429,7 +575,7 @@ async def get_collection(row_id: int, db: Db) -> dict:
 async def create_collection(body: CollectionIn, request: Request, db: Db, settings: AppSettings, writer: Writer, runner: AppRunner) -> dict:
     context = await _context(request, settings, body.library)
     title = body.title.strip()
-    problems = _problems(context, body.filters, body.sort_by)
+    problems = _body_problems(context, body, settings)
     if problems:
         raise HTTPException(422, {"message": "The collection can't be made like this", "problems": problems})
     _check_poster(settings, body.poster)
@@ -461,7 +607,7 @@ async def update_collection(row_id: int, body: CollectionIn, request: Request, d
         raise HTTPException(422, {"message": "A collection can't move to another library", "problems": []})
     context = await _context(request, settings, body.library)
     title = body.title.strip()
-    problems = _problems(context, body.filters, body.sort_by)
+    problems = _body_problems(context, body, settings)
     if problems:
         raise HTTPException(422, {"message": "The collection can't be made like this", "problems": problems})
     _check_poster(settings, body.poster)
