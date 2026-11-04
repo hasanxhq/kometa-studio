@@ -1,9 +1,15 @@
 // Collection builder API: fields, live preview, and Studio-built collections.
 
-import { request } from "./api";
+import { ApiError, SIGNED_OUT_EVENT, request } from "./api";
+import { urlBase } from "./base";
 
 export type FilterRule = { field: string; modifier: string; value: string | number | boolean | string[] };
 export type FilterSpec = { match: "all" | "any"; rules: FilterRule[] };
+
+export type Poster =
+  | null
+  | { kind: "file"; path: string }
+  | { kind: "url"; url: string };
 
 export type BuilderField = {
   key: string;
@@ -39,6 +45,7 @@ export type CollectionInput = {
   minimum_items: number;
   summary: string | null;
   sort_title: string | null;
+  poster: Poster;
 };
 
 export type BuiltCollection = CollectionInput & {
@@ -50,6 +57,31 @@ export type BuiltCollection = CollectionInput & {
   last_error: string | null;
   run_id: number | null;
 };
+
+export function isKometaPosterUrl(url: string): boolean {
+  return url.includes("raw.githubusercontent.com/Kometa-Team/");
+}
+
+export function posterPreviewSrc(poster: Poster): string | null {
+  if (!poster) return null;
+  if (poster.kind === "url") return poster.url;
+  const name = poster.path.split("/").pop();
+  return name ? `${urlBase}/api/v1/builder/posters/${encodeURIComponent(name)}` : null;
+}
+
+async function errorFrom(response: Response): Promise<ApiError> {
+  let detail: unknown;
+  try {
+    detail = ((await response.json()) as { detail?: unknown }).detail;
+  } catch {
+    // not JSON
+  }
+  let message = `${response.status} ${response.statusText}`;
+  if (typeof detail === "string") message = detail;
+  else if (Array.isArray(detail)) message = detail.map((item: { msg?: string }) => item.msg ?? "").join("; ");
+  else if (detail && typeof detail === "object" && "message" in detail) message = String((detail as { message: unknown }).message);
+  return new ApiError(response.status, message, detail);
+}
 
 export const builderApi = {
   fields: (library: string) => request<BuilderFields>("GET", `/builder/fields?library=${encodeURIComponent(library)}`),
@@ -64,5 +96,18 @@ export const builderApi = {
   customise: (library: string, category: string, block: string, key: string) => {
     const q = new URLSearchParams({ block, key });
     return request<CollectionInput>("GET", `/ready-made/libraries/${encodeURIComponent(library)}/categories/${encodeURIComponent(category)}/customise?${q}`);
+  },
+  /** Upload a poster: the image is the request body (no multipart; python-multipart isn't a dependency). */
+  uploadPoster: async (file: File): Promise<{ kind: "file"; path: string }> => {
+    const response = await fetch(`${urlBase}/api/v1/builder/posters`, {
+      method: "POST",
+      headers: { Accept: "application/json", "Content-Type": file.type || "application/octet-stream" },
+      body: file,
+    });
+    if (!response.ok) {
+      if (response.status === 401) window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+      throw await errorFrom(response);
+    }
+    return response.json();
   },
 };

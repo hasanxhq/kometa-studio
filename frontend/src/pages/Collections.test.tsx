@@ -18,6 +18,7 @@ const collection = (partial: Partial<BuiltCollection> & Pick<BuiltCollection, "i
   minimum_items: 1,
   summary: null,
   sort_title: null,
+  poster: null,
   plex_items: null,
   thumb: null,
   last_built_at: null,

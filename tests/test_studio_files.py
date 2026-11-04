@@ -19,6 +19,7 @@ from kometa_studio.studio_files import (
     record,
     relative_path,
     render,
+    render_built,
     write_library,
 )
 
@@ -252,6 +253,29 @@ def test_write_library_keeps_files_studio_didnt_write(writer_env):
         write_library(writer, kometa_root, "Movies", "movie", {"genre": [Ref("genre", "Genre", "Action")]}, ["Movies"], "picks")
     )
     assert (folder / "mine.yml").is_file() and written.removed == []
+
+
+def test_render_built_writes_file_or_url_poster():
+    base = {
+        "filters": {"match": "all", "rules": [{"field": "genre", "modifier": "", "value": ["Action"]}]},
+        "sort_by": None,
+        "limit": None,
+        "visible": {"library": True, "home": False, "shared": False},
+        "minimum_items": 1,
+    }
+    none = parse(render_built([("No Poster", base)]))
+    assert "file_poster" not in none["collections"]["No Poster"]
+    assert "url_poster" not in none["collections"]["No Poster"]
+
+    file_def = {**base, "poster": {"kind": "file", "path": "studio/posters/abcd1234abcd1234.png"}}
+    with_file = parse(render_built([("File", file_def)], file_ref=lambda p: f"config/{p}"))
+    assert with_file["collections"]["File"]["file_poster"] == "config/studio/posters/abcd1234abcd1234.png"
+    assert "url_poster" not in with_file["collections"]["File"]
+
+    url_def = {**base, "poster": {"kind": "url", "url": "https://example.com/p.jpg"}}
+    with_url = parse(render_built([("Url", url_def)]))
+    assert with_url["collections"]["Url"]["url_poster"] == "https://example.com/p.jpg"
+    assert "file_poster" not in with_url["collections"]["Url"]
 
 
 def test_hand_edits_are_noticed_and_replaced_on_the_next_save(writer_env):

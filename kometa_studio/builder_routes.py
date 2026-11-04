@@ -8,19 +8,25 @@ collection would use (``smart_filters.plex_query``), so it shows before anything
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import re
 import secrets
 import sqlite3
+from pathlib import Path
 from typing import Literal
+from urllib.parse import quote, urlparse
 
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from ruamel.yaml import YAML
 
 from . import collections as col
 from . import smart_filters, studio_files
 from .config_write import SaveRefused
+from .default_covers import DEFAULT_IMAGES
 from .kometa_command import RunRequest
 from .plex_library import PlexNotFound, PlexServer, PlexUnavailable
 from .plex_routes import kometa_plex
@@ -46,6 +52,15 @@ PREVIEW_SIZE = 30
 # The smart_filter sort Kometa's default templates use (defaults/templates.yml, smart_filter: sort_by: release.desc).
 TEMPLATE_SORT = "release.desc"
 
+POSTER_MAX_BYTES = 10 * 1024 * 1024
+POSTER_FOLDER = "studio/posters"
+POSTER_NAME = re.compile(r"^[0-9a-f]{16}\.(jpg|jpeg|png|webp)$")
+# Magic bytes, not the filename: a renamed text file must not pass.
+_IMAGE_MAGIC = (
+    (b"\xff\xd8\xff", "jpg", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "png", "image/png"),
+)
+
 
 class Visible(BaseModel):
     library: bool = True
@@ -64,6 +79,14 @@ class FiltersIn(BaseModel):
     rules: list[RuleIn] = Field(default_factory=list)
 
 
+class PosterIn(BaseModel):
+    """null in JSON means Plex's own mosaic; a file or url is what Kometa applies on the next run."""
+
+    kind: Literal["file", "url"]
+    path: str | None = None
+    url: str | None = None
+
+
 class CollectionIn(BaseModel):
     library: str
     title: str = Field(min_length=1, max_length=200)
@@ -74,6 +97,7 @@ class CollectionIn(BaseModel):
     minimum_items: int = Field(default=1, ge=1)
     summary: str | None = None
     sort_title: str | None = None
+    poster: PosterIn | None = None
 
 
 class PreviewIn(BaseModel):
@@ -109,6 +133,121 @@ async def _context(request: Request, settings, name: str) -> Context:
     return Context(library, all_libraries, server, section, library_type)
 
 
+def _image_type(data: bytes) -> tuple[str, str] | None:
+    """(extension, media type) from the file's bytes, or None if it isn't a JPEG, PNG or WebP."""
+    for magic, ext, media in _IMAGE_MAGIC:
+        if data.startswith(magic):
+            return ext, media
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp", "image/webp"
+    return None
+
+
+def _config_dir(settings) -> Path:
+    if settings.kometa_config is None:
+        raise HTTPException(409, "Studio doesn't know where Kometa's config is. Set STUDIO_KOMETA_CONFIG.")
+    return settings.kometa_config.parent
+
+
+def _poster_path(config_dir: Path, name: str) -> Path | None:
+    """Absolute path of a stored poster, or None if the name isn't allowed."""
+    if not POSTER_NAME.fullmatch(name):
+        return None
+    path = (config_dir / POSTER_FOLDER / name).resolve()
+    folder = (config_dir / POSTER_FOLDER).resolve()
+    try:
+        path.relative_to(folder)
+    except ValueError:
+        return None
+    return path
+
+
+def _poster_dict(poster: PosterIn | None) -> dict | None:
+    if poster is None:
+        return None
+    if poster.kind == "file":
+        return {"kind": "file", "path": poster.path}
+    return {"kind": "url", "url": poster.url}
+
+
+def _check_poster(settings, poster: PosterIn | None) -> None:
+    """Raise 422 if the poster reference isn't usable."""
+    if poster is None:
+        return
+    if poster.kind == "url":
+        url = (poster.url or "").strip()
+        if not url or urlparse(url).scheme not in ("http", "https"):
+            raise HTTPException(422, "A poster link must be an http(s) URL")
+        return
+    path = (poster.path or "").strip()
+    if not path.startswith(f"{POSTER_FOLDER}/") or path != path.replace("\\", "/"):
+        raise HTTPException(422, "An uploaded poster must live under studio/posters/")
+    name = path.removeprefix(f"{POSTER_FOLDER}/")
+    stored = _poster_path(_config_dir(settings), name)
+    if stored is None or not stored.is_file():
+        raise HTTPException(422, "That poster file isn't on the server. Upload it again.")
+
+
+def _cleanup_posters(config_dir: Path, db: sqlite3.Connection) -> None:
+    """Remove poster files under studio/posters/ that no builder collection references any more."""
+    folder = config_dir / POSTER_FOLDER
+    if not folder.is_dir():
+        return
+    referenced: set[str] = set()
+    for row in col.built_rows(db):
+        poster = (json.loads(row["definition"] or "{}") or {}).get("poster")
+        if isinstance(poster, dict) and poster.get("kind") == "file":
+            path = poster.get("path")
+            if isinstance(path, str) and path.startswith(f"{POSTER_FOLDER}/"):
+                referenced.add(Path(path).name)
+    for path in folder.iterdir():
+        if path.is_file() and path.name not in referenced and not path.name.endswith(".part"):
+            try:
+                path.unlink()
+            except OSError:
+                log.warning("Couldn't remove unused poster %s", path)
+
+
+def _fill_image_path(template: str, key: str, tvs: dict) -> str | None:
+    """Substitute the placeholders Kometa's default image paths use. None if any stay unresolved."""
+    style = tvs.get("style")
+    if isinstance(style, dict):
+        style = style.get("default")
+    style = str(style) if style else "white"
+    encoded = quote(key, safe="")
+    out = template
+    for placeholder, value in (
+        ("<<original_key_name_encoded>>", encoded),
+        ("<<key_name_encoded>>", encoded),
+        ("<<key_encoded>>", encoded),
+        ("<<key_name>>", key),
+        ("<<key>>", key),
+        ("<<style>>", style),
+    ):
+        out = out.replace(placeholder, value)
+    return None if "<<" in out else out
+
+
+def _kometa_poster(category: str, key: str, attrs: dict) -> dict | None:
+    """Kometa's Default-Images URL for this ready-made key, or None when the path isn't reliable."""
+    tvs = attrs.get("template_variables") if isinstance(attrs.get("template_variables"), dict) else {}
+    image = tvs.get("image")
+    path: str | None = None
+    if isinstance(image, dict):
+        raw = image.get(key, image.get("default"))
+        if isinstance(raw, str):
+            path = _fill_image_path(raw, key, tvs)
+    elif isinstance(image, str):
+        path = _fill_image_path(image, key, tvs)
+    # Genre's default is genre/<<original_key_name_encoded>> (default_covers / templates.yml); the test fixture
+    # omits template_variables.image, so fall back only for that unambiguous case.
+    if path is None and category == "genre":
+        path = f"genre/{quote(key, safe='')}"
+    if not path:
+        return None
+    return {"kind": "url", "url": f"{DEFAULT_IMAGES}/{path}.jpg"}
+
+
 def _definition(body: CollectionIn) -> dict:
     return {
         "filters": body.filters.model_dump(),
@@ -118,6 +257,7 @@ def _definition(body: CollectionIn) -> dict:
         "minimum_items": body.minimum_items,
         "summary": (body.summary or "").strip() or None,
         "sort_title": (body.sort_title or "").strip() or None,
+        "poster": _poster_dict(body.poster),
     }
 
 
@@ -135,6 +275,7 @@ def _built_json(db: sqlite3.Connection, row: sqlite3.Row) -> dict:
         "minimum_items": definition.get("minimum_items") or 1,
         "summary": definition.get("summary"),
         "sort_title": definition.get("sort_title"),
+        "poster": definition.get("poster"),
         "state": _entry_state(row, run_status),
         "plex_items": int(row["plex_items"]) if row["plex_items"] is not None else None,
         "thumb": row["plex_thumb"],
@@ -287,6 +428,7 @@ async def create_collection(body: CollectionIn, request: Request, db: Db, settin
     problems = _problems(context, body.filters, body.sort_by)
     if problems:
         raise HTTPException(422, {"message": "The collection can't be made like this", "problems": problems})
+    _check_poster(settings, body.poster)
     taken = await _title_taken(db, request, context, title, None)
     if taken:
         raise HTTPException(409, {"message": taken})
@@ -302,6 +444,7 @@ async def create_collection(body: CollectionIn, request: Request, db: Db, settin
         with db:
             col.delete_rows(db, [row_id])
         raise
+    _cleanup_posters(_config_dir(settings), db)
     return _built_json(db, col.built_row(db, row_id))
 
 
@@ -317,6 +460,7 @@ async def update_collection(row_id: int, body: CollectionIn, request: Request, d
     problems = _problems(context, body.filters, body.sort_by)
     if problems:
         raise HTTPException(422, {"message": "The collection can't be made like this", "problems": problems})
+    _check_poster(settings, body.poster)
     taken = await _title_taken(db, request, context, title, row_id)
     if taken:
         raise HTTPException(409, {"message": taken})
@@ -334,6 +478,7 @@ async def update_collection(row_id: int, body: CollectionIn, request: Request, d
         gone, why = await _delete_from_plex(context, old_title)
         if not gone:
             log.warning("Renamed %r to %r, but the old collection stays in Plex: %s", old_title, title, why)
+    _cleanup_posters(_config_dir(settings), db)
     return _built_json(db, col.built_row(db, row_id))
 
 
@@ -364,7 +509,44 @@ async def delete_collection(row_id: int, request: Request, db: Db, settings: App
                 list(snapshot.values()),
             )
         raise HTTPException(refused.status, refused.detail()) from None
+    _cleanup_posters(_config_dir(settings), db)
     return {"removed": gone, "reason": why}
+
+
+# --- Posters -------------------------------------------------------------------------------------
+
+
+@router.post("/builder/posters")
+async def upload_poster(request: Request, settings: AppSettings) -> dict:
+    """Store an uploaded JPEG/PNG/WebP under ``studio/posters/`` (content-addressed). Body is the image bytes."""
+    # python-multipart isn't a dependency; the image is the request body (Content-Type: image/…).
+    data = await request.body()
+    if not data:
+        raise HTTPException(422, "Send an image in the request body")
+    if len(data) > POSTER_MAX_BYTES:
+        raise HTTPException(422, "Image must be 10 MB or smaller")
+    kind = _image_type(data)
+    if kind is None:
+        raise HTTPException(422, "Send a JPEG, PNG or WebP image")
+    ext, _media = kind
+    name = f"{hashlib.sha256(data).hexdigest()[:16]}.{ext}"
+    folder = _config_dir(settings) / POSTER_FOLDER
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / name
+    if not path.is_file():
+        partial = path.with_suffix(path.suffix + ".part")
+        partial.write_bytes(data)
+        partial.replace(path)
+    return {"kind": "file", "path": f"{POSTER_FOLDER}/{name}"}
+
+
+@router.get("/builder/posters/{name}")
+async def get_poster(name: str, settings: AppSettings) -> FileResponse:
+    path = _poster_path(_config_dir(settings), name)
+    if path is None or not path.is_file():
+        raise HTTPException(404, "No such poster")
+    media = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}[path.suffix.lower()]
+    return FileResponse(path, media_type=media, headers={"Cache-Control": "private, max-age=86400"})
 
 
 # --- Ready-made templates open in the builder ----------------------------------------------------
@@ -415,4 +597,5 @@ async def customise_ready_made(library: str, category: str, block: str, key: str
         "minimum_items": 1,
         "summary": None,
         "sort_title": None,
+        "poster": _kometa_poster(category, key, attrs),
     }

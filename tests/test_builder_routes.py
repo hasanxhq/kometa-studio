@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
+
+from PIL import Image
 from ruamel.yaml import YAML
 
 from fakeplex import FakePlex
 from kometa_studio import collections as col
+from kometa_studio.default_covers import DEFAULT_IMAGES
 from test_ready_made_routes import make_client, root, wait_for_flags, wait_for_run, wait_for_task  # noqa: F401 (root is a fixture)
 
 ACTION = {"match": "all", "rules": [{"field": "genre", "modifier": "", "value": ["Action"]}]}
+
+
+def tiny_image(fmt: str = "PNG") -> bytes:
+    buf = io.BytesIO()
+    Image.new("RGB", (2, 3), "red").save(buf, fmt)
+    return buf.getvalue()
 
 
 def body(title: str = "Action Picks", filters: dict | None = None, **extra) -> dict:
@@ -22,6 +33,7 @@ def body(title: str = "Action Picks", filters: dict | None = None, **extra) -> d
         "minimum_items": 2,
         "summary": "Things that explode",
         "sort_title": None,
+        "poster": None,
     } | extra
 
 
@@ -135,16 +147,83 @@ def test_a_ready_made_plex_collection_opens_in_the_builder(root):
         ).json()
         assert draft["title"] == "Action Movies"
         assert draft["filters"] == {"match": "any", "rules": [{"field": "genre", "modifier": "", "value": ["Action"]}]}
+        assert draft["poster"] == {"kind": "url", "url": f"{DEFAULT_IMAGES}/genre/Action.jpg"}
         # The fixture's content_rating block: G with its TV-G addon, so either one.
         rating = client.get("/api/v1/ready-made/libraries/Movies/categories/content_rating/customise", params={"block": "Ratings", "key": "G"})
         assert rating.status_code == 200, rating.text
         assert rating.json()["filters"] == {"match": "any", "rules": [{"field": "content_rating", "modifier": "", "value": ["G", "TV-G"]}]}
+        assert rating.json()["poster"] is None  # fixture has no image map we can resolve
         # An add-on the library doesn't have is left out, as Kometa does.
         plex.TAGS["1"]["contentRating"] = [t for t in plex.TAGS["1"]["contentRating"] if t["key"] != "TV-G"]
         alone = client.get("/api/v1/ready-made/libraries/Movies/categories/content_rating/customise", params={"block": "Ratings", "key": "G"}).json()
         assert alone["filters"]["rules"][0]["value"] == ["G"]
         chart = client.get("/api/v1/ready-made/libraries/Movies/categories/basic/customise", params={"block": "", "key": "Newly Released"})
         assert chart.status_code == 422
+
+
+def test_poster_upload_is_content_addressed_and_type_checked(root):
+    client, _, _ = make_client(root)
+    with client:
+        png = tiny_image("PNG")
+        ok = client.post("/api/v1/builder/posters", content=png, headers={"Content-Type": "image/png"})
+        assert ok.status_code == 200, ok.text
+        path = ok.json()["path"]
+        assert ok.json() == {"kind": "file", "path": path}
+        name = path.rsplit("/", 1)[-1]
+        assert name == f"{hashlib.sha256(png).hexdigest()[:16]}.png"
+        stored = root / "config" / path
+        assert stored.read_bytes() == png
+        served = client.get(f"/api/v1/builder/posters/{name}")
+        assert served.status_code == 200 and served.content == png and served.headers["content-type"].startswith("image/png")
+
+        for fmt, media in (("JPEG", "image/jpeg"), ("WEBP", "image/webp")):
+            data = tiny_image(fmt)
+            got = client.post("/api/v1/builder/posters", content=data, headers={"Content-Type": media})
+            assert got.status_code == 200 and got.json()["kind"] == "file"
+
+        fake = client.post("/api/v1/builder/posters", content=b"not an image but called.png", headers={"Content-Type": "image/png"})
+        assert fake.status_code == 422 and "JPEG" in fake.json()["detail"]
+
+        huge = b"\x89PNG\r\n\x1a\n" + b"x" * (10 * 1024 * 1024)
+        assert client.post("/api/v1/builder/posters", content=huge, headers={"Content-Type": "image/png"}).status_code == 422
+
+
+def test_create_writes_file_or_url_poster_and_cleanup_drops_unused(root):
+    client, _, _ = make_client(root)
+    with client:
+        wait_for_flags(client)
+        png = tiny_image("PNG")
+        uploaded = client.post("/api/v1/builder/posters", content=png, headers={"Content-Type": "image/png"}).json()
+        url = "https://example.com/poster.jpg"
+        made = client.post("/api/v1/collections", json=body(poster=uploaded))
+        assert made.status_code == 201, made.text
+        collection = built_file(root)["collections"]["Action Picks"]
+        assert collection["file_poster"].endswith(uploaded["path"])
+        assert "url_poster" not in collection
+        assert made.json()["poster"] == uploaded
+
+        linked = client.post("/api/v1/collections", json=body(title="Linked", poster={"kind": "url", "url": url}))
+        assert linked.status_code == 201, linked.text
+        assert built_file(root)["collections"]["Linked"]["url_poster"] == url
+        assert "file_poster" not in built_file(root)["collections"]["Linked"]
+
+        plain = client.post("/api/v1/collections", json=body(title="Plain"))
+        assert plain.status_code == 201
+        assert "file_poster" not in built_file(root)["collections"]["Plain"]
+        assert "url_poster" not in built_file(root)["collections"]["Plain"]
+
+        # Swap the first collection's poster for a URL; the uploaded file becomes unreferenced and is removed.
+        changed = client.put(f"/api/v1/collections/{made.json()['id']}", json=body(poster={"kind": "url", "url": url}))
+        assert changed.status_code == 200, changed.text
+        assert not (root / "config" / uploaded["path"]).exists()
+
+        other = tiny_image("JPEG")
+        second = client.post("/api/v1/builder/posters", content=other, headers={"Content-Type": "image/jpeg"}).json()
+        with_file = client.put(f"/api/v1/collections/{made.json()['id']}", json=body(poster=second))
+        assert with_file.status_code == 200
+        assert (root / "config" / second["path"]).is_file()
+        client.delete(f"/api/v1/collections/{made.json()['id']}")
+        assert not (root / "config" / second["path"]).exists()
 
 
 def test_preview_keeps_plexs_or_grouping_in_order(root):
