@@ -387,6 +387,11 @@ async def test_existing_movie_in_radarr_not_tagged(env):
     row = db.execute("SELECT * FROM requests WHERE item = 'tmdb-movie:603'").fetchone()
     assert row["status"] == "exists"
 
+    # The next run asks again: skipped, no second row, and it doesn't use up the collection's daily cap.
+    again = await service.request([Item(item="tmdb-movie:603", title="The Matrix", year=1999)], library="Movies", collection_id=1, now=T0, cap=1)
+    assert again.skipped == 1 and again.exists == 0
+    assert db.execute("SELECT count(*) FROM requests WHERE item = 'tmdb-movie:603'").fetchone()[0] == 1
+
 
 @pytest.mark.anyio
 async def test_show_request_to_sonarr(env):
@@ -647,8 +652,10 @@ async def test_label_imported_in_plex(env):
     # Verify FakePlex received PUT with label=starr and preserved existing label
     movie = next(m for m in mock.plex.TITLES["1"] if m["ratingKey"] == "201")
     tags = [lab["tag"] for lab in movie.get("Label", [])]
-    assert "starr" in tags
-    assert "ExistingLabel" in tags
+    assert tags == ["ExistingLabel", "starr"]  # Plex's edit sets the whole list, so the old label is sent back with the new one
+
+    # Already labelled: no second edit.
+    assert await server.add_label("201", "starr", "movie", "1") is False
 
     row = db.execute("SELECT * FROM requests WHERE item = 'tmdb-movie:1726'").fetchone()
     assert row["labelled_at"] is not None

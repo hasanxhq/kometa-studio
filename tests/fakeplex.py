@@ -289,17 +289,14 @@ class FakePlex:
     def library(self, request: httpx.Request) -> httpx.Response:
         parts = request.url.path.strip("/").split("/")  # library, sections, <key>, <what>
         if request.method == "PUT" and len(parts) == 4 and parts[1] == "sections" and parts[3] == "all":
+            # Like Plex: label[0..n].tag.tag sets the item's whole label list (python-plexapi re-sends the old ones to add one).
             rating_key = request.url.params.get("id")
-            label_name = request.url.params.get("label[0].tag.tag")
-            if rating_key and label_name:
-                self.item_labels.setdefault(rating_key, []).append(label_name)
-                for m in self.TITLES.get(parts[2], []):
+            given = [v for k, v in sorted(request.url.params.items()) if k.startswith("label[") and k.endswith("].tag.tag")]
+            if rating_key and given:
+                self.item_labels[rating_key] = list(given)
+                for m in [*self.TITLES.get(parts[2], []), *(i for items in self.ITEMS.values() for i in items)]:
                     if m.get("ratingKey") == rating_key:
-                        m.setdefault("Label", []).append({"tag": label_name})
-                for col_items in self.ITEMS.values():
-                    for m in col_items:
-                        if m.get("ratingKey") == rating_key:
-                            m.setdefault("Label", []).append({"tag": label_name})
+                        m["Label"] = [{"tag": tag} for tag in given]
             return httpx.Response(200)
         if parts == ["library", "sections"]:
             return httpx.Response(200, json={"MediaContainer": {"Directory": self.SECTIONS}})
@@ -339,6 +336,10 @@ class FakePlex:
         if len(parts) == 3 and parts[1] == "metadata" and parts[2] in self.CREDITS:
             title = next(m for m in self.TITLES["1"] if m["ratingKey"] == parts[2])
             return httpx.Response(200, json={"MediaContainer": {"size": 1, "Metadata": [title | self.CREDITS[parts[2]]]}})
+        listed = [(section, m) for section, titles in self.TITLES.items() for m in titles if m.get("ratingKey") == parts[2]] if len(parts) == 3 and parts[1] == "metadata" else []
+        if listed:  # a title from a section listing, with its labels
+            section, title = listed[-1]
+            return httpx.Response(200, json={"MediaContainer": {"size": 1, "Metadata": [title | {"librarySectionID": int(section)}]}})
         if len(parts) == 3 and parts[1] == "metadata" and parts[2] == "201":  # a movie, not a collection
             return httpx.Response(200, json={"MediaContainer": {"size": 1, "Metadata": [self.ITEMS["101"][0] | {"librarySectionID": 1}]}})
         if len(parts) == 4 and parts[1] == "collections" and parts[3] == "children" and parts[2] in self.ITEMS:

@@ -678,9 +678,10 @@ class RequestService:
         if not settings.enabled:
             raise RequestsDisabled("Requests are disabled")
 
-        # Deduplication against active rows
+        # Asked once is enough: a title already requested, downloading, imported, or already in Radarr/Sonarr
+        # ('exists', which Studio leaves alone) isn't filed again on every later run.
         active_rows = self.db.execute(
-            "SELECT item FROM requests WHERE status IN ('requested', 'downloading', 'imported')"
+            "SELECT item FROM requests WHERE status IN ('requested', 'downloading', 'imported', 'exists')"
         ).fetchall()
         active_items = {r[0] for r in active_rows}
         seen_in_batch: set[str] = set()
@@ -690,7 +691,8 @@ class RequestService:
         if collection_id is not None and effective_cap is not None:
             today_start = f"{now.date().isoformat()}T00:00:00Z"
             used_today = self.db.execute(
-                "SELECT count(*) FROM requests WHERE collection_id = ? AND requested_at >= ?",
+                # Only what was actually sent counts towards the cap, not failures or titles the app already had.
+                "SELECT count(*) FROM requests WHERE collection_id = ? AND requested_at >= ? AND status IN ('requested', 'downloading', 'imported')",
                 (collection_id, today_start),
             ).fetchone()[0]
             remaining_cap = max(0, effective_cap - used_today)
