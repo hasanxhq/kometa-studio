@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import re
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -223,8 +224,15 @@ def is_generated(text: str) -> bool:
 BUILT_HEADER = "Written by Kometa Studio from its collection builder. Studio rewrites this file on every save: change these collections in Studio."
 
 
-def render_built(definitions: list[tuple[str, dict]]) -> str | None:
-    """Kometa's file for the library's builder collections: one smart collection each, labelled Studio. None if there are none."""
+def render_built(
+    definitions: list[tuple[str, dict]],
+    file_ref: Callable[[str], str] | None = None,
+) -> str | None:
+    """Kometa's file for the library's builder collections: one smart collection each, labelled Studio. None if there are none.
+
+    ``file_ref`` turns a config-relative poster path (``studio/posters/…``) into the path Kometa's working directory
+    uses for ``file_poster`` (``ConfigWriter.reference``). Without it, a file poster is skipped.
+    """
     from . import smart_filters
 
     if not definitions:
@@ -243,6 +251,12 @@ def render_built(definitions: list[tuple[str, dict]]) -> str | None:
             body["summary"] = str(definition["summary"])
         if definition.get("sort_title"):
             body["sort_title"] = str(definition["sort_title"])
+        poster = definition.get("poster")
+        if isinstance(poster, dict):
+            if poster.get("kind") == "file" and poster.get("path") and file_ref is not None:
+                body["file_poster"] = file_ref(str(poster["path"]))
+            elif poster.get("kind") == "url" and poster.get("url"):
+                body["url_poster"] = str(poster["url"])
         collections[title] = body
     document = CommentedMap([("collections", collections)])
     stream = io.StringIO()
@@ -354,7 +368,7 @@ async def write_library(
             continue
         edits.append(Edit(rel, text, file_hash(current) if current is not None else None))
 
-    built_text = render_built(built or [])
+    built_text = render_built(built or [], file_ref=lambda path: writer.reference(writer.config_dir / path))
     if built_text is not None:
         rel = relative_path(library, col.BUILT, all_libraries)
         active_rels[col.BUILT] = rel

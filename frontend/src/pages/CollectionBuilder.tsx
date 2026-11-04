@@ -5,7 +5,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { ApiError } from "../api";
-import { builderApi, type BuilderField, type CollectionInput, type FilterRule, type FilterSpec } from "../builderApi";
+import {
+  builderApi,
+  isKometaPosterUrl,
+  posterPreviewSrc,
+  type BuilderField,
+  type CollectionInput,
+  type FilterRule,
+  type FilterSpec,
+  type Poster,
+} from "../builderApi";
 import { emptyValue, RuleValueInput, type DraftValue } from "../components/builder/RuleValueInput";
 import { useHeaderTitle } from "../components/HeaderTitle";
 import { LeaveGuard } from "../components/LeaveGuard";
@@ -23,7 +32,18 @@ type Draft = {
   minimum_items: number;
   summary: string;
   sort_title: string;
+  poster: Poster;
 };
+
+type PosterMode = "plex" | "upload" | "url" | "kometa";
+
+function posterMode(poster: Poster, kometaUrl: string | null): PosterMode {
+  if (!poster) return "plex";
+  if (poster.kind === "file") return "upload";
+  if (kometaUrl && poster.kind === "url" && poster.url === kometaUrl) return "kometa";
+  if (poster.kind === "url" && isKometaPosterUrl(poster.url) && kometaUrl === poster.url) return "kometa";
+  return "url";
+}
 
 function toInput(draft: Draft): CollectionInput {
   return {
@@ -39,6 +59,7 @@ function toInput(draft: Draft): CollectionInput {
     minimum_items: draft.minimum_items,
     summary: draft.summary.trim() || null,
     sort_title: draft.sort_title.trim() || null,
+    poster: draft.poster,
   };
 }
 
@@ -56,6 +77,7 @@ function fromInput(input: CollectionInput): Draft {
     minimum_items: input.minimum_items,
     summary: input.summary ?? "",
     sort_title: input.sort_title ?? "",
+    poster: input.poster ?? null,
   };
 }
 
@@ -74,6 +96,7 @@ function blankDraft(library: string, fields: BuilderField[]): Draft {
     minimum_items: 1,
     summary: "",
     sort_title: "",
+    poster: null,
   };
 }
 
@@ -172,6 +195,119 @@ function RuleRow({
   );
 }
 
+function PosterSection({
+  poster,
+  kometaUrl,
+  onChange,
+}: {
+  poster: Poster;
+  kometaUrl: string | null;
+  onChange: (poster: Poster) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  // Local mode so "Upload an image" stays selected before a file is chosen (poster is still null).
+  const [mode, setModeState] = useState<PosterMode>(() => posterMode(poster, kometaUrl));
+  const preview = posterPreviewSrc(poster);
+
+  const setMode = (next: PosterMode) => {
+    setUploadError(null);
+    setModeState(next);
+    if (next === "plex") onChange(null);
+    else if (next === "kometa" && kometaUrl) onChange({ kind: "url", url: kometaUrl });
+    else if (next === "upload") {
+      if (poster?.kind !== "file") onChange(null);
+    } else if (next === "url") {
+      onChange(poster?.kind === "url" && (!kometaUrl || poster.url !== kometaUrl) ? poster : { kind: "url", url: "" });
+    }
+  };
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    setUploadError(null);
+    try {
+      onChange(await builderApi.uploadPoster(file));
+      setModeState("upload");
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <section className="flex flex-col gap-3" aria-labelledby="poster-heading">
+      <h3 id="poster-heading" className="text-[15px] font-semibold">
+        Poster
+      </h3>
+      <fieldset className="flex flex-col gap-2">
+        <legend className="sr-only">Poster source</legend>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input type="radio" name="poster" className="size-4 accent-accent" checked={mode === "plex"} onChange={() => setMode("plex")} />
+          Plex&apos;s own
+        </label>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input type="radio" name="poster" className="size-4 accent-accent" checked={mode === "upload"} onChange={() => setMode("upload")} />
+          Upload an image
+        </label>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input type="radio" name="poster" className="size-4 accent-accent" checked={mode === "url"} onChange={() => setMode("url")} />
+          Image link
+        </label>
+        {kometaUrl && (
+          <label className="flex min-h-11 items-center gap-2 text-sm">
+            <input type="radio" name="poster" className="size-4 accent-accent" checked={mode === "kometa"} onChange={() => setMode("kometa")} />
+            Kometa&apos;s artwork
+          </label>
+        )}
+      </fieldset>
+      {mode === "upload" && (
+        <Field label="Image file" hint="JPEG, PNG or WebP, up to 10 MB">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+            className="min-h-11 text-sm file:mr-3 file:min-h-11 file:rounded-control file:border file:border-border-strong file:bg-surface-2 file:px-4 file:text-text"
+            disabled={uploading}
+            onChange={(event) => {
+              void onFile(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+            aria-label="Upload poster"
+          />
+        </Field>
+      )}
+      {mode === "url" && (
+        <Field label="Image URL">
+          <input
+            className={inputClass}
+            type="url"
+            value={poster?.kind === "url" ? poster.url : ""}
+            onChange={(event) => onChange({ kind: "url", url: event.target.value })}
+            placeholder="https://"
+            aria-label="Poster URL"
+          />
+        </Field>
+      )}
+      {uploadError && (
+        <p role="alert" className="text-sm text-err">
+          {uploadError}
+        </p>
+      )}
+      {uploading && <p className="text-sm text-muted">Uploading…</p>}
+      <div className="w-28 overflow-hidden rounded-control border border-border bg-surface-2 aspect-[2/3]" aria-label="Poster preview">
+        {preview ? (
+          <img src={preview} alt="" className="size-full object-cover" />
+        ) : (
+          <div className="flex size-full items-center justify-center p-2 text-center text-xs text-muted">
+            {mode === "plex" ? "Plex mosaic" : "No image yet"}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function PreviewPane({
   preview,
   updating,
@@ -236,6 +372,8 @@ function BuilderForm({
   const [draft, setDraft] = useState(baseline);
   const [baselineSnap] = useState(baseline);
   const dirty = JSON.stringify(toInput(draft)) !== JSON.stringify(toInput(baselineSnap));
+  const kometaUrl =
+    baselineSnap.poster?.kind === "url" && isKometaPosterUrl(baselineSnap.poster.url) ? baselineSnap.poster.url : null;
 
   const [previewArgs, setPreviewArgs] = useState<{ filters: FilterSpec; sort_by: string | null } | null>(null);
   useEffect(() => {
@@ -428,6 +566,8 @@ function BuilderForm({
               />
             </Field>
           </section>
+
+          <PosterSection poster={draft.poster} kometaUrl={kometaUrl} onChange={(poster) => setDraft({ ...draft, poster })} />
 
           <section className="flex flex-col gap-2" aria-labelledby="visible-heading">
             <h3 id="visible-heading" className="text-[15px] font-semibold">
