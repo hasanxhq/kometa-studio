@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { ApiError, api, type ReadyMadeEntry } from "../api";
 import { BuildBar } from "../components/BuildBar";
+import { useHeaderTitle } from "../components/HeaderTitle";
 import { PlexPoster } from "../components/PlexPoster";
 import { Button } from "../components/ui";
 import { categoryOf } from "../defaults";
@@ -83,6 +84,7 @@ export function ReadyMadeCategory() {
       return collections.some((entry) => entry.state === "queued" || entry.state === "building") ? 3000 : false;
     },
   });
+  useHeaderTitle(data.data?.title);
 
   if (overview.isPending) return <p className="text-muted">Loading…</p>;
   if (overview.isError) {

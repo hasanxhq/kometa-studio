@@ -377,3 +377,18 @@ def test_remove_keeps_everything_while_plex_cant_be_reached(root):
         assert [k["title"] for k in result["kept"]] == ["Studio Chart"] and "Plex" in result["kept"][0]["reason"]
         assert plex.deletions == []
         assert [r["desired"] for r in col.rows(db, "Movies")] == [0]  # kept, marked for removal, for a later try
+
+
+def test_a_category_the_count_couldnt_list_shows_why(root):
+    # E.g. language categories when Studio couldn't get TMDb's language names.
+    with make_client(root)[0] as client:
+        wait_for_task(client, "ready_made_counts")
+        with client.app.state.db:
+            col.save_counts(client.app.state.db, "Movies", "genre", {"entries": []}, "Kometa names these with TMDb's names")
+        gallery = client.get("/api/v1/ready-made/libraries/Movies").json()
+        genre = next(c for c in gallery["categories"] if c["name"] == "genre")
+        assert genre["listable"] is False and genre["reason"] == "Kometa names these with TMDb's names"
+        detail = client.get("/api/v1/ready-made/libraries/Movies/categories/genre").json()
+        assert detail["listable"] is False and detail["reason"] == "Kometa names these with TMDb's names"
+        basic = next(c for c in gallery["categories"] if c["name"] == "basic")
+        assert basic["listable"] is True and basic["reason"] is None

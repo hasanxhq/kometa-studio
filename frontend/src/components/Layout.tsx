@@ -4,6 +4,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router";
 
 import { useAdvanced } from "../advanced";
 import { api } from "../api";
+import { HeaderTitleProvider, useHeaderTitleValue } from "./HeaderTitle";
 import { JobsButton, JobsDrawer } from "./Jobs";
 import { StreakMark } from "./StreakMark";
 import { pageTitle, sections } from "../nav";
@@ -96,10 +97,19 @@ function SignInNotice() {
 }
 
 export function Layout() {
+  return (
+    <HeaderTitleProvider>
+      <LayoutFrame />
+    </HeaderTitleProvider>
+  );
+}
+
+function LayoutFrame() {
   const auth = useQuery({ queryKey: ["auth"], queryFn: api.auth.status });
   const [menuOpen, setMenuOpen] = useState(false);
   const [jobsOpen, setJobsOpen] = useState(false);
   const { pathname } = useLocation();
+  const pageName = useHeaderTitleValue();
 
   return (
     <div className="flex h-full">
@@ -133,7 +143,7 @@ export function Layout() {
           >
             ☰
           </button>
-          <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{pageTitle(pathname)}</h1>
+          <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{pageName ?? pageTitle(pathname)}</h1>
           <JobsButton onOpen={() => setJobsOpen(true)} />
           <AdvancedToggle />
           {auth.data?.signed_in && <SignOut className="hidden sm:block" />}
