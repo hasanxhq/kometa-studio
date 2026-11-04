@@ -156,7 +156,8 @@ class Tasks:
 
     async def _ready_made_counts(self, options: dict) -> str:
         from . import collections as col
-        from . import ready_made, tmdb_languages
+        from . import plex_people, ready_made, tmdb_details, tmdb_languages
+        from .config_sections import read_section
         from .kometa_config import read_plex
         from .kometa_files import ConfigReader
         from .plex_library import PlexServer, PlexUnavailable
@@ -172,6 +173,7 @@ class Tasks:
         if not current.url or not current.token:
             raise RuntimeError("Kometa isn't connected to Plex yet. Connect it in Settings → Plex.")
         server = PlexServer(self.http, current.url, current.token)
+        people = plex_people.PeopleScan(server, self.settings.data_dir)
         try:
             plex_libs = {lib.title.casefold(): lib for lib in await server.libraries()}
         except PlexUnavailable as error:
@@ -183,6 +185,10 @@ class Tasks:
             raise RuntimeError(str(error)) from None
 
         languages = await tmdb_languages.english_names(self.http, self.settings.kometa_config, self.settings.data_dir)
+        countries = await tmdb_languages.english_country_names(self.http, self.settings.kometa_config, self.settings.data_dir)
+        apikey = (read_section(self.settings.kometa_config, "tmdb") or {}).get("apikey")
+        details = tmdb_details.TMDbDetails(self.http, str(apikey), self.settings.data_dir) if apikey else None
+        tmdb = tmdb_details.LibraryLookup(details, server, languages, countries)
         counted = 0
         for library in config_libs:
             plex_title = str(library.settings.get("library_name") or library.name)
@@ -191,7 +197,7 @@ class Tasks:
                 continue
             self.notes["ready_made_counts"] = f"Counting in {library.name}"
             try:
-                categories = await ready_made.count(server, plex.key, plex.type, root, languages)
+                categories = await ready_made.count(server, plex.key, plex.type, root, languages, people, tmdb)
             except PlexUnavailable as error:
                 raise RuntimeError(str(error)) from None
             with self.db:

@@ -12,7 +12,7 @@ from typing import Any
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
-from kometa_studio import tmdb_languages
+from kometa_studio import plex_people, tmdb_details, tmdb_languages
 from kometa_studio.kometa_files import _banner, _read
 from kometa_studio.plex_library import PlexServer
 
@@ -78,13 +78,15 @@ DYNAMIC_TYPE_SOURCES: dict[str, DynamicTypeSource] = {
     "subtitle_language": DynamicTypeSource(source="plex", tag="subtitleLanguage", listable=True),
 
     # External / unlistable types: require TMDb, Trakt, or library-wide appearance ranking
-    "tmdb_collection": DynamicTypeSource(source="external", listable=False, reason="Kometa picks these from TMDb at build time"),
-    "actor": DynamicTypeSource(source="external", listable=False, reason="Requires scanning the library and ranking actors by appearances"),
-    "director": DynamicTypeSource(source="external", listable=False, reason="Requires scanning the library and ranking directors by appearances"),
-    "producer": DynamicTypeSource(source="external", listable=False, reason="Requires scanning the library and ranking producers by appearances"),
-    "writer": DynamicTypeSource(source="external", listable=False, reason="Requires scanning the library and ranking writers by appearances"),
-    "origin_country": DynamicTypeSource(source="external", listable=False, reason="Kometa queries TMDb for each show's origin country at build time"),
-    "original_language": DynamicTypeSource(source="external", listable=False, reason="Requires looking up original languages on TMDb"),
+    # TMDb types: every title looked up on TMDb, as Kometa does (tmdb_details.py)
+    "tmdb_collection": DynamicTypeSource(source="tmdb", listable=True),
+    "origin_country": DynamicTypeSource(source="tmdb", listable=True),
+    "original_language": DynamicTypeSource(source="tmdb", listable=True),
+    # People types: ranked by scanning every title's credits in Plex (plex_people.py)
+    "actor": DynamicTypeSource(source="people", listable=True),
+    "director": DynamicTypeSource(source="people", listable=True),
+    "producer": DynamicTypeSource(source="people", listable=True),
+    "writer": DynamicTypeSource(source="people", listable=True),
     "tmdb_popular_people": DynamicTypeSource(source="external", listable=False, reason="Requires fetching popular people from TMDb"),
     "letterboxd_user_lists": DynamicTypeSource(source="external", listable=False, reason="Requires fetching user lists from Letterboxd"),
     "edition": DynamicTypeSource(source="external", listable=False, reason="Edition collections are not supported in phase 1"),
@@ -101,6 +103,14 @@ DYNAMIC_TYPE_SOURCES: dict[str, DynamicTypeSource] = {
 # Kometa reads these from episodes in a show library (meta.py: library.get_tags(f"episode.{search_tag}")).
 EPISODE_TYPES = {"resolution", "audio_language", "subtitle_language"}
 LANGUAGE_TYPES = {"audio_language", "subtitle_language"}
+NO_TMDB = "Kometa looks these up on TMDb, and Studio couldn't. Check the TMDb key in Settings → Connect, then count again."
+# meta.py's default_title_format where it differs from _build_dynamic_title's fallback.
+DEFAULT_TITLE_FORMATS = {
+    "tmdb_collection": "<<key_name>>",
+    "origin_country": "<<key_name>> <<library_type>>s",
+    "original_language": "<<key_name>> <<library_type>>s",
+}
+NO_CREDITS = "Studio couldn't read this library's credits from Plex. It tries again on the next count."
 NO_LANGUAGE_NAMES = (
     "Kometa names these collections with TMDb's language names, and Studio couldn't get them. "
     "Check the TMDb key in Settings → Connect, then count again."
@@ -427,8 +437,8 @@ def categories(kometa_root: Path, library_type: str) -> list[Category]:
                     elif type_info.source == "file":
                         dyn_entries = _expand_file_dynamic(str(block_name), block_attrs, library_type)
                         entries.extend(dyn_entries)
-                    elif type_info.source == "plex":
-                        pass
+                    elif type_info.source in ("plex", "people", "tmdb"):
+                        pass  # expanded by count()
 
             has_dynamic = bool(dynamic_cols)
             has_static = bool(entries)
@@ -473,17 +483,67 @@ def categories(kometa_root: Path, library_type: str) -> list[Category]:
     return result
 
 
+def _tmdb_entries(
+    auto_type: str,
+    found: list[tuple[str, dict]],
+    names: dict[str, str],
+    block: dict,
+    og_exclude: list[str],
+    exclude: list[str],
+    addons: dict[str, list[str]],
+) -> list[tuple[str, str, int]]:
+    """(key, name, titles) for a TMDb-valued block, as meta.py builds auto_list and applies addons and custom_keys."""
+    all_keys: dict[str, str] = {}
+    auto_list: dict[str, str] = {}
+    titles: dict[str, set[str]] = {}
+    for rating_key, details in found:
+        if auto_type == "tmdb_collection":
+            pairs = [details["collection"]] if details.get("collection") else []
+        elif auto_type == "origin_country":
+            pairs = [(code, names.get(code, code.upper())) for code in details.get("countries") or []]
+        else:
+            language = details.get("language")
+            pairs = [(language, names.get(language, language))] if language else []
+        for key, name in pairs:
+            all_keys[key] = name
+            titles.setdefault(key, set()).add(rating_key)
+            if key not in exclude and name not in exclude:
+                auto_list[key] = name
+    custom_keys = block.get("custom_keys", True) is not False
+    addons = {k: list(v) for k, v in addons.items()}
+    for add_key, combined in list(addons.items()):
+        if add_key not in all_keys and add_key not in og_exclude:
+            final_keys = [key for key in combined if key in all_keys]
+            if custom_keys and final_keys:
+                auto_list.setdefault(add_key, add_key)
+                addons[add_key] = final_keys
+            elif not custom_keys:
+                for key in final_keys:
+                    auto_list[key] = all_keys[key]
+    result = []
+    for key, name in auto_list.items():
+        members = set(titles.get(key, set()))
+        for extra in addons.get(key, []):
+            if extra != key:
+                members |= titles.get(extra, set())
+        result.append((key, name, len(members)))
+    return result
+
+
 async def count(
     plex: PlexServer,
     library_key: str,
     library_type: str,
     kometa_root: Path,
     languages: dict[str, str] | None = None,
+    people: plex_people.PeopleScan | None = None,
+    tmdb: tmdb_details.LibraryLookup | None = None,
 ) -> list[Category]:
     """Categories with dynamic collections expanded and counted against Plex.
 
     ``languages`` is TMDb's English names (``tmdb_languages.english_names``); without it, language categories
-    get a ``count_error`` instead of titles that wouldn't match Kometa's.
+    get a ``count_error`` instead of titles that wouldn't match Kometa's. ``people`` reads the library's credits
+    for actor, director, writer and producer categories; without it they get a ``count_error``.
     """
     library_type = library_type.lower()
     categories_list = categories(kometa_root, library_type)
@@ -520,7 +580,7 @@ async def count(
                 continue
             auto_type = str(block_attrs.get("type", "")).lower()
             type_info = DYNAMIC_TYPE_SOURCES.get(auto_type)
-            if not type_info or type_info.source != "plex":
+            if not type_info or type_info.source not in ("plex", "people", "tmdb"):
                 continue
 
             title_format = block_attrs.get("title_format")
@@ -537,6 +597,60 @@ async def count(
             exclude = list(og_exclude)
             for k, v in addons.items():
                 exclude.extend([y for y in v if y != k and y not in exclude])
+
+            if type_info.source == "tmdb":
+                found = await tmdb.items(library_key, library_type) if tmdb else None
+                if found is None:
+                    cat.count_error = NO_TMDB
+                    continue
+                names = tmdb.countries if auto_type == "origin_country" else tmdb.languages if auto_type == "original_language" else {}
+                if names is None:
+                    cat.count_error = NO_TMDB
+                    continue
+                for key, title, items in _tmdb_entries(auto_type, found, names, block_attrs, og_exclude, exclude, addons):
+                    if include and key not in include:
+                        continue
+                    if not _is_dynamic_key_allowed(key, template_vars, library_type):
+                        continue
+                    if auto_type == "tmdb_collection" and items < 2:
+                        continue  # the franchise template's minimum_items: 2
+                    col_title = _build_dynamic_title(
+                        key=key,
+                        value=title,
+                        library_type=library_type,
+                        auto_type=auto_type,
+                        title_format=title_format or DEFAULT_TITLE_FORMATS.get(auto_type),
+                        key_name_override=key_name_override,
+                        title_override=title_override,
+                        remove_prefix=remove_prefix,
+                        remove_suffix=remove_suffix,
+                        template_vars=template_vars,
+                    )
+                    cat.collections.append(Entry(block=str(block_name), key=key, kometa_name=col_title, title=col_title, items=items))
+                continue
+
+            if type_info.source == "people":
+                credits = await plex_people.scan_or_none(people, library_key, library_type)
+                if credits is None:
+                    cat.count_error = NO_CREDITS
+                    continue
+                for person in plex_people.rank(credits, auto_type, block_attrs.get("data"), include, exclude):
+                    if include and person.name not in include:
+                        continue
+                    title = _build_dynamic_title(
+                        key=person.name,
+                        value=person.name,
+                        library_type=library_type,
+                        auto_type=auto_type,
+                        title_format=title_format,
+                        key_name_override=key_name_override,
+                        title_override=title_override,
+                        remove_prefix=remove_prefix,
+                        remove_suffix=remove_suffix,
+                        template_vars=template_vars,
+                    )
+                    cat.collections.append(Entry(block=str(block_name), key=person.name, kometa_name=title, title=title, items=person.titles))
+                continue
 
             all_keys: dict[str, str] = {}
             auto_list: dict[str, str] = {}

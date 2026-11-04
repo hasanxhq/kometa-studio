@@ -21,6 +21,8 @@ log = logging.getLogger(__name__)
 
 URL = "https://api.themoviedb.org/3/configuration/languages"
 CACHE = "tmdb-languages.json"
+COUNTRY_URL = "https://api.themoviedb.org/3/configuration/countries"
+COUNTRY_CACHE = "tmdb-countries.json"
 MAX_AGE = 30 * 24 * 3600  # TMDb's list hardly changes
 TIMEOUT = 10.0
 
@@ -34,31 +36,40 @@ def _load(path: Path) -> tuple[float, dict[str, str]] | None:
         return None
 
 
-async def _fetch(http: httpx.AsyncClient, apikey: str) -> dict[str, str]:
-    response = await http.get(URL, params={"api_key": apikey}, timeout=TIMEOUT)
+async def _fetch(http: httpx.AsyncClient, apikey: str, url: str = URL, code_field: str = "iso_639_1") -> dict[str, str]:
+    response = await http.get(url, params={"api_key": apikey}, timeout=TIMEOUT)
     response.raise_for_status()
     names: dict[str, str] = {}
-    for language in response.json():
-        code, name = language.get("iso_639_1"), language.get("english_name")
+    for entry in response.json():
+        code, name = entry.get(code_field), entry.get("english_name")
         if code and name:
             names[str(code).lower()] = str(name)
     if not names:
-        raise ValueError("TMDb sent no languages")
+        raise ValueError(f"TMDb sent nothing from {url}")
     return names
 
 
 async def english_names(http: httpx.AsyncClient, config: Path | None, data_dir: Path) -> dict[str, str] | None:
     """ISO 639-1 code (lower case) → TMDb's English name; a stale copy if TMDb can't be reached; None if neither."""
-    path = data_dir / CACHE
+    return await _names(http, config, data_dir, CACHE, URL, "iso_639_1")
+
+
+async def english_country_names(http: httpx.AsyncClient, config: Path | None, data_dir: Path) -> dict[str, str] | None:
+    """ISO 3166-1 code (lower case) → TMDb's English name, as tmdbapis names a show's origin countries for Kometa."""
+    return await _names(http, config, data_dir, COUNTRY_CACHE, COUNTRY_URL, "iso_3166_1")
+
+
+async def _names(http: httpx.AsyncClient, config: Path | None, data_dir: Path, cache: str, url: str, code_field: str) -> dict[str, str] | None:
+    path = data_dir / cache
     cached = _load(path)
     if cached is not None and time.time() - cached[0] < MAX_AGE:
         return cached[1]
     apikey = (read_section(config, "tmdb") or {}).get("apikey")
     if apikey:
         try:
-            names = await _fetch(http, str(apikey))
+            names = await _fetch(http, str(apikey), url, code_field)
         except (httpx.HTTPError, ValueError, TypeError, AttributeError) as error:
-            log.warning("Couldn't get TMDb's language names: %s", error)
+            log.warning("Couldn't get TMDb's names from %s: %s", url, error)
         else:
             try:
                 data_dir.mkdir(parents=True, exist_ok=True)
@@ -66,7 +77,7 @@ async def english_names(http: httpx.AsyncClient, config: Path | None, data_dir: 
                 tmp.write_text(json.dumps({"fetched_at": time.time(), "names": names}), encoding="utf-8")
                 tmp.replace(path)
             except OSError as error:
-                log.warning("Couldn't keep TMDb's language names: %s", error)
+                log.warning("Couldn't keep TMDb's names from %s: %s", url, error)
             return names
     return cached[1] if cached is not None else None
 

@@ -40,8 +40,18 @@ def test_type_to_source_table_completeness():
         assert DYNAMIC_TYPE_SOURCES[t].tag is not None
         assert DYNAMIC_TYPE_SOURCES[t].listable is True
 
+    # People: ranked from Plex's credits
+    for t in ("actor", "director", "producer", "writer"):
+        assert DYNAMIC_TYPE_SOURCES[t].source == "people"
+        assert DYNAMIC_TYPE_SOURCES[t].listable is True
+
+    # TMDb: every title looked up, as Kometa does
+    for t in ("tmdb_collection", "origin_country", "original_language"):
+        assert DYNAMIC_TYPE_SOURCES[t].source == "tmdb"
+        assert DYNAMIC_TYPE_SOURCES[t].listable is True
+
     # Unlistable / external
-    for t in ("tmdb_collection", "actor", "director", "producer", "writer", "origin_country", "original_language"):
+    for t in ("tmdb_popular_people", "letterboxd_user_lists", "edition", "episode_year"):
         assert DYNAMIC_TYPE_SOURCES[t].listable is False
         assert bool(DYNAMIC_TYPE_SOURCES[t].reason)
 
@@ -127,12 +137,11 @@ def test_categories_on_fixtures_for_movie():
     assert genre.listable is True
     assert genre.collections == []
 
-    # Director: unlistable with plain reason
+    # Director: listable, expanded by count() from Plex's credits
     director = cat_by_name["director"]
     assert director.group == "movie"
     assert director.kind == "per_value"
-    assert director.listable is False
-    assert director.reason == "Requires scanning the library and ranking directors by appearances"
+    assert director.listable is True
     assert director.collections == []
 
 
@@ -334,3 +343,123 @@ async def test_count_reads_show_languages_from_episodes(plex_server, tmp_path):
     assert listing and all(r.url.params.get("type") == "4" for r in listing)
     counts = [r for r in fake.requests if r.url.path.endswith("/library/sections/2/all")]
     assert counts and all("episode.audioLanguage" in r.url.params for r in counts)
+
+
+PEOPLE_DEFAULT = """dynamic_collections:
+  Top Directors:
+    type: director
+    data:
+      depth: 5
+      limit: 25
+    title_format: <<key_name>> (Director)
+"""
+
+
+@pytest.mark.anyio
+async def test_count_ranks_people_from_credits(plex_server, tmp_path):
+    from kometa_studio.plex_people import PeopleScan
+
+    fake, server = plex_server
+    path = tmp_path / "kometa" / "defaults" / "movie" / "director.yml"
+    path.parent.mkdir(parents=True)
+    path.write_text(PEOPLE_DEFAULT)
+    scan = PeopleScan(server, tmp_path / "data")
+    counted = await count(server, "1", "movie", tmp_path / "kometa", None, scan)
+    director = next(c for c in counted if c.name == "director")
+    assert director.count_error is None
+    # limit given, so the minimum is 1: both directors, the most frequent first.
+    assert [(e.key, e.kometa_name, e.items) for e in director.collections] == [
+        ("Denis Villeneuve", "Denis Villeneuve (Director)", 2),
+        ("Michael Mann", "Michael Mann (Director)", 1),
+    ]
+    # Credits are kept, and read again only for titles Plex has changed.
+    fetched = [r for r in fake.requests if r.url.path.startswith("/library/metadata/")]
+    assert len(fetched) == 3
+    again = await count(server, "1", "movie", tmp_path / "kometa", None, PeopleScan(server, tmp_path / "data"))
+    assert [e.key for e in next(c for c in again if c.name == "director").collections] == ["Denis Villeneuve", "Michael Mann"]
+    assert len([r for r in fake.requests if r.url.path.startswith("/library/metadata/")]) == 3
+
+
+@pytest.mark.anyio
+async def test_count_without_a_people_scan_says_why(plex_server, tmp_path):
+    fake, server = plex_server
+    path = tmp_path / "defaults" / "movie" / "director.yml"
+    path.parent.mkdir(parents=True)
+    path.write_text(PEOPLE_DEFAULT)
+    counted = await count(server, "1", "movie", tmp_path, None, None)
+    director = next(c for c in counted if c.name == "director")
+    assert director.collections == [] and "credits" in (director.count_error or "")
+
+
+FRANCHISE_DEFAULT = """dynamic_collections:
+  TMDb Collections:
+    type: tmdb_collection
+    remove_suffix: "Collection"
+    custom_keys: false
+    addons:
+      8091:
+        - 135416
+    title_override:
+      10: "Star Wars: Skywalker Saga"
+"""
+SHOW_COUNTRY_DEFAULT = """dynamic_collections:
+  Country:
+    type: origin_country
+    title_format: <<key_name>>
+    include:
+      - gb
+      - kr
+"""
+
+
+class StubLookup:
+    def __init__(self, found, countries=None, languages=None):
+        self.found, self.countries, self.languages = found, countries, languages
+
+    async def items(self, library_key, library_type):
+        return self.found
+
+
+def _default(root: Path, folder: str, name: str, text: str) -> Path:
+    path = root / "defaults" / folder / f"{name}.yml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    return root
+
+
+@pytest.mark.anyio
+async def test_count_lists_franchises_as_kometa_does(plex_server, tmp_path):
+    fake, server = plex_server
+    movie = lambda cid, name: {"collection": (cid, name), "countries": [], "language": "en"}  # noqa: E731
+    found = [
+        ("1", movie("8091", "Alien Collection")), ("2", movie("8091", "Alien Collection")),
+        ("3", movie("135416", "Prometheus Collection")),  # an addon of Alien: counted there, not on its own
+        ("4", movie("10", "Star Wars Collection")), ("5", movie("10", "Star Wars Collection")),
+        ("6", movie("99", "Lonely Collection")),  # one title: minimum_items 2 keeps it out
+        ("7", {"collection": None, "countries": [], "language": "en"}),
+    ]
+    counted = await count(server, "1", "movie", _default(tmp_path, "movie", "franchise", FRANCHISE_DEFAULT), tmdb=StubLookup(found))
+    franchise = next(c for c in counted if c.name == "franchise")
+    assert [(e.key, e.kometa_name, e.items) for e in franchise.collections] == [
+        ("8091", "Alien", 3),
+        ("10", "Star Wars: Skywalker Saga", 2),
+    ]
+
+
+@pytest.mark.anyio
+async def test_count_names_show_countries_with_tmdbs_english_names(plex_server, tmp_path):
+    fake, server = plex_server
+    show = lambda *codes: {"collection": None, "countries": list(codes), "language": "en"}  # noqa: E731
+    found = [("1", show("gb")), ("2", show("kr")), ("3", show("kr", "us")), ("4", show("us"))]
+    lookup = StubLookup(found, countries={"gb": "United Kingdom", "kr": "South Korea", "us": "United States of America"})
+    counted = await count(server, "2", "show", _default(tmp_path, "show", "country", SHOW_COUNTRY_DEFAULT), tmdb=lookup)
+    country = next(c for c in counted if c.name == "country")
+    assert [(e.key, e.kometa_name, e.items) for e in country.collections] == [("gb", "United Kingdom", 1), ("kr", "South Korea", 2)]
+
+
+@pytest.mark.anyio
+async def test_count_without_tmdb_says_why(plex_server, tmp_path):
+    fake, server = plex_server
+    counted = await count(server, "1", "movie", _default(tmp_path, "movie", "franchise", FRANCHISE_DEFAULT), tmdb=None)
+    franchise = next(c for c in counted if c.name == "franchise")
+    assert franchise.collections == [] and "TMDb" in (franchise.count_error or "")
