@@ -101,7 +101,7 @@ def test_keep_copies_whole_file_lists_it_unchanged(root):
         run = wait_for_run(client, result["run_id"])
         assert run["trigger"] == "upload"
         assert run["request"]["collections"] == []
-        assert any(path.endswith("uploads/mixed.yml") for path in run["request"]["files"])
+        assert run["request"]["files"] == ["mixed"]  # Kometa's --run-files matches a file's stem
 
     kept = root / "config" / "uploads" / "mixed.yml"
     assert kept.read_bytes() == original
@@ -159,3 +159,16 @@ def test_unknown_token_404(root):
         wait_for_flags(client)
         response = client.post("/api/v1/import/upload/0123456789abcdef/add", json={"library": "Movies", "confirm": True})
         assert response.status_code == 404
+
+
+def test_a_kept_upload_never_shares_a_stem_with_the_librarys_files(root):
+    config = root / "config"
+    (config / "mixed.yml").write_text("collections:\n  Other:\n    tmdb_collection: 5\n")
+    (config / "config.yml").write_text((config / "config.yml").read_text().replace("Movies: {}", f"Movies:\n    collection_files:\n    - file: {config / 'mixed.yml'}"))
+    client, _plex, _m = make_client(root)
+    with client:
+        wait_for_flags(client)
+        token = upload(client, "Movies", MIXED, "mixed.yml").json()["token"]
+        result = client.post(f"/api/v1/import/upload/{token}/add", json={"library": "Movies", "confirm": True}).json()
+        assert result["kept_file"] == "uploads/mixed-2.yml"
+        assert wait_for_run(client, result["run_id"])["request"]["files"] == ["mixed-2"]

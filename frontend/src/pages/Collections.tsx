@@ -128,7 +128,7 @@ function UploadDialog({ libraries, initialLibrary, onClose }: { libraries: strin
             <p role="status" className="text-ok">
               {result.action === "replace"
                 ? `Imported ${result.imported.length} collection${result.imported.length === 1 ? "" : "s"}.`
-                : `Kept as ${result.kept_file}.`}
+                : `Added as a Kometa file (${result.kept_file}). It runs as it is.`}
             </p>
             {result.studio && result.studio.length > 0 && (
               <p className="text-muted">Already in Studio (unchanged): {result.studio.join(", ")}</p>
@@ -148,7 +148,7 @@ function UploadDialog({ libraries, initialLibrary, onClose }: { libraries: strin
               <select
                 className="min-h-11 rounded-control border border-border-strong bg-surface-2 px-3 text-sm text-text focus:border-accent focus:outline-none"
                 value={library}
-                disabled={busy || staging !== null}
+                disabled={busy}
                 onChange={(event) => {
                   setLibrary(event.target.value);
                   setStaging(null);
@@ -177,7 +177,7 @@ function UploadDialog({ libraries, initialLibrary, onClose }: { libraries: strin
                   upload.mutate(file);
                 }}
               />
-              <Button disabled={busy || staging !== null} onClick={() => fileInput.current?.click()}>
+              <Button disabled={busy} onClick={() => fileInput.current?.click()}>
                 {upload.isPending ? "Reading…" : pickedName ? "Choose another file" : "Choose a .yml file"}
               </Button>
               {pickedName && <p className="font-mono text-xs text-muted">{pickedName}</p>}

@@ -244,17 +244,15 @@ def _safe_filename(name: str) -> str:
     return f"{stem}{suffix}"
 
 
-def _unique_config_path(folder: Path, name: str) -> Path:
-    target = folder / name
-    if not target.exists():
-        return target
+def _unique_config_path(folder: Path, name: str, taken_stems: set[str] = frozenset()) -> Path:
+    """A free path in ``folder`` whose stem no other file of the library uses: Kometa's ``--run-files`` matches by
+    stem (``meta.py`` ``get_file_name``), so a shared stem would run the other file too."""
     stem, suffix = Path(name).stem, Path(name).suffix
-    n = 2
-    while True:
+    candidate, n = folder / name, 2
+    while candidate.exists() or candidate.stem in taken_stems:
         candidate = folder / f"{stem}-{n}{suffix}"
-        if not candidate.exists():
-            return candidate
         n += 1
+    return candidate
 
 
 def _read_upload(data_dir: Path, token: str) -> tuple[Path, dict]:
@@ -379,7 +377,8 @@ async def add_uploaded_file(
         return result
 
     if action == "keep":
-        result = await _add_keep(writer, runner, path, library, filename, studio_kept)
+        stems = {Path(ref.value).stem for ref in _lib.collection_files if ref.kind in ("file", "default")}
+        result = await _add_keep(writer, runner, path, library, filename, studio_kept, stems)
         _delete_upload(settings.data_dir, token)
         return result
 
@@ -428,11 +427,11 @@ async def _add_replace(
     return {"action": "replace", "imported": titles, "kept_file": None, "run_id": run_id, "studio": studio_kept}
 
 
-async def _add_keep(writer, runner, path: Path, library: str, filename: str, studio_kept: list[str]) -> dict:
+async def _add_keep(writer, runner, path: Path, library: str, filename: str, studio_kept: list[str], taken_stems: set[str]) -> dict:
     """Copy the file into Kometa's ``uploads/`` and list it, in one checked save (so a refusal leaves nothing)."""
     dest_folder = writer.config_dir / UPLOADS_DIR
     dest_folder.mkdir(parents=True, exist_ok=True)
-    dest = _unique_config_path(dest_folder, _safe_filename(filename))
+    dest = _unique_config_path(dest_folder, _safe_filename(filename), taken_stems)
     rel = writer.relative(dest)
     reference = writer.reference(dest)
     original = studio_files.read_config(writer)
@@ -451,7 +450,7 @@ async def _add_keep(writer, runner, path: Path, library: str, filename: str, stu
         dest.unlink(missing_ok=True)  # save never wrote it; belt-and-braces if a partial landed
         raise HTTPException(refused.status, refused.detail()) from None
     run_id = runner.enqueue(
-        RunRequest(mode="collections", libraries=[library], files=[reference], ignore_schedules=True),
+        RunRequest(mode="collections", libraries=[library], files=[dest.stem], ignore_schedules=True),  # Kometa matches the stem
         trigger="upload",
     )
     return {
