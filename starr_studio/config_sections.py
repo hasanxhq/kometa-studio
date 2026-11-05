@@ -132,6 +132,13 @@ def with_library_file(text: str, library: str, files: str, reference: str) -> st
 
 def without_library_file(text: str, library: str, files: str, reference: str) -> str:
     """``text`` with the ``- file: reference`` entry removed from the library's ``files`` list."""
+    return without_library_entry(text, library, files, "file", reference)
+
+
+def without_library_entry(text: str, library: str, files: str, kind: str, value: str) -> str:
+    """``text`` with the ``- <kind>: value`` entry (file, folder, default, url, …) removed from the library's ``files`` list."""
+    reference = value
+    kinds = ("default", "pmm") if kind == "default" else (kind,)
     document, indent = _parse(text)
     body = _library_body(document, library)
     if files not in body and OLD_NAMES[files] in body:
@@ -142,7 +149,9 @@ def without_library_file(text: str, library: str, files: str, reference: str) ->
     entries = current if isinstance(current, list) else [current]
 
     def matches(entry: object) -> bool:
-        return isinstance(entry, dict) and entry.get("file") == reference
+        if isinstance(entry, str):  # a bare path, as older configs had
+            return kind == "file" and entry == reference
+        return isinstance(entry, dict) and any(str(entry.get(key)) == reference for key in kinds if key in entry)
 
     kept = [entry for entry in entries if not matches(entry)]
     if len(kept) == len(entries):

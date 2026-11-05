@@ -344,20 +344,30 @@ def _listed(references: list[str], reference: str) -> bool:
     return any(item == reference or item.endswith("/" + reference) or item.endswith(reference) for item in references)
 
 
-async def write_library(
+@dataclass
+class Planned:
+    """What one library's generated files need: the file edits, config.yml's text after its entries, and the hashes."""
+
+    edits: list[Edit]  # generated files only; config.yml is the caller's
+    config_text: str
+    generated: dict[str, str] = field(default_factory=dict)
+    removed: list[str] = field(default_factory=list)
+
+
+def plan_library(
     writer: ConfigWriter,
     kometa_root: Path,
     library: str,
     library_type: str,
     picks: dict[str, list[Ref]],
     all_libraries: list[str],
-    reason: str,
+    config_text: str,
     built: list[tuple[str, dict]] | None = None,
-) -> Written:
-    """Write every category file for ``library`` and update config.yml in one ``ConfigWriter.save``.
+) -> Planned:
+    """``write_library`` without the save: the generated-file edits for ``library``, and ``config_text`` with its entries.
 
-    A hand-edited generated file is replaced like any other. A generated file whose category has no picks
-    left is removed (backed up first, like every save); files in the folder that Studio didn't write stay.
+    Several libraries can be planned one after another, each from the last one's ``config_text``, and saved in one go
+    (Switch over does this, so a move from Kometa lands whole or not at all).
     """
     if library not in all_libraries:
         all_libraries = [*all_libraries, library]
@@ -395,10 +405,6 @@ async def write_library(
         if current is None or current.decode("utf-8") != built_text:
             edits.append(Edit(rel, built_text, file_hash(current) if current is not None else None))
 
-    config_path = writer.config_path
-    if not config_path.is_file():
-        raise SaveRefused(409, "config.yml doesn't exist yet")
-    config_text = config_path.read_text(encoding="utf-8")
     new_config = config_text
     listed = _file_entries(new_config, library)
 
@@ -418,9 +424,6 @@ async def write_library(
             continue
         new_config = without_library_file(new_config, library, "collection_files", reference)
 
-    if new_config != config_text:
-        edits.append(Edit(writer.relative(config_path), new_config, file_hash(config_path.read_bytes())))
-
     # Generated files of categories with no picks left: config.yml no longer lists them, so they go.
     folder = writer.config_dir / prefix
     if folder.is_dir():
@@ -433,10 +436,46 @@ async def write_library(
             rel = writer.relative(path)
             edits.append(Edit(rel, None, file_hash(data)))
             removed.append(rel)
+    return Planned(edits, new_config, generated, removed)
 
+
+def config_edit(writer: ConfigWriter, original: str, text: str) -> Edit | None:
+    """The config.yml edit from ``original`` (as read) to ``text``, or None when nothing changed."""
+    if text == original:
+        return None
+    return Edit(writer.relative(writer.config_path), text, file_hash(original.encode("utf-8")))
+
+
+def read_config(writer: ConfigWriter) -> str:
+    if not writer.config_path.is_file():
+        raise SaveRefused(409, "config.yml doesn't exist yet")
+    return writer.config_path.read_text(encoding="utf-8")
+
+
+async def write_library(
+    writer: ConfigWriter,
+    kometa_root: Path,
+    library: str,
+    library_type: str,
+    picks: dict[str, list[Ref]],
+    all_libraries: list[str],
+    reason: str,
+    built: list[tuple[str, dict]] | None = None,
+) -> Written:
+    """Write every category file for ``library`` and update config.yml in one ``ConfigWriter.save``.
+
+    A hand-edited generated file is replaced like any other. A generated file whose category has no picks
+    left is removed (backed up first, like every save); files in the folder that Studio didn't write stay.
+    """
+    original = read_config(writer)
+    planned = plan_library(writer, kometa_root, library, library_type, picks, all_libraries, original, built)
+    edits = list(planned.edits)
+    change = config_edit(writer, original, planned.config_text)
+    if change is not None:
+        edits.append(change)
     if not edits:
-        return Written(None, generated, removed)
-    return Written(await writer.save(edits, reason), generated, removed)
+        return Written(None, planned.generated, planned.removed)
+    return Written(await writer.save(edits, reason), planned.generated, planned.removed)
 
 
 async def write_from_db(
