@@ -30,8 +30,8 @@ An arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kometa): it sch
 There's no published image yet, so you build it from this repository:
 
 ```bash
-git clone https://github.com/hasanxhq/kometa-studio.git
-cd kometa-studio
+git clone https://github.com/hasanxhq/starr-studio.git
+cd starr-studio
 mkdir -p config
 docker compose up -d --build
 ```
