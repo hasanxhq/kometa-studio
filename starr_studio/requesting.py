@@ -38,6 +38,7 @@ REQUESTS_SETTINGS = "requests.settings"
 REQUESTS_SEERR = "requests.seerr"
 SEERR_LOGIN = "requests.seerr_login"  # the proxy login in front of Seerr, if any (url and key are in config.yml's seerr:)
 SEERR_CARRY = "requests.seerr_carry"  # why the old connection couldn't move into config.yml: {"error", "config": its hash}
+SEERR_NO_SEASONS = "Seerr has every season already requested or available"  # its HTTP 202 on POST /request
 POLL_EVERY = 300.0  # 5 minutes
 TIMEOUT = 10.0
 
@@ -687,6 +688,10 @@ class RequestService:
 
         if response.status_code == 409:
             return "exists", None, None
+        if response.status_code == 202:
+            # Seerr's NoSeasonsAvailableError: every season of the show is already requested or available.
+            # Nothing was filed, but nothing is wrong either: the same as a 409 duplicate, with a note saying why.
+            return "exists", None, SEERR_NO_SEASONS
 
         if response.status_code in (200, 201):
             try:

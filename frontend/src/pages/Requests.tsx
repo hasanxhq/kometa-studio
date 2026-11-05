@@ -60,7 +60,7 @@ function Row({ row, onCancel }: { row: RequestRow; onCancel: (row: RequestRow) =
         <p className="font-medium">{titleLine(row)}</p>
         <p className="text-xs text-muted">
           {row.library} · {viaLabel(row.via)}
-          {row.status === "failed" && row.error ? ` · ${row.error}` : ""}
+          {(row.status === "failed" || row.status === "exists") && row.error ? ` · ${row.error}` : ""}
         </p>
       </div>
       <Tag tone={STATUS_TONE[row.status]}>{STATUS_LABEL[row.status]}</Tag>

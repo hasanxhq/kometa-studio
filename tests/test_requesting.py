@@ -20,6 +20,7 @@ from starr_studio.requesting import (
     RequestSettings,
     RequestsDisabled,
     REQUESTS_SEERR,
+    SEERR_NO_SEASONS,
     SeerrConnection,
     load_settings,
     save_seerr_login,
@@ -52,6 +53,7 @@ class FakeMockEnvironment:
 
         self.seerr_requests: dict[int, dict] = {}
         self.seerr_fail_409 = False
+        self.seerr_answer_202 = False  # Seerr's NoSeasonsAvailableError
 
         self.plex = FakePlex()
         self.requests: list[httpx.Request] = []
@@ -214,6 +216,8 @@ class FakeMockEnvironment:
                     return httpx.Response(401)
                 if self.seerr_fail_409:
                     return httpx.Response(409, json={"message": "Media already requested"})
+                if self.seerr_answer_202:
+                    return httpx.Response(202, json={"message": "No seasons available to request"})
                 import json
                 body = json.loads(request.read().decode())
                 self._next_id += 1
@@ -527,6 +531,36 @@ async def test_seerr_already_requested_becomes_exists(env):
     assert outcome.exists == 1
     row = db.execute("SELECT * FROM requests WHERE item = 'tmdb-movie:603'").fetchone()
     assert row["status"] == "exists"
+
+
+@pytest.mark.anyio
+async def test_seerr_202_no_seasons_left_becomes_exists_with_a_note(env):
+    """Seerr answers 202 when every season is already requested or available: nothing to file, and not a failure."""
+    service, mock, db, box, config, client = env
+    settings = service.load_settings()
+    settings.enabled = True
+    settings.via = "seerr"
+    service.save_settings(settings)
+    connect_seerr(config)
+    mock.seerr_answer_202 = True
+
+    outcome = await service.request([Item(item="tvdb:81189", title="Breaking Bad", year=2008)], library="TV Shows", collection_id=1, now=T0, cap=1)
+
+    assert (outcome.exists, outcome.failed, outcome.requested) == (1, 0, 0)
+    assert outcome.items[0].status == "exists"
+    assert outcome.items[0].error == SEERR_NO_SEASONS
+    row = db.execute("SELECT * FROM requests WHERE item = 'tvdb:81189'").fetchone()
+    assert row["status"] == "exists"
+    assert row["error"] == SEERR_NO_SEASONS
+    assert row["external_id"] is None
+
+    # Not counted against the daily cap (1), and not asked again.
+    mock.seerr_answer_202 = False
+    again = await service.request(
+        [Item(item="tvdb:81189", title="Breaking Bad"), Item(item="tmdb-show:1396", title="Another")], library="TV Shows", collection_id=1, now=T0, cap=1
+    )
+    assert again.skipped == 1
+    assert again.requested == 1
 
 
 @pytest.mark.anyio

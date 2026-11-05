@@ -55,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A show Seerr already has every season of (requested or available) is recorded as **Already there** with that note, instead of failing with "HTTP 202". It doesn't count against the collection's daily limit.
 - Ready-made never builds a collection whose name is already used by a collection Studio didn't make, or by Maintainerr's. Kometa would have taken that collection over and given it Studio's label, so a later Remove could have deleted it. Build's confirmation lists these under "Won't build", with the reason.
 
 - Ready-made: Studio keeps its generated files (`config/studio/…`) as it wrote them. Before every Kometa run it puts back a file that was changed by hand or deleted, and a `- file:` entry taken out of config.yml, then says so in the run's log. There's no warning to act on: Studio corrects it.
