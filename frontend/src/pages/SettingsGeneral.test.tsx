@@ -7,7 +7,7 @@ import { mockApi, renderAt, signedIn } from "../test-utils";
 const notSetUp: AuthStatus = { ...signedIn, configured: false, signed_in: false };
 
 const general: GeneralSettings = {
-  auth: { configured: false, username: null, required: "disabled_for_local" },
+  auth: { configured: false, username: null, required: "disabled_for_local", allow_local: true },
   api_key: "0123456789abcdef0123456789abcdef",
   timezone: "Asia/Kolkata",
   host: "0.0.0.0",
@@ -68,7 +68,7 @@ describe("Settings → General", () => {
       "GET /settings/general": () => general,
       "PUT /settings/auth": () => {
         auth = signedIn;
-        return { ...general, auth: { configured: true, username: "hasan", required: "enabled" } };
+        return { ...general, auth: { configured: true, username: "hasan", required: "enabled", allow_local: true } };
       },
     });
     renderAt("/settings/general");
@@ -91,8 +91,19 @@ describe("Settings → General", () => {
     expect(screen.queryByLabelText("Password")).toBeNull();
   });
 
+  it("notes when STUDIO_ALLOW_LOCAL turns off the local sign-in option", async () => {
+    mockApi({
+      "GET /settings/general": () => ({
+        ...general,
+        auth: { configured: true, username: "hasan", required: "disabled_for_local", allow_local: false },
+      }),
+    });
+    renderAt("/settings/general");
+    expect(await screen.findByText(/Turned off by STUDIO_ALLOW_LOCAL=false/)).toBeInTheDocument();
+  });
+
   it("once set up, shows the username and asks for the current password only to change something", async () => {
-    const configured: GeneralSettings = { ...general, auth: { configured: true, username: "hasan", required: "enabled" } };
+    const configured: GeneralSettings = { ...general, auth: { configured: true, username: "hasan", required: "enabled", allow_local: true } };
     const calls = mockApi({
       "GET /settings/general": () => configured,
       "PUT /settings/auth": () => ({ ...configured, auth: { ...configured.auth, username: "hasanq" } }),
