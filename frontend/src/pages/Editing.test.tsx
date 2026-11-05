@@ -140,7 +140,10 @@ describe("System → Backup", () => {
 
   it("compares a backup with today's file and restores it", async () => {
     const calls = mockApi({
+      "GET /import/switch-over": () => ({ active: null }),
       "GET /backups": () => ({ backups: [backup], keep: 30 }),
+      "GET /tasks": () => ({ tasks: [] }),
+      "GET /backups/full": () => ({ backups: [] }),
       "GET /backups/b1/file?path=Movies.yml": () => ({ path: "Movies.yml", backup: MOVIES, current: MOVIES.replace("30", "50") }),
       "POST /backups/b1/restore": () => ({ backup: "b2", restored: ["Movies.yml"], removed: ["New.yml"], validation: passed }),
     });
