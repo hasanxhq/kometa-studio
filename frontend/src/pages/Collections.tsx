@@ -1,13 +1,17 @@
 // Studio-built smart collections for one library.
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useId, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
 import { ApiError, api } from "../api";
 import { builderApi, type BuiltCollection } from "../builderApi";
+import { FileBlock } from "../components/ImportLanding";
 import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
 import { PlexPoster } from "../components/PlexPoster";
 import { RetryButton } from "../components/RetryButton";
+import { Button } from "../components/ui";
+import { importApi, type UploadAddResult, type UploadStaging } from "../importApi";
 
 function statusLine(collection: BuiltCollection): { text: string; tone: "muted" | "err" } {
   switch (collection.state) {
@@ -73,9 +77,147 @@ function CollectionCard({ collection }: { collection: BuiltCollection }) {
   );
 }
 
+function UploadDialog({ libraries, initialLibrary, onClose }: { libraries: string[]; initialLibrary: string; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const titleId = useId();
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [library, setLibrary] = useState(initialLibrary);
+  const [staging, setStaging] = useState<UploadStaging | null>(null);
+  const [result, setResult] = useState<UploadAddResult | null>(null);
+  const [pickedName, setPickedName] = useState<string | null>(null);
+
+  const upload = useMutation({
+    mutationFn: async (file: File) => {
+      const text = await file.text();
+      return importApi.upload(library, text, file.name);
+    },
+    onSuccess: (data) => {
+      setStaging(data);
+      setResult(null);
+    },
+  });
+
+  const add = useMutation({
+    mutationFn: () => importApi.addUpload(staging!.token, staging!.library),
+    onSuccess: (data) => {
+      setResult(data);
+      queryClient.invalidateQueries({ queryKey: ["collections", library] });
+      queryClient.invalidateQueries({ queryKey: ["config"] });
+    },
+  });
+
+  const uploadError = upload.error instanceof ApiError ? upload.error.message : upload.error?.message;
+  const addError = add.error instanceof ApiError ? add.error.message : add.error?.message;
+  const busy = upload.isPending || add.isPending;
+
+  return (
+    <div className="fixed inset-0 z-30 flex items-end justify-center bg-black/50 p-4 sm:items-center" onClick={onClose}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="flex max-h-[90vh] w-full max-w-lg flex-col gap-4 overflow-y-auto rounded-card border border-border-strong bg-surface p-6"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 id={titleId} className="font-semibold">
+          Upload a collection file
+        </h2>
+
+        {result ? (
+          <div className="flex flex-col gap-3 text-sm">
+            <p role="status" className="text-ok">
+              {result.action === "replace"
+                ? `Imported ${result.imported.length} collection${result.imported.length === 1 ? "" : "s"}.`
+                : `Kept as ${result.kept_file}.`}
+            </p>
+            {result.studio && result.studio.length > 0 && (
+              <p className="text-muted">Already in Studio (unchanged): {result.studio.join(", ")}</p>
+            )}
+            <p>
+              <Link className="underline" to={`/activity/queue/${result.run_id}`}>
+                Open the run
+              </Link>
+            </p>
+            <Button onClick={onClose}>Done</Button>
+          </div>
+        ) : (
+          <>
+            <p className="text-sm text-muted">Studio runs the file through the same import as Move over. The file itself is never edited.</p>
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="text-muted">Library</span>
+              <select
+                className="min-h-11 rounded-control border border-border-strong bg-surface-2 px-3 text-sm text-text focus:border-accent focus:outline-none"
+                value={library}
+                disabled={busy || staging !== null}
+                onChange={(event) => {
+                  setLibrary(event.target.value);
+                  setStaging(null);
+                  setPickedName(null);
+                  upload.reset();
+                }}
+              >
+                {libraries.map((name) => (
+                  <option key={name}>{name}</option>
+                ))}
+              </select>
+            </label>
+            <div className="flex flex-col gap-2">
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".yml,.yaml,text/yaml,application/x-yaml"
+                className="sr-only"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.target.value = "";
+                  if (!file) return;
+                  setPickedName(file.name);
+                  setStaging(null);
+                  setResult(null);
+                  upload.mutate(file);
+                }}
+              />
+              <Button disabled={busy || staging !== null} onClick={() => fileInput.current?.click()}>
+                {upload.isPending ? "Reading…" : pickedName ? "Choose another file" : "Choose a .yml file"}
+              </Button>
+              {pickedName && <p className="font-mono text-xs text-muted">{pickedName}</p>}
+            </div>
+            {uploadError && (
+              <p role="alert" className="text-err">
+                {uploadError}
+              </p>
+            )}
+            {staging && (
+              <div className="flex flex-col gap-3">
+                <FileBlock file={staging.file} />
+                {staging.file.action === "studio" ? (
+                  <p className="text-sm text-muted">This is already a Studio file; nothing to add.</p>
+                ) : (
+                  <Button variant="primary" disabled={busy} onClick={() => add.mutate()}>
+                    {add.isPending ? "Adding…" : "Add"}
+                  </Button>
+                )}
+                {addError && (
+                  <p role="alert" className="text-err">
+                    {addError}
+                  </p>
+                )}
+              </div>
+            )}
+            <Button disabled={busy} onClick={onClose}>
+              Cancel
+            </Button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function Collections() {
   const [params, setParams] = useSearchParams();
   const kept = params.get("kept");
+  const [uploadOpen, setUploadOpen] = useState(false);
   const overview = useQuery({ queryKey: ["config"], queryFn: api.config.overview, retry: false });
   const names = overview.data?.libraries.map((library) => library.name) ?? [];
   const asked = params.get("library");
@@ -133,6 +275,7 @@ export function Collections() {
               ))}
             </select>
           </label>
+          <Button onClick={() => setUploadOpen(true)}>Upload a collection file</Button>
           <Link
             to={`/collections/new?library=${encodeURIComponent(library)}`}
             className="inline-flex min-h-11 items-center justify-center rounded-control bg-accent px-4 text-sm font-medium text-on-accent transition hover:brightness-110"
@@ -171,6 +314,8 @@ export function Collections() {
           ))}
         </ul>
       )}
+
+      {uploadOpen && <UploadDialog libraries={names} initialLibrary={library} onClose={() => setUploadOpen(false)} />}
     </div>
   );
 }
