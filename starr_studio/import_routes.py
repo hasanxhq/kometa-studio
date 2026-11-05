@@ -34,6 +34,18 @@ def taken_titles(db, libraries) -> dict[str, set[str]]:
     return out
 
 
+def maintainerr_titles(request: Request, libraries) -> dict[str, dict[str, str]]:
+    """Titles Maintainerr owns, per config.yml library: Studio never takes one over (Kometa adopts by title)."""
+    service = getattr(request.app.state, "maintainerr", None)
+    if service is None or not service.connected():
+        return {}
+    owned = service.snapshot.owned_by_title()
+    return {
+        library.name: {title.casefold(): "Maintainerr has a collection with this title, and Studio never takes one over" for title in owned.get(_plex_title(library).casefold(), [])}
+        for library in libraries
+    }
+
+
 async def build_report(request: Request, settings, db) -> dict:
     reader = _reader(settings)
     try:
@@ -43,7 +55,9 @@ async def build_report(request: Request, settings, db) -> dict:
     except ValueError as error:
         raise HTTPException(409, str(error)) from None
     types = await library_types(request, settings, config.libraries)
-    out = kometa_import.report(reader, types, taken_titles(db, config.libraries), set(col.generated(db)), _kometa_root(settings))
+    out = kometa_import.report(
+        reader, types, taken_titles(db, config.libraries), set(col.generated(db)), _kometa_root(settings), maintainerr_titles(request, config.libraries)
+    )
     out["config"] = True
     return out
 

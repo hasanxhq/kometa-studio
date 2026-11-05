@@ -292,10 +292,13 @@ def _yaml() -> YAML:
     return YAML(typ="safe", pure=True)
 
 
-def describe_file(text: str, library_type: str, taken: set[str] = frozenset(), poster_path: Any = None) -> tuple[str, str | None, list[Landing]]:
+def describe_file(
+    text: str, library_type: str, taken: set[str] = frozenset(), poster_path: Any = None, blocked: dict[str, str] | None = None
+) -> tuple[str, str | None, list[Landing]]:
     """(action, reason, landings) for one collection file's text: replace when every collection in it is imported.
 
     ``taken`` holds titles (casefolded) of the library's collections that Studio already has: those land as ``studio``.
+    ``blocked`` maps titles (casefolded) Studio must never take over to the reason (Maintainerr's collections): kept.
     The same import runs for a file uploaded later (step 4).
     """
     if STUDIO_HEADER.search(text.split("\n", 3)[0] if text else ""):
@@ -312,6 +315,8 @@ def describe_file(text: str, library_type: str, taken: set[str] = frozenset(), p
         name = str(name)
         if name.casefold() in taken:
             landings.append(Landing(name, STUDIO, "Studio already has a collection with this title in this library"))
+        elif blocked and name.casefold() in blocked:
+            landings.append(Landing(name, KEPT, blocked[name.casefold()]))
         else:
             landings.append(describe(name, body, library_type, poster_path))
     dynamic = data.get("dynamic_collections") if isinstance(data.get("dynamic_collections"), dict) else {}
@@ -373,9 +378,27 @@ def _ready_made(reference: Reference, library_type: str, kometa_root: Path | Non
     if unknown or options:
         landing.reason = f"Its {_names(unknown + options)} {'is' if len(unknown + options) == 1 else 'are'}n't something Ready-made carries yet"
         return landing
+    if not category.collections:
+        landing.reason = f"Ready-made finds {category.title}'s collections in your library: pick them in Ready-made → {category.title}"
+        return landing
+    excluded = {_toggle(key) for key in exclude}
+    entries = [entry for entry in category.collections if _toggle(entry.key) not in excluded and _toggle(entry.title) not in excluded]
+    if not entries:
+        landing.reason = "Its template variables turn every collection off"
+        return landing
     landing.action = "replace"
-    landing.ready_made = {"category": category.name, "title": category.title, "exclude": exclude}
+    landing.ready_made = {
+        "category": category.name,
+        "title": category.title,
+        "exclude": exclude,
+        "entries": [{"block": e.block, "key": e.key, "kometa_name": e.kometa_name, "title": e.title} for e in entries],
+    }
     return landing
+
+
+def _toggle(text: str) -> str:
+    """A collection key as Kometa's ``use_<key>`` variables spell it: lower case, underscores."""
+    return re.sub(r"[^a-z0-9]+", "_", str(text).casefold()).strip("_")
 
 
 def _config_relative(reader: ConfigReader, path: Path) -> str:
@@ -392,6 +415,7 @@ def describe_library(
     taken: set[str] = frozenset(),
     generated: set[str] = frozenset(),
     kometa_root: Path | None = None,
+    blocked: dict[str, str] | None = None,
 ) -> dict:
     """One config.yml library: each collection_files entry and how it lands, plus what stays as it is."""
     out: dict[str, Any] = {
@@ -433,7 +457,7 @@ def describe_library(
             except OSError as error:
                 out["files"].append(FileLanding(reference.kind, reference.value, relative, "keep", f"Studio can't read it: {error}").json())
                 continue
-            action, reason, landings = describe_file(text, library_type, taken, reader._local)
+            action, reason, landings = describe_file(text, library_type, taken, reader._local, blocked)
             if reference.kind == "folder" and action == "replace":
                 action, reason = "keep", "It's part of a folder entry, which Switch over keeps whole"
                 for landing in landings:
@@ -483,11 +507,17 @@ def report(
     taken: dict[str, set[str]] | None = None,
     generated: set[str] = frozenset(),
     kometa_root: Path | None = None,
+    blocked: dict[str, dict[str, str]] | None = None,
 ) -> dict:
-    """The whole import: every library, its files and collections, and the counts. Raises like ConfigReader.read."""
+    """The whole import: every library, its files and collections, and the counts. Raises like ConfigReader.read.
+
+    ``taken`` and ``blocked`` are per config.yml library name (see ``describe_file``).
+    """
     config = reader.read()
     libraries = [
-        describe_library(reader, library, library_types.get(library.name), (taken or {}).get(library.name, set()), generated, kometa_root)
+        describe_library(
+            reader, library, library_types.get(library.name), (taken or {}).get(library.name, set()), generated, kometa_root, (blocked or {}).get(library.name)
+        )
         for library in config.libraries
     ]
     return {

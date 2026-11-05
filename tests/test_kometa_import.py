@@ -109,9 +109,19 @@ def test_a_file_is_replaced_only_when_every_collection_in_it_imports():
     assert describe_file("# Written by Starr Studio from its collection builder.\ncollections: {}\n", "movie")[0] == "studio"
 
 
-def test_a_title_studio_already_has_lands_as_studio():
+def test_a_title_studio_already_has_lands_as_studio_and_maintainerrs_is_kept():
     _action, _reason, landings = describe_file("collections:\n  Action Picks:\n    tmdb_collection: 1\n", "movie", {"action picks"})
     assert landings[0].result == STUDIO
+    action, _reason, landings = describe_file("collections:\n  Leaving Soon:\n    tmdb_collection: 1\n", "movie", blocked={"leaving soon": "Maintainerr's"})
+    assert action == "keep" and (landings[0].result, landings[0].reason) == (KEPT, "Maintainerr's")
+
+
+def test_a_default_with_use_toggles_leaves_those_collections_out(tmp_path):
+    (tmp_path / "config").mkdir()
+    reader = _reader(tmp_path, "libraries:\n  Movies:\n    collection_files:\n    - default: oscars\n      template_variables:\n        use_2024: false\n")
+    entry = kometa_import.report(reader, {"Movies": "movie"}, kometa_root=FIXTURES_ROOT)["libraries"][0]["files"][0]
+    assert entry["action"] == "replace"
+    assert [e["key"] for e in entry["ready_made"]["entries"]] == ["Oscars Best Picture", "2025", "2026"]
 
 
 def _reader(tmp_path: Path, libraries: str) -> ConfigReader:
@@ -152,7 +162,8 @@ def test_report_covers_files_folders_defaults_remote_and_studios_own(tmp_path):
     assert by_value["config/studio/Movies/built.yml"]["action"] == "studio"
     assert by_value["https://example.org/x.yml"]["action"] == "keep" and "url" in by_value["https://example.org/x.yml"]["reason"]
     assert by_value["basic"]["action"] == "replace" and by_value["basic"]["ready_made"]["category"] == "basic"
-    assert by_value["genre"]["action"] == "replace"
+    assert by_value["genre"]["action"] == "keep" and "Ready-made → Genre" in by_value["genre"]["reason"].replace("Genres", "Genre")
+    assert [e["key"] for e in by_value["basic"]["ready_made"]["entries"]] == ["Newly Released"]
     assert by_value["oscars"]["action"] == "keep" and "`sort_by`" in by_value["oscars"]["reason"]
     assert movies["overlay_files"] == ["ribbon"]
     assert music["error"] and music["files"] == []
@@ -160,8 +171,8 @@ def test_report_covers_files_folders_defaults_remote_and_studios_own(tmp_path):
     summary = report["summary"]
     # lists.yml's Dune; mixed.yml's two (one kept with its file); folder's One (kept with its folder); 3 defaults
     assert summary["imported"] == 1
-    assert summary["ready_made"] == 2
-    assert summary["kept"] == 4  # Dune 2 and One with their files, Search, and oscars
+    assert summary["ready_made"] == 1
+    assert summary["kept"] == 5  # Dune 2 and One with their files, Search, genre (per value) and oscars
     assert summary["kept_with_file"] == 2
     assert summary["files"]["studio"] == 1
 
