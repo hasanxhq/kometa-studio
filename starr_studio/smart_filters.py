@@ -17,10 +17,10 @@ if TYPE_CHECKING:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Kometa mappings and tables
-# from kometa/modules/plex.py, v2.5.3
+# from kometa/modules/plex.py and builder.py, v2.5.4
 # ══════════════════════════════════════════════════════════════════════════════
 
-# from kometa/modules/plex.py, v2.5.3 line 60
+# from kometa/modules/plex.py, v2.5.4 line 166 (music-only entries left out)
 SEARCH_TRANSLATION: dict[str, str] = {
     "episode_actor": "episode.actor",
     "episode_title": "episode.title",
@@ -60,7 +60,7 @@ SEARCH_TRANSLATION: dict[str, str] = {
     "episode_label": "episode.label",
 }
 
-# from kometa/modules/plex.py, v2.5.3 line 196
+# from kometa/modules/plex.py, v2.5.4 line 283
 SHOW_TRANSLATION: dict[str, str] = {
     "title": "show.title",
     "country": "show.country",
@@ -88,7 +88,15 @@ SHOW_TRANSLATION: dict[str, str] = {
     "label": "show.label",
 }
 
-# from kometa/modules/plex.py, v2.5.3 line 221
+# HDR10+ and Dolby Atmos (new in Kometa 2.5.4) have no fixed Plex key: Kometa takes the first of these that Plex's own
+# filter list has for the search's level, and refuses the collection if Plex has neither (kometa/modules/builder.py,
+# v2.5.4 line 4866). Studio's preview uses the first, which is what the Plex filter is called on a server that has it.
+MEDIA_BOOLEANS: dict[str, tuple[str, str]] = {
+    "hdr10plus": ("hdr10plus", "episode.hdr10plus"),  # (movie library, show library)
+    "atmos": ("atmos", "episode.atmos"),
+}
+
+# from kometa/modules/plex.py, v2.5.4 line 310
 MODIFIER_TRANSLATION: dict[str, str] = {
     "": "",
     ".not": "!",
@@ -106,7 +114,7 @@ MODIFIER_TRANSLATION: dict[str, str] = {
     ".rated": "",
 }
 
-# from kometa/modules/plex.py, v2.5.3 line 440
+# from kometa/modules/plex.py, v2.5.4 line 546
 MOVIE_ONLY_SEARCHES: list[str] = [
     "director",
     "director.not",
@@ -124,7 +132,7 @@ MOVIE_ONLY_SEARCHES: list[str] = [
     "duration.lte",
 ]
 
-# from kometa/modules/plex.py, v2.5.3 line 456
+# from kometa/modules/plex.py, v2.5.4 line 562
 SHOW_ONLY_SEARCHES: list[str] = [
     "network",
     "network.not",
@@ -187,10 +195,10 @@ SHOW_ONLY_SEARCHES: list[str] = [
     "show_unmatched",
 ]
 
-# from kometa/modules/plex.py, v2.5.3 line 560
+# from kometa/modules/plex.py, v2.5.4 line 731
 NO_NOT_MODS: list[str] = ["resolution", "decade", "album_decade"]
 
-# from kometa/modules/plex.py, v2.5.3 line 586
+# from kometa/modules/plex.py, v2.5.4 line 746
 MOVIE_SORTS: dict[str, str] = {
     "title.asc": "titleSort",
     "title.desc": "titleSort%3Adesc",
@@ -225,7 +233,7 @@ MOVIE_SORTS: dict[str, str] = {
     "random": "random",
 }
 
-# from kometa/modules/plex.py, v2.5.3 line 618
+# from kometa/modules/plex.py, v2.5.4 line 779
 SHOW_SORTS: dict[str, str] = {
     "title.asc": "titleSort",
     "title.desc": "titleSort%3Adesc",
@@ -400,6 +408,8 @@ def _build_movie_fields() -> list[Field]:
         # Media
         Field("hdr", "HDR", "boolean", MODS_BOOLEAN, "Media"),
         Field("dovi", "Dolby Vision", "boolean", MODS_BOOLEAN, "Media"),
+        Field("hdr10plus", "HDR10+", "boolean", MODS_BOOLEAN, "Media"),
+        Field("atmos", "Dolby Atmos", "boolean", MODS_BOOLEAN, "Media"),
         Field("audio_language", "Audio language", "tag", MODS_TAG, "Media", plex_tag="audioLanguage"),
         Field("subtitle_language", "Subtitle language", "tag", MODS_TAG, "Media", plex_tag="subtitleLanguage"),
         Field("duration", "Duration", "float", MODS_FLOAT_NUM, "Media"),
@@ -451,6 +461,8 @@ def _build_show_fields() -> list[Field]:
         # Media
         Field("hdr", "HDR", "boolean", MODS_BOOLEAN, "Media", episode=True),
         Field("dovi", "Dolby Vision", "boolean", MODS_BOOLEAN, "Media", episode=True),
+        Field("hdr10plus", "HDR10+", "boolean", MODS_BOOLEAN, "Media", episode=True),
+        Field("atmos", "Dolby Atmos", "boolean", MODS_BOOLEAN, "Media", episode=True),
         Field("audio_language", "Audio language", "tag", MODS_TAG, "Media", plex_tag="audioLanguage", episode=True),
         Field("subtitle_language", "Subtitle language", "tag", MODS_TAG, "Media", plex_tag="subtitleLanguage", episode=True),
         # Watch status
@@ -686,7 +698,7 @@ def to_kometa(spec: dict, sort_by: str | None = None, limit: int | None = None) 
 
 
 def _normalize_date_arg(value: object) -> str:
-    """Normalize date argument for before/after filter (kometa/modules/builder.py line 4616)."""
+    """Normalize date argument for before/after filter (kometa/modules/builder.py validate_attribute, line 5175)."""
     val_str = str(value).strip()
     if val_str.lower() == "today":
         return datetime.now().strftime("%Y-%m-%d")
@@ -718,10 +730,11 @@ async def plex_query(
     lib = library_type.lower()
     field_map = _MOVIE_FIELDS_BY_KEY if lib == "movie" else _SHOW_FIELDS_BY_KEY
 
-    # 1. Type parameter: 1 for movie, 2 for show (kometa/modules/plex.py line 718 sort_types)
+    # 1. Type parameter: 1 for movie, 2 for show (kometa/modules/plex.py line 921 sort_types)
     type_key = "1" if lib == "movie" else "2"
 
-    # 2. Sort parameter: default title.asc if not given (kometa/modules/builder.py line 4307)
+    # 2. Sort parameter: title.asc if not given. Kometa's own default for smart_filter is random (builder.py lines 1720, 4825),
+    #    which would reshuffle the preview on every look
     sort_dict = MOVIE_SORTS if lib == "movie" else SHOW_SORTS
     sort_key = sort_by if sort_by is not None else "title.asc"
     sort_param_value = sort_dict[sort_key]
@@ -740,16 +753,18 @@ async def plex_query(
         raw_val = rule["value"]
         field_obj = field_map[field_key]
 
-        # Determine Plex search key (kometa/modules/plex.py get_search_key lines 1387-1407)
+        # Determine Plex search key (kometa/modules/builder.py build_url_arg, lines 4865-4876; plex.py get_search_key, lines 1564-1583)
         arg_key = SEARCH_TRANSLATION.get(field_key, field_key)
         if lib == "show" and arg_key in SHOW_TRANSLATION:
             arg_key = SHOW_TRANSLATION[arg_key]
         if field_key == "folder_location":
             arg_key = "episode.source" if lib == "show" else "source"
+        if field_key in MEDIA_BOOLEANS:
+            arg_key = MEDIA_BOOLEANS[field_key][1 if lib == "show" else 0]
 
         dot_mod = f".{modifier}" if modifier else ""
 
-        # Case 1: Tag attributes (kometa/modules/builder.py lines 4430-4450 & 4600-4640)
+        # Case 1: Tag attributes (kometa/modules/builder.py lines 4941-4960 & 5140-5177)
         if field_obj.kind == "tag":
             mod_code = MODIFIER_TRANSLATION.get(dot_mod, dot_mod)
             tag_name = field_obj.plex_tag
@@ -781,14 +796,14 @@ async def plex_query(
             for key_val in resolved_keys:
                 rule_pairs.append((f"{arg_key}{mod_code}", key_val))
 
-        # Case 2: String attributes (kometa/modules/builder.py line 4447: quote string)
+        # Case 2: String attributes (kometa/modules/builder.py line 4958: quote string)
         elif field_obj.kind == "string":
             mod_code = MODIFIER_TRANSLATION.get(dot_mod, dot_mod)
             raw_items = raw_val if isinstance(raw_val, list) else [raw_val]
             for item in raw_items:
                 rule_pairs.append((f"{arg_key}{mod_code}", quote(str(item))))
 
-        # Case 3: Date attributes (kometa/modules/builder.py lines 4402-4409)
+        # Case 3: Date attributes (kometa/modules/builder.py lines 4920-4932)
         elif field_obj.kind == "date":
             if modifier in ("", "not"):
                 # in the last N days (or duration)
@@ -808,18 +823,18 @@ async def plex_query(
                 date_str = _normalize_date_arg(raw_val)
                 rule_pairs.append((f"{arg_key}{mod_code}", date_str))
 
-        # Case 4: Duration (kometa/modules/builder.py line 4410: minutes to ms)
+        # Case 4: Duration (kometa/modules/builder.py line 4933: minutes to ms)
         elif field_key == "duration":
             mod_code = MODIFIER_TRANSLATION.get(dot_mod, dot_mod)
             ms = int(float(raw_val) * 60000)
             rule_pairs.append((f"{arg_key}{mod_code}", str(ms)))
 
-        # Case 5: Float ratings with .rated modifier (kometa/modules/builder.py line 4422)
+        # Case 5: Float ratings with .rated modifier (kometa/modules/builder.py line 4935)
         elif modifier == "rated":
             bool_mod = "!" if bool(raw_val) else ""
             rule_pairs.append((f"{arg_key}{bool_mod}", "-1"))
 
-        # Case 6: Booleans (kometa/modules/builder.py line 4424: value 1 with mod ! if false)
+        # Case 6: Booleans (kometa/modules/builder.py line 4937: value 1 with mod ! if false)
         elif field_obj.kind == "boolean":
             bool_mod = "" if bool(raw_val) else "!"
             rule_pairs.append((f"{arg_key}{bool_mod}", "1"))
@@ -834,7 +849,7 @@ async def plex_query(
     if not rule_pairs:
         return [(unquote(key), unquote(value)) for key, value in params]
 
-    # Interleave with conjunctions and push/pop wrapper for 'any' (kometa/modules/builder.py line 4483)
+    # Interleave with conjunctions and push/pop wrapper for 'any' (kometa/modules/builder.py lines 5007-5008)
     if is_all:
         for idx, pair in enumerate(rule_pairs):
             if idx > 0:
