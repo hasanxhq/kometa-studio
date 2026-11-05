@@ -31,13 +31,13 @@ webhooks:
   error: gotify
   version:
   run_start:
-    - {STUDIO_URL}  # managed by Kometa Studio
+    - {STUDIO_URL}  # managed by Starr Studio
   run_end:
     - {DISCORD}
     - gotify
-    - {STUDIO_URL}  # managed by Kometa Studio
+    - {STUDIO_URL}  # managed by Starr Studio
   changes:
-    - {STUDIO_URL}  # managed by Kometa Studio
+    - {STUDIO_URL}  # managed by Starr Studio
   delete:
 """
 
@@ -120,7 +120,7 @@ def test_testing_a_service_sends_one_labelled_message_and_saves_nothing(tmp_path
     with make_client(tmp_path, kometa, fake) as client:
         response = client.post("/api/v1/settings/notifications/ntfy/test", json={"values": {"url": NTFY_URL, "token": NTFY_TOKEN, "topic": NTFY_TOPIC}})
     assert response.json() == {"ok": True, "message": f"ntfy accepted a test message on the topic {NTFY_TOPIC}."}
-    assert fake.messages == [{"service": "ntfy", "title": "Kometa Studio test notification", "message": notifications.TEST_MESSAGE}]
+    assert fake.messages == [{"service": "ntfy", "title": "Starr Studio test notification", "message": notifications.TEST_MESSAGE}]
     assert config_text(kometa) == CONFIG
     assert backups(kometa) == []
 
@@ -251,7 +251,7 @@ def test_removing_a_service_takes_it_out_of_the_webhook_events_too(tmp_path, kom
     text = config_text(kometa)
     assert "gotify" not in text and GOTIFY_TOKEN not in text
     assert "error:\n" in text
-    assert text.count(f"- {STUDIO_URL}  # managed by Kometa Studio") == 3
+    assert text.count(f"- {STUDIO_URL}  # managed by Starr Studio") == 3
     assert f"- {DISCORD}\n" in text
     assert again.status_code == 404
     assert len(backups(kometa)) == 1
@@ -282,12 +282,12 @@ def test_webhook_events_save_the_users_targets_and_leave_studios_alone(tmp_path,
         "  version: gotify\n"
         "  run_start:\n"
         f"    - {DISCORD}\n"
-        f"    - {STUDIO_URL}  # managed by Kometa Studio\n"
+        f"    - {STUDIO_URL}  # managed by Starr Studio\n"
         "  run_end:\n"
         "    - gotify\n"
-        f"    - {STUDIO_URL}  # managed by Kometa Studio\n"
+        f"    - {STUDIO_URL}  # managed by Starr Studio\n"
         "  changes:\n"
-        f"    - {STUDIO_URL}  # managed by Kometa Studio\n"
+        f"    - {STUDIO_URL}  # managed by Starr Studio\n"
         "  delete:\n"
     )
     assert text[: text.index("webhooks:")] == CONFIG[: CONFIG.index("webhooks:")]
@@ -303,8 +303,8 @@ def test_studios_entries_survive_saving_a_service_and_removing_another(tmp_path,
         state = client.put("/api/v1/settings/notifications/webhooks", json={"base_hash": state["hash"], "events": {"changes": ["notifiarr"]}}).json()
         client.delete("/api/v1/settings/notifications/gotify", params={"base_hash": state["hash"]})
     text = config_text(kometa)
-    assert text.count(f"- {STUDIO_URL}  # managed by Kometa Studio") == 3
-    assert f"  changes:\n    - notifiarr\n    - {STUDIO_URL}  # managed by Kometa Studio\n" in text
+    assert text.count(f"- {STUDIO_URL}  # managed by Starr Studio") == 3
+    assert f"  changes:\n    - notifiarr\n    - {STUDIO_URL}  # managed by Starr Studio\n" in text
 
 
 def test_webhook_urls_must_be_ones_kometa_can_use(tmp_path, kometa, fake):

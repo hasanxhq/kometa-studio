@@ -87,10 +87,10 @@ function SignInPrompt({ onSignedIn }: { onSignedIn: () => void }) {
                 <a className="text-accent underline" href={signIn.authUrl} target="_blank" rel="noreferrer">
                   Open the Plex sign-in page
                 </a>{" "}
-                and approve Kometa Studio there.
+                and approve Starr Studio there.
               </>
             ) : (
-              "Waiting for you to approve Kometa Studio in the Plex window…"
+              "Waiting for you to approve Starr Studio in the Plex window…"
             )}
           </p>
           <Button onClick={cancel}>Cancel</Button>

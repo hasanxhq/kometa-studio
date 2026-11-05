@@ -133,7 +133,7 @@ def test_pin_flow():
     assert waiting is None
     assert token == "acct-token"
     assert fake.requests[0].url.params["strong"] == "true"
-    assert fake.requests[0].headers["X-Plex-Product"] == "Kometa Studio"
+    assert fake.requests[0].headers["X-Plex-Product"] == "Starr Studio"
 
 
 def test_expired_pin():
@@ -148,7 +148,7 @@ def test_auth_url_carries_client_id_and_code():
     assert url.startswith("https://app.plex.tv/auth/#!?")
     assert "clientID=studio-id" in url
     assert "code=abcd1234" in url
-    assert "context%5Bdevice%5D%5Bproduct%5D=Kometa+Studio" in url
+    assert "context%5Bdevice%5D%5Bproduct%5D=Starr+Studio" in url
 
 
 def test_revoked_account_token():

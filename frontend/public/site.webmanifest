@@ -1,6 +1,6 @@
 {
-  "name": "Kometa Studio",
-  "short_name": "Kometa Studio",
+  "name": "Starr Studio",
+  "short_name": "Starr Studio",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

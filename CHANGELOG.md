@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Kometa Studio is now Starr Studio.** The name changes everywhere: the app, its sign-in with Plex, notifications, run logs, the comment on Studio's webhooks in `config.yml` and the header of the files Studio writes (both updated on the next run). The command is now `starr-studio` and the Python package `starr_studio`. Settings (`STUDIO_*`), the data folder and the Plex label `Studio` are unchanged. Full backups are now named `starr-studio-<date>.zip`; existing `kometa-studio-*.zip` backups stay listed, restorable and pruned as before.
+- **Docker Compose:** the service, image and container are now called `starr-studio`. When you update, run `docker compose up -d --build --remove-orphans` once, so the old `kometa-studio` container is removed and frees the port. If you also renamed the folder you run Compose from, remove the old container yourself (`docker rm -f kometa-studio`). Your config folder is untouched.
 - The overlay form has the same anchor grid and previews on a poster from the library.
 - A run that worked now says **Succeeded** instead of Finished.
 - A run's log can show only warnings and errors, and runs count their warnings on the Queue, the Overview and the run's page. Runs from before this update show none.

@@ -107,7 +107,7 @@ def test_studio_joins_every_webhook_event(tmp_path):
     assert list(document["libraries"]["Movies"]["webhooks"]["changes"]) == ["https://discord.com/api/webhooks/x", STUDIO]
     assert "webhooks" not in document["libraries"]["TV Shows"]
     assert "# tell me" in path.read_text()
-    assert path.read_text().count("# managed by Kometa Studio") == 7
+    assert path.read_text().count("# managed by Starr Studio") == 7
     assert document["plex"]["url"] == "http://plex:32400"
 
 
@@ -122,11 +122,25 @@ def test_studio_webhooks_are_only_written_once(tmp_path):
     assert len(list((tmp_path / "backups").iterdir())) == 1
 
 
+def test_the_comment_from_before_the_rename_is_replaced_once(tmp_path):
+    path = tmp_path / "config.yml"
+    path.write_text(HOOKS)
+    ensure_studio_webhooks(path, STUDIO, tmp_path / "backups")
+    path.write_text(path.read_text().replace("# managed by Starr Studio", "# managed by Kometa Studio"))
+
+    assert ensure_studio_webhooks(path, STUDIO, tmp_path / "backups") is True
+    text = path.read_text()
+    assert "Kometa Studio" not in text
+    assert text.count("# managed by Starr Studio") == 7
+    assert text.count(STUDIO) == 7  # replaced, not added again
+    assert ensure_studio_webhooks(path, STUDIO, tmp_path / "backups") is False
+
+
 def test_a_config_without_lists_gets_the_templates_list_style(tmp_path):
     path = tmp_path / "config.yml"
     path.write_text("plex:\n  url: http://plex:32400\n")
     ensure_studio_webhooks(path, STUDIO, tmp_path / "backups")
-    assert f"  run_end:\n    - {STUDIO}  # managed by Kometa Studio\n" in path.read_text()
+    assert f"  run_end:\n    - {STUDIO}  # managed by Starr Studio\n" in path.read_text()
 
 
 def test_webhooks_need_an_existing_config(tmp_path):

@@ -123,7 +123,7 @@ function LayoutFrame() {
         <div className="flex h-14 items-center gap-2 px-6 font-display text-lg font-semibold">
           <StreakMark />
           <span>
-            Kometa <span className="ml-1 text-accent">Studio</span>
+            Starr <span className="ml-1 text-accent">Studio</span>
           </span>
         </div>
         <Sidebar onNavigate={() => setMenuOpen(false)} />

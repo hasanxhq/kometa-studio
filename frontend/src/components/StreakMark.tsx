@@ -1,5 +1,5 @@
 // The logo mark: a K whose upper arm is a comet, coloured by the app's tokens (brand/README.md). It sits beside the
-// words "Kometa Studio", so screen readers skip it.
+// words "Starr Studio", so screen readers skip it.
 
 export function StreakMark({ size = 24 }: { size?: number }) {
   return (

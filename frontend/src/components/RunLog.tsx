@@ -11,7 +11,7 @@ const MAX_LINES = 5000; // the full log is a download away
 function lineClass(line: string): string {
   if (/\b(error|critical|traceback)\b/i.test(line)) return "text-err";
   if (/\bwarning\b/i.test(line)) return "text-warn";
-  if (line.startsWith("Kometa Studio:")) return "text-accent";
+  if (/^(Starr|Kometa) Studio:/.test(line)) return "text-accent"; // Studio's own lines; runs from before the rename say Kometa
   return "";
 }
 

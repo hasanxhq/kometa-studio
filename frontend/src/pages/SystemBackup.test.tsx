@@ -19,7 +19,7 @@ const backupTask: BuiltinTask = {
 
 const checkTask: BuiltinTask = { ...backupTask, name: "full_check", label: "Full check", enabled: false, days: [0, 1, 2, 3, 4, 5, 6], time: "04:00", options: {}, next_run: null };
 
-const done = { ...backupTask, last: { started_at: "2026-10-30T10:00:00Z", finished_at: "2026-10-30T10:00:09Z", status: "succeeded" as const, message: "kometa-studio-20261030-100000.zip: 120 files, 85.0 MB" } };
+const done = { ...backupTask, last: { started_at: "2026-10-30T10:00:00Z", finished_at: "2026-10-30T10:00:09Z", status: "succeeded" as const, message: "starr-studio-20261030-100000.zip: 120 files, 85.0 MB" } };
 
 describe("Full backups", () => {
   it("backs up now, and lists the new zip with a download link", async () => {
@@ -30,7 +30,7 @@ describe("Full backups", () => {
       "GET /tasks": () => ({ tasks: [state, checkTask] }),
       "POST /tasks/full_backup/run": () => {
         state = done;
-        backups = [{ name: "kometa-studio-20261030-100000.zip", size: 89_128_960, created: "2026-10-30T10:00:00Z" }];
+        backups = [{ name: "starr-studio-20261030-100000.zip", size: 89_128_960, created: "2026-10-30T10:00:00Z" }];
         return { ...backupTask, running: true };
       },
       "GET /backups/full": () => ({ backups }),
@@ -43,7 +43,7 @@ describe("Full backups", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Run now" }));
 
     const link = await within(card).findByRole("link", { name: "Download" });
-    expect(link).toHaveAttribute("href", "/api/v1/backups/full/kometa-studio-20261030-100000.zip");
+    expect(link).toHaveAttribute("href", "/api/v1/backups/full/starr-studio-20261030-100000.zip");
     expect(within(link.closest("li")!).getByText(/85\.0 MB/)).toBeInTheDocument();
     expect(within(card).getByText("Succeeded")).toBeInTheDocument();
     expect(calls.filter((c) => c.route === "POST /tasks/full_backup/run")).toHaveLength(1);

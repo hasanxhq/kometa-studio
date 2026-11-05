@@ -11,7 +11,7 @@ function Centered({ children }: { children: ReactNode }) {
     <div className="flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center font-display text-2xl font-semibold">
-          Kometa <span className="text-accent">Studio</span>
+          Starr <span className="text-accent">Studio</span>
         </div>
         <section className="rounded-card border border-border bg-surface p-6">{children}</section>
       </div>
@@ -76,7 +76,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return (
       <Centered>
         <p role="alert" className="text-err">
-          Can't reach Kometa Studio: {auth.error.message}
+          Can't reach Starr Studio: {auth.error.message}
         </p>
         <Button className="mt-4" onClick={() => auth.refetch()}>
           Try again

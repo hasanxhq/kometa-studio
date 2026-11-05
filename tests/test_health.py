@@ -156,7 +156,7 @@ def test_original_posters_need_a_recent_full_backup(db, kometa):
 
     backups = kometa.data_dir / "full-backups"
     backups.mkdir(parents=True)
-    (backups / f"kometa-studio-{datetime.now(UTC):%Y%m%d-%H%M%S}.zip").write_bytes(b"zip")
+    (backups / f"starr-studio-{datetime.now(UTC):%Y%m%d-%H%M%S}.zip").write_bytes(b"zip")
     assert "full_backup" not in sources(check(db, kometa))
 
     with db:

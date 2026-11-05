@@ -125,11 +125,11 @@ describe("Activity → Queue", () => {
     fireEvent.change(screen.getByLabelText("Show"), { target: { value: "problems" } });
     expect(within(log).getByText("No warnings or errors so far.")).toBeInTheDocument();
 
-    source.emit("lines", ["| Config Warning: sonarr add_missing not found |", "| Config Error: tmdb apikey is required |", "Kometa Studio: run failed"]);
+    source.emit("lines", ["| Config Warning: sonarr add_missing not found |", "| Config Error: tmdb apikey is required |", "Starr Studio: run failed"]);
     expect(within(log).queryByText("Starting Kometa")).not.toBeInTheDocument();
     expect(within(log).getByText(/Config Warning/)).toHaveClass("text-warn");
     expect(within(log).getByText(/Config Error/)).toBeInTheDocument();
-    expect(within(log).getByText("Kometa Studio: run failed")).toBeInTheDocument();
+    expect(within(log).getByText("Starr Studio: run failed")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("3 of 4 lines");
 
     fireEvent.change(screen.getByLabelText("Show"), { target: { value: "all" } });

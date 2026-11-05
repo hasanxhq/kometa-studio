@@ -59,8 +59,8 @@ def apply_migrations(conn: sqlite3.Connection, migrations: list[Migration]) -> i
     latest = migrations[-1].version if migrations else 0
     if current > latest:
         raise SchemaTooNewError(
-            f"The database is at schema version {current}, but this Kometa Studio only knows up to {latest}. "
-            "Run the newer Kometa Studio again, or restore a backup taken before the upgrade."
+            f"The database is at schema version {current}, but this Starr Studio only knows up to {latest}. "
+            "Run the newer Starr Studio again, or restore a backup taken before the upgrade."
         )
 
     for migration in migrations:

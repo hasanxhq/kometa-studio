@@ -243,12 +243,12 @@ class Runner:
                     with self.db:
                         self.db.execute("UPDATE runs SET command = ? WHERE id = ?", (kometa_command.display(argv), run_id))
                     for hook in self.hooks:
-                        after = await hook.before_run(request, lambda line: self._emit(active, log, f"Kometa Studio: {line}"))
+                        after = await hook.before_run(request, lambda line: self._emit(active, log, f"Starr Studio: {line}"))
                         if after is not None:
                             afters.append(after)
                     if active.cancel_requested:
                         await self._afters(active, log, afters)
-                        self._emit(active, log, "Kometa Studio: run cancelled before Kometa started")
+                        self._emit(active, log, "Starr Studio: run cancelled before Kometa started")
                         self._finish(run_id, "cancelled")
                         return
                     active.started = time.time()
@@ -263,7 +263,7 @@ class Runner:
                     )
                 except (RunHeld, ValueError, OSError) as error:  # UnsupportedFlag is a ValueError
                     await self._afters(active, log, afters)
-                    self._emit(active, log, f"Kometa Studio: {error}")
+                    self._emit(active, log, f"Starr Studio: {error}")
                     self._finish(run_id, "failed", error=str(error))
                     return
 
@@ -276,7 +276,7 @@ class Runner:
                 await self._afters(active, log, afters)
                 status, error = self._outcome(run_id, active, exit_code)
                 reason = f": {error}" if error and status == "failed" and exit_code == 0 else ""
-                self._emit(active, log, f"Kometa Studio: run {status.replace('_', ' ')} (exit code {exit_code}){reason}")
+                self._emit(active, log, f"Starr Studio: run {status.replace('_', ' ')} (exit code {exit_code}){reason}")
                 # Record the outcome before ending the streams: their closing event reports it.
                 self._finish(run_id, status, exit_code=exit_code, error=error)
             finally:
@@ -290,7 +290,7 @@ class Runner:
             try:
                 await after()
             except Exception as error:  # the run's outcome is Kometa's; this only gets a log line
-                self._emit(active, log, f"Kometa Studio: {error}")
+                self._emit(active, log, f"Starr Studio: {error}")
         afters.clear()
 
     def _outcome(self, run_id: int, active: Active, exit_code: int) -> tuple[str, str | None]:

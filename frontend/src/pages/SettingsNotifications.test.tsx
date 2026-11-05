@@ -39,7 +39,7 @@ const state: NotificationsState = {
     targets: [
       { id: "gotify", label: "Gotify", kind: "service", configured: true },
       { id: DISCORD, label: "https://discord.com/api/webhooks/••••", kind: "url", configured: true },
-      { id: "studio", label: "Kometa Studio", kind: "studio", configured: true },
+      { id: "studio", label: "Starr Studio", kind: "studio", configured: true },
     ],
     events: { error: ["gotify"], version: [], run_start: ["studio"], run_end: [DISCORD, "gotify", "studio"], changes: ["studio"], delete: [] },
   },
@@ -220,11 +220,11 @@ describe("Settings → Notifications", () => {
       }),
     });
     renderAt("/settings/notifications");
-    const studio = await screen.findByRole("checkbox", { name: "run_end → Kometa Studio (managed by Kometa Studio)" });
+    const studio = await screen.findByRole("checkbox", { name: "run_end → Starr Studio (managed by Starr Studio)" });
     expect(studio).toBeChecked();
     expect(studio).toBeDisabled();
-    expect(screen.getByRole("checkbox", { name: "error → Kometa Studio (managed by Kometa Studio)" })).toBeDisabled();
-    expect(screen.getByText("Locked: managed by Kometa Studio")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "error → Starr Studio (managed by Starr Studio)" })).toBeDisabled();
+    expect(screen.getByText("Locked: managed by Starr Studio")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "run_end → https://discord.com/api/webhooks/••••" })).toBeChecked();
 
     const grid = form("Webhook events");

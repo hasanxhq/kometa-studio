@@ -17,7 +17,7 @@ describe("The logo", () => {
     mockApi({});
     renderAt("/settings/ui");
     const name = (await screen.findByText("Studio")).parentElement!;
-    expect(name).toHaveTextContent("Kometa Studio");
+    expect(name).toHaveTextContent("Starr Studio");
     expect(name.parentElement!.querySelector("svg")).not.toBeNull();
   });
 });

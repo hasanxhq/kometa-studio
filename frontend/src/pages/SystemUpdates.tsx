@@ -24,7 +24,7 @@ function KometaVersion({ updates }: { updates: KometaUpdates }) {
         <p className="text-muted">Not checked yet. Kometa looks for a new version each time it runs.</p>
       )}
       <p className="text-muted">
-        Kometa comes with Studio's Docker image, so you update it by updating the image: pull the new Kometa Studio image and recreate the
+        Kometa comes with Studio's Docker image, so you update it by updating the image: pull the new Starr Studio image and recreate the
         container. Your config folder, schedules and history stay.
       </p>
     </div>
@@ -45,7 +45,7 @@ export function SystemUpdates() {
       <Card title="Kometa">
         <KometaVersion updates={status.data.kometa.updates} />
       </Card>
-      <Card title="Kometa Studio">
+      <Card title="Starr Studio">
         <p className="text-sm">
           Installed: <span className="font-mono">{status.data.version}</span>
         </p>

@@ -108,5 +108,5 @@ export function pageTitle(pathname: string): string {
   const match = [...pages, ...otherPages]
     .filter((page) => page.path !== "/" && pathname.startsWith(page.path))
     .sort((a, b) => b.path.length - a.path.length)[0];
-  return match?.label ?? "Kometa Studio";
+  return match?.label ?? "Starr Studio";
 }

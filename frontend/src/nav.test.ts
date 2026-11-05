@@ -15,6 +15,6 @@ describe("The header's title", () => {
     expect(pageTitle("/settings/requests")).toBe("Requests");
     expect(pageTitle("/items")).toBe("Edit");
     expect(pageTitle("/")).toBe("Overview");
-    expect(pageTitle("/nowhere")).toBe("Kometa Studio");
+    expect(pageTitle("/nowhere")).toBe("Starr Studio");
   });
 });

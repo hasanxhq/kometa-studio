@@ -42,7 +42,7 @@ tmdb:
   apikey: tmdb-secret   # from themoviedb.org
 webhooks:
   run_end:
-    - http://127.0.0.1:8484/api/v1/kometa/events?token=studio-secret  # managed by Kometa Studio
+    - http://127.0.0.1:8484/api/v1/kometa/events?token=studio-secret  # managed by Starr Studio
     - https://discord.com/api/webhooks/123/discord-secret
 """
 
@@ -248,7 +248,7 @@ def test_secrets_are_masked_with_numbered_placeholders():
     assert secrets == ["abcdefgh12345678", "tmdb-secret", "studio-secret", "123/discord-secret"]
     assert "  token: ••••(1)\n" in masked
     assert "  apikey: ••••(2)   # from themoviedb.org\n" in masked
-    assert "events?token=••••(3)  # managed by Kometa Studio" in masked
+    assert "events?token=••••(3)  # managed by Starr Studio" in masked
     assert "https://discord.com/api/webhooks/••••(4)\n" in masked  # the whole path after /webhooks/
     assert "url: http://plex:32400" in masked
 

@@ -16,6 +16,7 @@ from starr_studio.studio_files import (
     default_file,
     library_folders,
     hand_edited,
+    is_generated,
     record,
     relative_path,
     render,
@@ -48,7 +49,7 @@ def test_render_static_only_fixture():
         [Ref("static_only", "", "Popular")],
     )
     assert text is not None
-    assert text.startswith("# Written by Kometa Studio from Kometa's \"static_only\" default.")
+    assert text.startswith("# Written by Starr Studio from Kometa's \"static_only\" default.")
     data = parse(text)
     assert data["external_templates"]["template_variables"]["use_separator"] is False
     assert "Chart Separator" not in data["collections"]
@@ -302,3 +303,10 @@ def test_hand_edits_are_noticed_and_replaced_on_the_next_save(writer_env):
         record(database, again)
     assert genre.read_text() == original
     assert hand_edited(database, config) == []
+
+
+def test_files_written_before_the_rename_are_still_studios():
+    """Their header says Kometa Studio; they must stay Studio's (rewritten, or removed when unused), not become the user's."""
+    assert is_generated("# Written by Starr Studio from its collection builder.\ncollections: {}\n")
+    assert is_generated("---\n# Written by Kometa Studio from Kometa's \"genre\" default. Studio rewrites this file on every save.\n")
+    assert not is_generated("# My own collections\ncollections: {}\n")

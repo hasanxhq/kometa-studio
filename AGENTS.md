@@ -1,4 +1,4 @@
-# Kometa Studio — agent guide
+# Starr Studio — agent guide
 
 Instructions for anyone, human or agent, working on this repository. `CLAUDE.md` only points here; put new instructions in this file.
 
@@ -95,7 +95,7 @@ Follow this exactly; branch protection and CI enforce most of it.
 - **Before pushing, check the branch's PR is still open** (`gh pr view`). Never push to a merged branch; start a new one from `dev`.
 - **Keep a branch current by merging `dev` into it**, not by rebasing. Rerun the tests after.
 - **Delete topic branches** (local and remote) after their PR merges.
-- When several people or agents work at once, use a separate worktree per branch (`git worktree add ../kometa-studio-<topic> -b <topic> origin/dev`), push only to branches you created, and never discard or commit changes you didn't make.
+- When several people or agents work at once, use a separate worktree per branch (`git worktree add ../starr-studio-<topic> -b <topic> origin/dev`), push only to branches you created, and never discard or commit changes you didn't make.
 
 ### Commits
 

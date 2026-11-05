@@ -32,7 +32,7 @@ const help: Record<NotificationServiceName, { summary: string; intro: string; ke
   },
   gotify: {
     summary: "Your own Gotify server.",
-    intro: "Your own Gotify server. Test sends one message, titled “Kometa Studio test notification”.",
+    intro: "Your own Gotify server. Test sends one message, titled “Starr Studio test notification”.",
     keys: {
       url: { placeholder: "https://gotify.example.com" },
       token: { hint: "An application's token: in Gotify, Apps → Create Application." },
@@ -40,7 +40,7 @@ const help: Record<NotificationServiceName, { summary: string; intro: string; ke
   },
   ntfy: {
     summary: "The public ntfy.sh, or your own ntfy server.",
-    intro: "The public ntfy.sh or your own ntfy server. Test sends one message to the topic, titled “Kometa Studio test notification”.",
+    intro: "The public ntfy.sh or your own ntfy server. Test sends one message to the topic, titled “Starr Studio test notification”.",
     keys: {
       url: { placeholder: "https://ntfy.sh" },
       token: { placeholder: "tk_…", hint: "In ntfy, Account → Access tokens." },
@@ -64,7 +64,7 @@ const events: { event: WebhookEvent; label: string }[] = [
   { event: "delete", label: "A collection or playlist is deleted" },
 ];
 
-const STUDIO_MARK = "managed by Kometa Studio";
+const STUDIO_MARK = "managed by Starr Studio";
 
 type Verdict = { validation: Validation; saved: boolean };
 

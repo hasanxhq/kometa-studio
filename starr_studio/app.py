@@ -191,7 +191,7 @@ def create_app(
             await app.state.http.aclose()
             app.state.db.close()
 
-    app = FastAPI(title="Kometa Studio", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="Starr Studio", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.timezone = default_timezone(settings.timezone)  # Settings → General can change it
     app.state.login_throttle = LoginThrottle()
