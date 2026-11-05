@@ -25,6 +25,7 @@ from starr_studio.requesting import (
     load_settings,
     save_seerr_login,
     save_settings,
+    seerr_default_server,
 )
 from starr_studio.db import apply_migrations, connect, get_setting, load_migrations, set_setting
 
@@ -37,6 +38,35 @@ SEERR_KEY = "seerr-key"
 TMDB_KEY = "tmdb-key"
 
 T0 = datetime(2026, 11, 5, 12, 0, 0, tzinfo=UTC)
+
+# Seerr's /api/v1/service answers: a 4K server marked default too (ignored), a non-default one, and the default.
+SEERR_SERVERS = {
+    "radarr": [
+        {"id": 0, "name": "Radarr 4K", "is4k": True, "isDefault": True},
+        {"id": 1, "name": "Radarr Old", "is4k": False, "isDefault": False},
+        {"id": 2, "name": "Radarr", "is4k": False, "isDefault": True},
+    ],
+    "sonarr": [{"id": 5, "name": "Sonarr", "is4k": False, "isDefault": True}],
+}
+SEERR_PROFILES = {
+    0: [{"id": 9, "name": "Ultra-HD"}],
+    1: [{"id": 8, "name": "Old"}],
+    2: [{"id": 4, "name": "HD-1080p"}, {"id": 6, "name": "Ultra-HD"}],
+    5: [{"id": 7, "name": "WEB-1080p"}],
+}
+
+
+def seerr_service(path: str) -> httpx.Response | None:
+    """GET /api/v1/service/{radarr,sonarr}[/{id}], as Seerr answers them."""
+    parts = path.removeprefix("/api/v1/service/").split("/")
+    if parts[0] not in SEERR_SERVERS:
+        return None
+    if len(parts) == 1:
+        return httpx.Response(200, json=SEERR_SERVERS[parts[0]])
+    server = next((s for s in SEERR_SERVERS[parts[0]] if s["id"] == int(parts[1])), None)
+    if server is None:
+        return httpx.Response(404)
+    return httpx.Response(200, json={"server": server, "profiles": SEERR_PROFILES[server["id"]], "rootFolders": [], "tags": []})
 
 
 class FakeMockEnvironment:
@@ -211,6 +241,12 @@ class FakeMockEnvironment:
                 if request.headers.get("X-Api-Key") == SEERR_KEY:
                     return httpx.Response(200, json={"id": 1})
                 return httpx.Response(401, json={"message": "Unauthorized"})
+            if path.startswith("/api/v1/service/"):
+                if request.headers.get("X-Api-Key") != SEERR_KEY:
+                    return httpx.Response(401)
+                answer = seerr_service(path)
+                if answer is not None:
+                    return answer
             if path == "/api/v1/request":
                 if request.headers.get("X-Api-Key") != SEERR_KEY:
                     return httpx.Response(401)
@@ -856,6 +892,72 @@ async def test_a_collection_profile_overrides_the_default_and_falls_back_when_go
     assert by_tmdb[603]["qualityProfileId"] == 6  # the collection's choice
     assert by_tmdb[604]["qualityProfileId"] == 4  # no longer in Radarr: the default from Settings → Requests
 
+
+
+@pytest.mark.anyio
+async def test_seerr_default_server_skips_4k_and_lists_its_profiles(env):
+    service, mock, db, box, config, client = env
+    connect_seerr(config)
+    conn = service.load_seerr_connection()
+
+    radarr = await seerr_default_server(client, conn, "radarr")
+    assert (radarr.id, radarr.name) == (2, "Radarr")  # not the 4K default, nor the non-default one
+    assert radarr.profiles == ((4, "HD-1080p"), (6, "Ultra-HD"))
+    assert radarr.profile_id("ultra-hd") == 6  # case doesn't matter
+    assert radarr.profile_id("Old") is None
+    sonarr = await seerr_default_server(client, conn, "sonarr")
+    assert (sonarr.id, sonarr.profiles) == (5, ((7, "WEB-1080p"),))
+
+
+@pytest.mark.anyio
+async def test_a_collection_profile_goes_to_seerr_as_profile_and_server(env):
+    service, mock, db, box, config, client = env
+    settings = service.load_settings()
+    settings.enabled = True
+    settings.via = "seerr"
+    service.save_settings(settings)
+    connect_seerr(config)
+
+    outcome = await service.request(
+        [Item(item="tmdb-movie:603", title="The Matrix"), Item(item="tmdb-movie:604", title="The Matrix Reloaded")],
+        library="Movies",
+        collection_id=1,
+        now=T0,
+        profile="ULTRA-HD",
+    )
+    shows = await service.request([Item(item="tmdb-show:1396", title="Breaking Bad")], library="TV Shows", collection_id=2, now=T0, profile="WEB-1080p")
+
+    assert outcome.requested == 2 and shows.requested == 1
+    by_media = {r["mediaId"]: r for r in mock.seerr_requests.values()}
+    assert (by_media[603]["serverId"], by_media[603]["profileId"]) == (2, 6)
+    assert (by_media[604]["serverId"], by_media[604]["profileId"]) == (2, 6)
+    assert (by_media[1396]["serverId"], by_media[1396]["profileId"]) == (5, 7)
+    assert [row["error"] for row in db.execute("SELECT error FROM requests")] == [None, None, None]
+    # Seerr's servers are read once per batch, not once per title.
+    assert sum(1 for r in mock.requests if r.url.path == "/api/v1/service/radarr") == 1
+
+
+@pytest.mark.anyio
+async def test_a_profile_seerr_doesnt_have_falls_back_to_its_default_with_a_note(env):
+    service, mock, db, box, config, client = env
+    settings = service.load_settings()
+    settings.enabled = True
+    settings.via = "seerr"
+    service.save_settings(settings)
+    connect_seerr(config)
+
+    outcome = await service.request([Item(item="tmdb-movie:603", title="The Matrix")], library="Movies", collection_id=1, now=T0, profile="Old")
+    plain = await service.request([Item(item="tmdb-movie:604", title="The Matrix Reloaded")], library="Movies", collection_id=1, now=T0)
+
+    assert outcome.requested == 1 and plain.requested == 1
+    for sent in mock.seerr_requests.values():
+        assert "serverId" not in sent and "profileId" not in sent
+    row = db.execute("SELECT * FROM requests WHERE item = 'tmdb-movie:603'").fetchone()
+    assert row["status"] == "requested"
+    assert row["error"] == "Seerr's default quality profile: 'Old' isn't on its Radarr server"
+    assert db.execute("SELECT error FROM requests WHERE item = 'tmdb-movie:604'").fetchone()["error"] is None
+    # Without a collection profile, Seerr's servers aren't asked about at all.
+    assert sum(1 for r in mock.requests if r.url.path == "/api/v1/service/radarr") == 1
 
 @pytest.mark.anyio
 async def test_migration_0016_renames_old_seerr_rows_and_they_still_work(tmp_path: Path):

@@ -11,6 +11,7 @@ import httpx
 import pytest
 from fakeplex import REMOTE_URI, SERVER_TOKEN, FakePlex
 from fastapi.testclient import TestClient
+from test_requesting import seerr_service
 
 from starr_studio.app import create_app
 from starr_studio.crypto import SecretBox
@@ -169,6 +170,12 @@ class FakeRouteEnvironment:
                 if request.headers.get("X-Api-Key") == SEERR_KEY:
                     return httpx.Response(200, json={"id": 1})
                 return httpx.Response(401, json={"message": "Unauthorized"})
+            if path.startswith("/api/v1/service/"):
+                if request.headers.get("X-Api-Key") != SEERR_KEY:
+                    return httpx.Response(401)
+                answer = seerr_service(path)
+                if answer is not None:
+                    return answer
             if path == "/api/v1/request":
                 if request.headers.get("X-Api-Key") != SEERR_KEY:
                     return httpx.Response(401)
@@ -252,6 +259,20 @@ def test_options_route(test_setup):
     assert data["radarr"]["root_folders"] == ["/movies"]
     assert data["sonarr"]["quality_profiles"] == ["HD-1080p"]
     assert data["sonarr"]["root_folders"] == ["/tv"]
+    assert data["seerr"] is None  # not connected
+
+
+def test_options_list_seerrs_default_server_profiles(test_setup):
+    client, mock, app, tmp_path = test_setup
+    config = tmp_path / "config" / "config.yml"
+    config.write_text(config.read_text() + f"seerr:\n  url: {SEERR_URL}\n  apikey: {SEERR_KEY}\n")
+    data = client.get("/api/v1/requests/options").json()
+    assert data["seerr"] == {
+        "radarr": {"server": "Radarr", "quality_profiles": ["HD-1080p", "Ultra-HD"]},
+        "sonarr": {"server": "Sonarr", "quality_profiles": ["WEB-1080p"]},
+    }
+    assert data["radarr"]["quality_profiles"] == ["HD-1080p"]  # Radarr's own still listed, for Settings → Requests
+    assert "seerr" not in data["errors"]
 
 
 def _validated(tmp_path: Path) -> list[dict]:
