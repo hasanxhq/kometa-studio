@@ -8,12 +8,12 @@ Ultra.cc provides a shared Linux environment without root access or Docker. Appl
 
 Ultra.cc slots share their operating system and localhost (`127.0.0.1`) with other users on the same server. By default, Starr Studio permits unauthenticated access from local network connections.
 
-To prevent other users on the server from accessing your Studio instance:
+To keep other users on the server out of your Studio:
 1. Keep `STUDIO_HOST=127.0.0.1` in your environment file.
-2. Set `STUDIO_ALLOW_LOCAL=false` in `~/.config/starr-studio/studio.env`.
-3. Set a username and password in **Settings → General** immediately upon first start.
+2. On the first start, open Studio through an SSH tunnel and set a username and password straight away (step 7).
+3. Then set `STUDIO_ALLOW_LOCAL=false` in `~/.config/starr-studio/studio.env` and restart Studio.
 
-With `STUDIO_ALLOW_LOCAL=false`, Studio requires password sign-in for all connections, including those originating from localhost.
+With `STUDIO_ALLOW_LOCAL=false`, every connection signs in, including ones from localhost. Studio can't be set up with it off: before sign-in exists, it refuses everyone. That's why the first start uses `true` for a few minutes.
 
 ---
 
@@ -95,13 +95,15 @@ STUDIO_KOMETA_PYTHON=/home/<username>/kometa/.venv/bin/python3
 STUDIO_KOMETA_ENTRY=/home/<username>/kometa/kometa.py
 STUDIO_KOMETA_CONFIG=/home/<username>/kometa/config/config.yml
 STUDIO_KOMETA_SCHEMAS=/home/<username>/kometa/json-schema
-STUDIO_ALLOW_LOCAL=false
+STUDIO_ALLOW_LOCAL=true
 STUDIO_TIMEZONE=UTC
 ```
 
 Replace:
 - `<port>` with the port you selected from `app-ports free`.
 - `<username>` with your Ultra.cc username (`whoami`). Systemd environment files do not expand `~` or `$HOME`.
+
+`STUDIO_ALLOW_LOCAL=true` is only for the first start. Step 7 turns it off.
 
 ## 5. Set up the systemd user unit
 
@@ -157,7 +159,7 @@ Ultra.cc manages your web server using Nginx location snippets in `~/.apps/nginx
 Create the file `~/.apps/nginx/proxy.d/starr-studio.conf`:
 
 ```nginx
-location /kometa/ {
+location /starr-studio/ {
     proxy_pass http://127.0.0.1:<port>;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -182,22 +184,27 @@ Test and reload the Nginx configuration:
 app-nginx restart
 ```
 
-## 7. Access and first-run setup
+## 7. First start, sign-in, then the proxy
 
-Open your browser to:
+Studio only answers local addresses until it has a username and password, and a request through Ultra's nginx doesn't count as local. So the first visit goes through an SSH tunnel from your own computer:
 
-```text
-https://<username>.<server>.usbx.me/kometa/
+```bash
+ssh -L 8484:127.0.0.1:<port> <username>@<server>.usbx.me
 ```
 
-Complete the first-run setup wizard (Plex server, TMDb API key, libraries).
+Leave that running and open `http://localhost:8484` on your computer.
 
-Next, secure your instance:
-1. Open **Settings → General**.
-2. Set a **Username** and **Password**.
-3. Under **URL base**, confirm `/kometa` is configured.
-4. Under **Trusted proxies**, add `127.0.0.1` so Ultra's local Nginx proxy passes your real IP through.
-5. Save changes.
+1. In **Settings → General**, set a **Username** and **Password**.
+2. Set **URL base** to `/starr-studio`.
+3. Under **Trusted proxies**, add `127.0.0.1`, so Studio reads your real address from Ultra's nginx.
+4. Save.
+5. Turn local access off. In `~/.config/starr-studio/studio.env`, set `STUDIO_ALLOW_LOCAL=false`, then:
+
+   ```bash
+   systemctl --user restart starr-studio
+   ```
+
+6. Close the tunnel and open `https://<username>.<server>.usbx.me/starr-studio/`. Sign in, and first-run setup (Plex, TMDb, a library) takes it from there.
 
 ## Maintenance and updates
 

@@ -6,14 +6,14 @@ Starr Studio is a FastAPI application that serves its own REST API (`/api/v1/...
 
 ## URL base
 
-If you host Studio on a subpath (such as `https://example.com/kometa`), set the **URL base** to `/kometa` in **Settings → General**.
+If you host Studio on a subpath (such as `https://example.com/starr-studio`), set the **URL base** to `/starr-studio` in **Settings → General**.
 
 How it works:
-- Studio accepts requests with the prefix (`/kometa/...`) and without it (`/...`).
+- Studio accepts requests with the prefix (`/starr-studio/...`) and without it (`/...`).
 - An internal middleware (`UrlBaseMiddleware`) strips the prefix before passing requests to API routes and page handlers.
-- The web page injects `<base href="/kometa/">` into the HTML head so the single-page frontend constructs all API requests, assets, and routes with the base prefix.
+- The web page injects `<base href="/starr-studio/">` into the HTML head so the single-page frontend constructs all API requests, assets, and routes with the base prefix.
 - Visiting a page without the prefix automatically redirects to the URL base.
-- Because Studio accepts requests with or without the prefix, your reverse proxy can either forward the path as-is or rewrite it.
+- So the proxy must **forward the path as it is, prefix included**. A proxy that strips the prefix (Caddy's `handle_path`, Traefik's `StripPrefix`, nginx `proxy_pass` with a trailing path) sends page loads back to the URL base forever.
 
 ## Trusted proxies
 
@@ -43,7 +43,7 @@ Studio's collection builder allows uploading custom poster images up to 10 MB in
 ## Proxy configurations
 
 All examples below use:
-- URL base: `/kometa`
+- URL base: `/starr-studio`
 - Studio listening address: `127.0.0.1:8484` (or `starr-studio:8484` in Docker)
 
 ### 1. Nginx
@@ -53,7 +53,7 @@ A ready-to-use snippet is provided in `deploy/nginx-location.conf`.
 Add the following block inside your existing `server { ... }` configuration:
 
 ```nginx
-location /kometa/ {
+location /starr-studio/ {
     proxy_pass http://127.0.0.1:8484;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -70,21 +70,21 @@ location /kometa/ {
 }
 ```
 
-If your Nginx configuration does not automatically redirect requests without a trailing slash (`/kometa`), add:
+If your Nginx configuration does not automatically redirect requests without a trailing slash (`/starr-studio`), add:
 
 ```nginx
-location = /kometa {
-    return 301 $scheme://$host/kometa/;
+location = /starr-studio {
+    return 301 $scheme://$host/starr-studio/;
 }
 ```
 
 ### 2. Caddy
 
-In your `Caddyfile`, use `handle_path` to proxy under `/kometa` and set `flush_interval -1` to disable response buffering:
+In your `Caddyfile`, use `handle` (not `handle_path`, which strips the prefix) to proxy under `/starr-studio`, and set `flush_interval -1` to disable response buffering:
 
 ```caddy
 example.com {
-    handle_path /kometa* {
+    handle /starr-studio* {
         reverse_proxy 127.0.0.1:8484 {
             # Disable buffering so Server-Sent Events flush immediately
             flush_interval -1
@@ -109,7 +109,7 @@ services:
     image: starr-studio:local
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.starr-studio.rule=Host(`example.com`) && PathPrefix(`/kometa`)"
+      - "traefik.http.routers.starr-studio.rule=Host(`example.com`) && PathPrefix(`/starr-studio`)"
       - "traefik.http.routers.starr-studio.entrypoints=websecure"
       - "traefik.http.routers.starr-studio.tls=true"
       - "traefik.http.services.starr-studio.loadbalancer.server.port=8484"
@@ -123,7 +123,7 @@ If using Traefik's file provider to point at a non-Docker or standalone Studio i
 http:
   routers:
     starr-studio:
-      rule: "Host(`example.com`) && PathPrefix(`/kometa`)"
+      rule: "Host(`example.com`) && PathPrefix(`/starr-studio`)"
       entryPoints:
         - "websecure"
       service: "starr-studio"
@@ -143,11 +143,11 @@ To trust the client IP from upstream proxies in Traefik, ensure `forwardedHeader
 SWAG (by LinuxServer.io) provides standard reverse proxy templates. Create a subfolder configuration file at `/config/nginx/proxy-confs/starr-studio.subfolder.conf`:
 
 ```nginx
-location /kometa {
-    return 301 $scheme://$host/kometa/;
+location /starr-studio {
+    return 301 $scheme://$host/starr-studio/;
 }
 
-location ^~ /kometa/ {
+location ^~ /starr-studio/ {
     include /config/nginx/proxy.conf;
     include /config/nginx/resolver.conf;
 
