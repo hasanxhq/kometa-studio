@@ -21,6 +21,7 @@ from .arr_routes import router as arr_router
 from .network import NetworkTransport
 from .network_routes import router as network_router
 from .overlays_routes import router as overlays_router
+from .import_routes import router as import_router
 from .usage import ApiCalls
 from .usage import router as usage_router
 from .wanted import WantedRecorder
@@ -213,6 +214,7 @@ def create_app(
     app.include_router(tautulli_router)
     app.include_router(usage_router)
     app.include_router(overlays_router)
+    app.include_router(import_router)
     app.include_router(network_router)
     app.include_router(logs_router)
     app.include_router(jobs_router)
