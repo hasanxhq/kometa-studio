@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from starr_studio.kometa_command import ALWAYS, RunRequest, UnsupportedFlag, build_command, parse_help
+from starr_studio.kometa_command import ALWAYS, RunRequest, UnsupportedFlag, build_command, installed_version, parse_help, timings_work
 
 PY, ENTRY, CONFIG = Path("/.venv/bin/python3"), Path("/kometa.py"), Path("/config/config.yml")
 HELP = """usage: kometa.py [-h] [--config CONFIG] [--times TIMES] [--run] [--collections-only] [--overlays-only]
@@ -54,6 +54,7 @@ def test_every_option():
         "--ignore-schedules",
         "--no-missing",
         "--tests",
+        "--timings",
         "--low-priority",
     ]
 
@@ -79,3 +80,32 @@ def test_names_with_a_pipe_are_refused():
 def test_unknown_modes_are_refused():
     with pytest.raises(ValidationError):
         RunRequest(mode="delete-collections")
+
+
+@pytest.mark.parametrize(
+    ("version", "works"),
+    [
+        ("2.5.4", True),
+        ("2.5.4\n", True),
+        ("2.5.4-build2", True),
+        ("2.5.10", True),
+        ("2.6.0", True),
+        ("3.0.0", True),
+        ("2.5.3", False),  # crashes on --timings at startup (Kometa-Team/Kometa#3719)
+        ("2.5.3-build9", False),
+        ("2.4.1", False),
+        ("1.21.0", False),
+        ("nightly", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_timings_work_from_kometa_2_5_4(version, works):
+    assert timings_work(version) is works
+
+
+def test_installed_version_reads_the_version_file_beside_kometa_py(tmp_path):
+    entry = tmp_path / "kometa.py"
+    assert installed_version(entry) is None
+    (tmp_path / "VERSION").write_text("2.5.4\n")
+    assert installed_version(entry) == "2.5.4"

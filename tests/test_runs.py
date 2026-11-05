@@ -312,12 +312,52 @@ def test_a_run_kometa_saw_through_isnt_failed_by_a_critical_line(tmp_path, confi
         assert wait_for(client, run_id)["status"] == "succeeded"
 
 
-def test_runs_dont_pass_timings_which_crashes_kometa(tmp_path, config):
+def kometa_at(tmp_path, version: str | None) -> Path:
+    """The fake kometa.py in a folder of its own, with a VERSION file beside it (as Kometa has) unless ``version`` is None."""
+    folder = tmp_path / "kometa"
+    folder.mkdir()
+    entry = folder / "kometa.py"
+    entry.write_text(FAKE_KOMETA.read_text())
+    if version is not None:
+        (folder / "VERSION").write_text(f"{version}\n")
+    return entry
+
+
+@pytest.mark.parametrize("version", ["2.5.4", "2.5.4-build3", "2.6.0"])
+def test_runs_pass_timings_to_a_kometa_that_survives_it(tmp_path, config, version):
     plan(config, lines=["Starting Kometa"], exit=0)
-    with make_client(tmp_path) as client:
+    with make_client(tmp_path, kometa_entry=kometa_at(tmp_path, version)) as client:
         wait_for_flags(client)
+        # Not asked for, and asked against: Studio decides, so every run's calls per service are counted.
+        for timings in (False, True):
+            run_id = client.post("/api/v1/runs", json={"mode": "collections", "timings": timings}).json()["id"]
+            run = wait_for(client, run_id)
+            assert run["status"] == "succeeded"
+            assert "--timings" in run["command"].split()
+
+
+@pytest.mark.parametrize("version", ["2.5.3", "2.5.3-build7", "2.4.0", "nightly", None])
+def test_runs_dont_pass_timings_to_a_kometa_that_crashes_on_it(tmp_path, config, version):
+    # Kometa 2.5.3 crashes on --timings as it starts and exits 0; its --help lists the flag all the same.
+    plan(config, lines=["Starting Kometa"], exit=0)
+    with make_client(tmp_path, kometa_entry=kometa_at(tmp_path, version)) as client:
+        wait_for_flags(client)
+        # A request stored with timings on (Record timings ticked, or queued before 2.5.4) doesn't pass it either.
         run_id = client.post("/api/v1/runs", json={"mode": "collections", "timings": True}).json()["id"]
-        assert "--timings" not in wait_for(client, run_id)["command"]
+        assert "--timings" not in wait_for(client, run_id)["command"].split()
+
+
+def test_runs_dont_pass_timings_when_kometas_help_lacks_it(tmp_path, config):
+    entry = kometa_at(tmp_path, "2.5.4")
+    entry.write_text(entry.read_text().replace("--timings ", ""))
+    plan(config, lines=["Starting Kometa"], exit=0)
+    with make_client(tmp_path, kometa_entry=entry) as client:
+        wait_for_flags(client)
+        assert "--timings" not in client.get("/api/v1/kometa").json()["flags"]
+        run_id = client.post("/api/v1/runs", json={"mode": "collections"}).json()["id"]
+        run = wait_for(client, run_id)
+        assert run["status"] == "succeeded"
+        assert "--timings" not in run["command"].split()
 
 
 def test_non_critical_errors_leave_the_run_finished(tmp_path, config):
