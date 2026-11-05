@@ -50,7 +50,7 @@ Some networks block TMDb. Settings → Network has a proxy and DNS over HTTPS, a
 
 ### Known limitations
 
-- Calls per service on System → Status aren't available: Kometa 2.5.3 crashes with `--timings`, so Studio doesn't use it.
+- Calls per service on System → Status need Kometa 2.5.4 or newer (the image's own). Studio leaves `--timings` off for an older Kometa you've pointed it at, because 2.5.3 crashes on that flag.
 - MyAnimeList, AniDB, WeTrakr, FlickList, Floppy and Serializd can't be connected from Studio yet. Their settings go in `config.yml`, which you can edit from the Libraries page.
 - Simkl, YamTrack, Tracearr and text file sources are under Show Advanced, not in the source list.
 

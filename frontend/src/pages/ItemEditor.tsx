@@ -143,7 +143,7 @@ const SOURCE_NAMES: Record<string, string> = {
   wetrakr: "WeTrakr",
 };
 
-// Sources Kometa refuses in the other type of library: 2.5.3's builder.py, show_only_builders and movie_only_builders.
+// Sources Kometa refuses in the other type of library: 2.5.4's builder.py, show_only_builders and movie_only_builders.
 const SHOW_ONLY = [
   "serializd_list",
   "serializd_watchlist",

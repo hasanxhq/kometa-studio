@@ -51,7 +51,7 @@ MODE_PARTS = {
     "metadata": {"metadata"},
     "playlists": set(),
 }
-# Operations that replace items' posters (Kometa 2.5.3's operations.py).
+# Operations that replace items' posters (Kometa 2.5.4's operations.py).
 POSTER_OPERATIONS = ("mass_poster_update", "assets_for_all")
 # A library attribute that has Kometa's overlay pass run without overlay_files: it takes overlays off (config.py).
 REMOVE_OVERLAYS = ("remove_overlays", "remove_overlay", "revert_overlays")

@@ -20,6 +20,7 @@ from .auth import auth_settings
 from .config_routes import FULL_CHECK
 from .config_sections import read_document
 from .db import get_setting
+from .kometa_command import installed_version
 from .kometa_config import read_plex
 from .kometa_files import setup_steps
 from .settings import Settings
@@ -40,12 +41,7 @@ class Check:
 
 def kometa_version(settings: Settings) -> str | None:
     """Read the installed Kometa's VERSION file, which sits next to kometa.py."""
-    if settings.kometa_entry is None:
-        return None
-    try:
-        return (settings.kometa_entry.parent / "VERSION").read_text(encoding="utf-8").strip() or None
-    except OSError:
-        return None
+    return installed_version(settings.kometa_entry) if settings.kometa_entry is not None else None
 
 
 def kometa_updates(db: sqlite3.Connection, installed: str | None) -> dict:

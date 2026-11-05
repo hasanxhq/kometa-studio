@@ -52,7 +52,7 @@ function Health({ checks }: { checks: HealthCheck[] }) {
 
 const serviceNames: Record<string, string> = { tmdb: "TMDb", mdblist: "MDBList", imdb: "IMDb", tvdb: "TheTVDB", omdb: "OMDb", plex: "Plex", letterboxd: "Letterboxd" };
 
-// What today's runs asked of each service (from Kometa's --timings, which runs can't use yet; see usage.py), and how close MDBList's key is to its daily allowance.
+// What today's runs asked of each service (from Kometa's --timings, which runs pass from Kometa 2.5.4 on; see usage.py), and how close MDBList's key is to its daily allowance.
 function Usage() {
   const usage = useQuery({ queryKey: ["usage"], queryFn: api.usage, refetchInterval: 60_000 });
   if (!usage.data) return null;
@@ -65,7 +65,7 @@ function Usage() {
     <Card title="Service use today">
       <div className="flex flex-col gap-3 text-sm">
         {sources.length === 0 ? (
-          <p className="text-muted">Calls per service aren't available: this version of Kometa can't report them yet.</p>
+          <p className="text-muted">No calls counted today. Runs count them with Kometa 2.5.4 or newer.</p>
         ) : (
           <ul className="flex flex-wrap gap-x-6 gap-y-1">
             {sources.map(([source, calls]) => (

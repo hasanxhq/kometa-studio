@@ -1,7 +1,7 @@
 """How Kometa's config could touch Maintainerr's collections, worked out from the config alone.
 
 Maintainerr's collections carry no Kometa label, so to Kometa they're "unmanaged". Kometa reaches them
-three ways (checked against Kometa 2.5.3's modules/config.py and operations.py):
+three ways (checked against Kometa 2.5.4's modules/config.py and operations.py):
 
 - ``delete_collections`` (or the old ``delete_unmanaged_collections`` / ``delete_collections_with_less``)
   in a library's operations, unless it's limited to ``managed: true`` or ``configured: true``;

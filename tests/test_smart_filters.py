@@ -1,6 +1,8 @@
 """Tests for smart filter catalogue, validation, Kometa mapping, and Plex query translation."""
 
+import ast
 from datetime import datetime
+from pathlib import Path
 
 import httpx
 import pytest
@@ -573,3 +575,77 @@ async def test_plex_query_raises_on_validation_failure(plex_server):
     # director is movie-only; fails in show library
     with pytest.raises(SmartFilterError, match="only works for movie libraries"):
         await plex_query(server, "2", "show", spec)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Kometa 2.5.4: HDR10+ and Dolby Atmos
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.parametrize("library_type", ["movie", "show"])
+def test_hdr10plus_and_atmos_are_media_booleans(library_type):
+    by_key = {f.key: f for f in fields(library_type)}
+    for key, label in (("hdr10plus", "HDR10+"), ("atmos", "Dolby Atmos")):
+        assert by_key[key].kind == "boolean"
+        assert by_key[key].label == label
+        assert by_key[key].group == "Media"
+        assert by_key[key].modifiers == (("", "is"),)
+        assert by_key[key].episode is (library_type == "show")  # Kometa reads them from episodes in a show library
+
+
+def test_hdr10plus_and_atmos_go_to_kometa_as_written():
+    spec = {"match": "all", "rules": [{"field": "hdr10plus", "modifier": "", "value": True}, {"field": "atmos", "modifier": "", "value": False}]}
+    assert validate("movie", spec) == []
+    assert validate("show", spec) == []
+    assert to_kometa(spec) == {"all": {"hdr10plus": True, "atmos": False}}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("section", "library_type", "type_key", "prefix"),
+    [("1", "movie", "1", ""), ("2", "show", "2", "episode.")],
+)
+async def test_plex_query_hdr10plus_and_atmos(plex_server, section, library_type, type_key, prefix):
+    """Kometa 2.5.4 (builder.py line 4866) uses ``hdr10plus``/``atmos`` for a movie search and ``episode.hdr10plus``/
+    ``episode.atmos`` for a show search; true is ``=1``, false ``!=1``, like the other booleans."""
+    _, server = plex_server
+    spec = {"match": "all", "rules": [{"field": "hdr10plus", "modifier": "", "value": True}, {"field": "atmos", "modifier": "", "value": False}]}
+    params = await plex_query(server, section, library_type, spec)
+    assert params == [
+        ("type", type_key),
+        ("sort", "titleSort"),
+        (f"{prefix}hdr10plus", "1"),
+        ("and", "1"),
+        (f"{prefix}atmos!", "1"),
+    ]
+
+
+KOMETA_PLEX = Path(__file__).resolve().parents[1] / "kometa" / "modules" / "plex.py"
+
+
+def _kometa_tables() -> dict:
+    """plex.py's module-level lists and dicts, worked out from its source in order (no imports, no builtins)."""
+    tables: dict = {}
+    for node in ast.parse(KOMETA_PLEX.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            try:
+                tables[node.targets[0].id] = eval(compile(ast.Expression(node.value), str(KOMETA_PLEX), "eval"), {"__builtins__": {}}, tables)  # noqa: S307
+            except Exception:  # noqa: BLE001 - anything that needs more than plain lists isn't one of the tables
+                pass
+    return tables
+
+
+@pytest.mark.skipif(not KOMETA_PLEX.is_file(), reason="needs the reference clone of Kometa in kometa/")
+@pytest.mark.parametrize("library_type", ["movie", "show"])
+def test_every_field_and_modifier_is_a_kometa_search(library_type):
+    """Every attribute and modifier Studio offers is a search Kometa's plex.py accepts in that type of library, so a
+    Kometa update that drops or renames one fails here (builder.py build_filter's checks)."""
+    tables = _kometa_tables()
+    allowed = set(tables["searches"]) - set(tables["music_searches"])
+    allowed -= set(tables["show_only_searches" if library_type == "movie" else "movie_only_searches"])
+    for field in fields(library_type):
+        for modifier, _ in field.modifiers:
+            name = f"{field.key}.{modifier}" if modifier else field.key
+            if field.key == "folder_location":
+                continue  # Kometa finds Plex's own filter for it (plex.py get_search_key)
+            assert name in allowed, name

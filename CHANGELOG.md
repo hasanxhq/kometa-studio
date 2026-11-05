@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **HDR10+** and **Dolby Atmos** in the collection builder's Media filters (movie and TV libraries), new in Kometa 2.5.4. In TV libraries they match shows with an episode that has them, as Kometa does. Plex servers without these filters can't use them: Kometa refuses the collection.
 - **Collections fill themselves:** when a title a collection requested reaches Plex, Studio rebuilds just that collection (run trigger *Requested title arrived*), without waiting for a scheduled run or Radarr/Sonarr's own run-after-import setting.
 - **Quality profile per collection:** with Download missing ticked, the builder lets a collection request in another Radarr/Sonarr quality profile than the default in Settings → Requests (now labelled *Default quality profile*). If that profile is later removed from Radarr/Sonarr, requests use the default. Requests that go through Overseerr/Jellyseerr leave the choice to them.
 - **Requests** UI: Settings → Requests (turn it on with a warning, choose Radarr/Sonarr or Overseerr/Jellyseerr, limits), a Requests page under Libraries (status chips, cancel, Check now, 30 s polling while active), and **Download missing** on the collection builder (list sources), Ready-made Build bar, and collection cards/tiles (counts, Request N titles, Turn off).
@@ -34,6 +35,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Kometa 2.5.4:** the Docker image is now built on `kometateam/kometa:v2.5.4` (was v2.5.3).
+- **Calls per service are back** on System → Status: runs pass Kometa's `--timings` again, because Kometa 2.5.4 fixed the crash it caused in 2.5.3. Studio passes it only to Kometa 2.5.4 or newer; if you point Studio at an older Kometa of your own, its runs leave it off as before.
+- MyAnimeList sources are no longer greyed out when `config.yml` uses Kometa's own MyAnimeList app without a `client_secret`, which Kometa 2.5.4 accepts.
+- Collection filters written by hand with Kometa 2.5.4's `dovi_level`, `dovi_profile` or `stinger_rating` show as words (*Dolby Vision profile: 8*).
 - **Kometa Studio is now Starr Studio**, with a new logo: three fanned posters, the front one starred, and the name styled St\*arr. The name changes everywhere: the app, its sign-in with Plex, notifications, run logs, the comment on Studio's webhooks in `config.yml` and the header of the files Studio writes (both updated on the next run). The command is now `starr-studio` and the Python package `starr_studio`. Settings (`STUDIO_*`), the data folder and the Plex label `Studio` are unchanged. Full backups are now named `starr-studio-<date>.zip`; existing `kometa-studio-*.zip` backups stay listed, restorable and pruned as before.
 - **Docker Compose:** the service, image and container are now called `starr-studio`. When you update, run `docker compose up -d --build --remove-orphans` once, so the old `kometa-studio` container is removed and frees the port. If you also renamed the folder you run Compose from, remove the old container yourself (`docker rm -f kometa-studio`). Your config folder is untouched.
 - The overlay form has the same anchor grid and previews on a poster from the library.

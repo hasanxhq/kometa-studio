@@ -1,6 +1,6 @@
 """Reading Kometa's config.yml and the files it points to, read-only, for the Libraries pages.
 
-References are resolved the way Kometa 2.5.3 resolves them (modules/util.py load_files,
+References are resolved the way Kometa 2.5.4 resolves them (modules/util.py load_files,
 modules/meta.py): ``file`` paths are relative to Kometa's working directory, ``folder`` means
 every .yml/.yaml in it, ``default`` names a file in Kometa's own defaults folder, and ``url``,
 ``git`` and ``repo`` are remote, so Studio lists them without fetching them.
@@ -33,6 +33,9 @@ SOURCE_NEEDS: dict[str, tuple[str, ...]] = {
     "tmdb": ("apikey",),
     "wetrakr": (),
 }
+# Kometa's own MyAnimeList app (its "Use Kometa App" utility) has no client_secret, and from 2.5.4 Kometa doesn't ask for
+# one with it (modules/mal.py OFFICIAL_CLIENT_ID, modules/config.py).
+MAL_KOMETA_APP = "006daa2b5a3ae32abaac83f55f9b1ccf"
 # These three can also be set up in one library's own block, over the shared one (config.py: `"radarr" in lib`).
 PER_LIBRARY_SOURCES = {"radarr", "sonarr", "tautulli"}
 
@@ -429,6 +432,8 @@ def unavailable_sources(document: dict, library: str | None = None) -> dict[str,
         blocks = [document, *([own] if source in PER_LIBRARY_SOURCES else [])]
         present = [block[source] for block in blocks if source in block]
         values = {key: value for block in present if isinstance(block, dict) for key, value in block.items() if value}
+        if source == "mal" and values.get("client_id") == MAL_KOMETA_APP:
+            keys = ("client_id",)
         if not present or not all(key in values for key in keys):
             unavailable[source] = "not set up"
     return unavailable

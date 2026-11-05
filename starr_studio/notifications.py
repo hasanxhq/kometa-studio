@@ -1,6 +1,6 @@
 """Kometa's notification services and webhook events, for Settings → Notifications.
 
-Kometa 2.5.3 reads four services from the root of config.yml (modules/config.py) and sends each
+Kometa 2.5.4 reads four services from the root of config.yml (modules/config.py) and sends each
 webhook event to them by name, or to plain URLs (modules/webhooks.py). Every key is required:
 
     notifiarr: apikey

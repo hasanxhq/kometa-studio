@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Starr Studio on top of the official Kometa image (handoff v2 §3.1).
 # Kometa stays untouched at / with its own venv at /.venv; Studio gets /studio and its own venv.
-ARG KOMETA_TAG=v2.5.3
+ARG KOMETA_TAG=v2.5.4
 
 FROM node:22-slim AS frontend
 WORKDIR /src/frontend

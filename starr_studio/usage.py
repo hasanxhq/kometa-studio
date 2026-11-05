@@ -3,9 +3,10 @@ within MDBList's daily allowance (feedback round 1).
 
 With ``--timings``, Kometa writes ``logs/timings-<time>.json`` with its calls per service (``source``:
 tmdb, mdblist, imdb, …). A run hook adds them up and keeps them on the run (``runs.api_calls``), which
-gives the day's totals. Runs don't pass it for now: Kometa 2.5.3 crashes on it at startup, because
-``modules/timings.py`` takes ``util.logger`` on import, before ``kometa.py`` has set it. Until a Kometa
-that's fixed, there are no totals, and MDBList's allowance comes from ``/user`` alone.
+gives the day's totals. The runner passes it only to Kometa 2.5.4 or newer (``kometa_command.timings_work``):
+2.5.3 crashes on it at startup, because its ``modules/timings.py`` takes ``util.logger`` on import, before
+``kometa.py`` has set it (fixed in 2.5.4, Kometa-Team/Kometa#3719). With an older Kometa there are no totals,
+and MDBList's allowance comes from ``/user`` alone.
 
 A free MDBList key allows 1000 requests a day, and the count resets at midnight UTC. Studio asks
 MDBList's ``/user`` how much of today's allowance the key has used (at most every

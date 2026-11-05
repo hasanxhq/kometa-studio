@@ -34,7 +34,7 @@ class RunRequest(BaseModel):
     ignore_schedules: bool = False
     no_missing: bool = False
     tests: bool = False
-    timings: bool = False  # never passed on (Kometa 2.5.3 crashes on --timings; see usage.py), kept so stored requests load
+    timings: bool = False  # set by the runner (see timings_work), never by a person; kept so stored requests load
     low_priority: bool = True
 
     @field_validator("libraries", "collections", "files")
@@ -49,6 +49,30 @@ class RunRequest(BaseModel):
 
 class UnsupportedFlag(ValueError):
     pass
+
+
+# Kometa 2.5.3 and older crash on --timings as they start, and still exit 0 (timings.py took util.logger on import,
+# before kometa.py had set it). 2.5.4 fixed it (Kometa-Team/Kometa#3719). Their --help lists the flag either way.
+TIMINGS_FIXED_IN = (2, 5, 4)
+VERSION_NUMBER = re.compile(r"(\d+)\.(\d+)\.(\d+)(.*)")
+
+
+def installed_version(entry: Path) -> str | None:
+    """The installed Kometa's VERSION file, which sits next to kometa.py."""
+    try:
+        return (entry.parent / "VERSION").read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def timings_work(version: str | None) -> bool:
+    """Whether this Kometa version survives --timings. Unknown or unreadable versions, and builds before 2.5.4
+    (``2.5.3-build7``), count as not: without it a run only loses its calls per service, while a crash loses the run."""
+    match = VERSION_NUMBER.fullmatch(version.strip()) if version else None
+    if match is None:
+        return False
+    number = tuple(int(part) for part in match.groups()[:3])
+    return number >= TIMINGS_FIXED_IN
 
 
 def build_command(
@@ -73,6 +97,7 @@ def build_command(
         ("--ignore-schedules", request.ignore_schedules),
         ("--no-missing", request.no_missing),
         ("--tests", request.tests),
+        ("--timings", request.timings),
         ("--low-priority", request.low_priority),
     ):
         if wanted:
