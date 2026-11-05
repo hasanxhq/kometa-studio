@@ -90,7 +90,7 @@ describe("Collections list", () => {
     expect(newLinks[0]).toHaveAttribute("href", "/collections/new?library=Movies");
   });
 
-  it("shows Smart filter or the list label under the title", async () => {
+  it("shows Smart filter, the list label, or N sources under the title", async () => {
     mockApi({
       ...config,
       "GET /collections?library=Movies": () => ({
@@ -110,6 +110,17 @@ describe("Collections list", () => {
             source: { kind: "list", builder: "imdb_chart", value: "top", label: null },
             filters: { match: "all", rules: [] },
           }),
+          collection({
+            id: 4,
+            title: "Combined",
+            state: "missing",
+            source: { kind: "list", builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" },
+            sources: [
+              { kind: "list", builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" },
+              { kind: "titles", builder: "tmdb_movie", ids: ["550"], label: "TMDb movie · 1" },
+            ],
+            filters: { match: "all", rules: [] },
+          }),
         ],
       }),
     });
@@ -117,6 +128,7 @@ describe("Collections list", () => {
     expect(within(await screen.findByRole("listitem", { name: "Action Picks" })).getByText("Smart filter")).toBeInTheDocument();
     expect(within(screen.getByRole("listitem", { name: "Die Hard" })).getByText("Die Hard Collection")).toBeInTheDocument();
     expect(within(screen.getByRole("listitem", { name: "Chart" })).getByText("imdb_chart")).toBeInTheDocument();
+    expect(within(screen.getByRole("listitem", { name: "Combined" })).getByText("2 sources")).toBeInTheDocument();
   });
 
   it("shows request counts, Request N titles, and Turn off for download_missing", async () => {

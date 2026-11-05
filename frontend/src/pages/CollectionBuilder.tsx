@@ -7,36 +7,46 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ApiError } from "../api";
 import {
   builderApi,
+  canDownloadMissing,
   isKometaPosterUrl,
   posterPreviewSrc,
+  sourcesOf,
   type BuilderField,
   type CollectionInput,
   type FilterRule,
   type FilterSpec,
   type Poster,
   type Source,
+  type VisibleFlags,
 } from "../builderApi";
+import { blankRule, FilterRules, type DraftFilters } from "../components/builder/FilterRules";
 import { ListPreview } from "../components/builder/ListPreview";
-import { ListSource, type ListSourceValue } from "../components/builder/ListSource";
 import { MissingTitles } from "../components/builder/MissingTitles";
-import { emptyValue, RuleValueInput, type DraftValue } from "../components/builder/RuleValueInput";
+import {
+  blankListSource,
+  draftSourcesFrom,
+  sourceReady,
+  SourcesEditor,
+  toApiSources,
+  type DraftSource,
+} from "../components/builder/SourcesEditor";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useHeaderTitle } from "../components/HeaderTitle";
 import { LeaveGuard } from "../components/LeaveGuard";
 import { PlexPoster, posterGrid } from "../components/PlexPoster";
-import { Button, Checkbox, ConfirmButton, Field, StickyActions, inputClass } from "../components/ui";
+import { Button, ConfirmButton, Field, StickyActions, inputClass } from "../components/ui";
 import { needsConfirm, type NeedsConfirm } from "../requestsApi";
 
 type StartMode = "filters" | "list";
-type DraftRule = { field: string; modifier: string; value: DraftValue };
 type Draft = {
   library: string;
   title: string;
-  source: Source;
-  filters: { match: "all" | "any"; rules: DraftRule[] };
+  /** Smart-filter mode only; list mode uses ``sources``. */
+  filters: DraftFilters;
+  sources: DraftSource[];
   sort_by: string | null;
   limit: number | null;
-  visible: { library: boolean; home: boolean; shared: boolean };
+  visible: VisibleFlags;
   minimum_items: number;
   summary: string;
   sort_title: string;
@@ -63,12 +73,15 @@ function posterMode(poster: Poster, kometaUrl: string | null): PosterMode {
   return "url";
 }
 
-function toInput(draft: Draft): CollectionInput {
-  const list = draft.source.kind === "list";
+function toInput(draft: Draft, mode: StartMode): CollectionInput {
+  const list = mode === "list";
+  const sources: Source[] = list ? toApiSources(draft.sources) : [{ kind: "filters" }];
+  const canMissing = list && canDownloadMissing(sources);
   return {
     library: draft.library,
     title: draft.title.trim(),
-    source: draft.source,
+    source: sources[0],
+    sources,
     filters: list
       ? EMPTY_FILTERS
       : {
@@ -82,22 +95,23 @@ function toInput(draft: Draft): CollectionInput {
     summary: draft.summary.trim() || null,
     sort_title: draft.sort_title.trim() || null,
     poster: draft.poster,
-    download_missing: list ? draft.download_missing : false,
-    request_cap: list && draft.download_missing ? draft.request_cap : null,
-    request_profile: list && draft.download_missing ? draft.request_profile : null,
+    download_missing: canMissing ? draft.download_missing : false,
+    request_cap: canMissing && draft.download_missing ? draft.request_cap : null,
+    request_profile: canMissing && draft.download_missing ? draft.request_profile : null,
   };
 }
 
 function fromInput(input: CollectionInput): Draft {
-  const source: Source = input.source ?? { kind: "filters" };
+  const loaded = sourcesOf(input);
+  const listSources = loaded.filter((source) => source.kind !== "filters");
   return {
     library: input.library,
     title: input.title,
-    source,
     filters: {
       match: input.filters.match,
       rules: input.filters.rules.map((rule) => ({ ...rule })),
     },
+    sources: draftSourcesFrom(listSources.length > 0 ? listSources : loaded[0]?.kind === "filters" ? [] : loaded),
     sort_by: input.sort_by,
     limit: input.limit,
     visible: { ...input.visible },
@@ -111,18 +125,13 @@ function fromInput(input: CollectionInput): Draft {
   };
 }
 
-function blankDraft(library: string, fields: BuilderField[], source: Source = { kind: "filters" }): Draft {
-  const field = fields[0];
-  const rule: DraftRule = field
-    ? { field: field.key, modifier: field.modifiers[0]?.key ?? "", value: emptyValue(field) }
-    : { field: "", modifier: "", value: "" };
-  const list = source.kind === "list";
+function blankDraft(library: string, fields: BuilderField[]): Draft {
   return {
     library,
     title: "",
-    source,
-    filters: list ? { match: "all", rules: [] } : { match: "all", rules: [rule] },
-    sort_by: list ? "custom" : null,
+    filters: { match: "all", rules: [blankRule(fields)] },
+    sources: [blankListSource()],
+    sort_by: null,
     limit: null,
     visible: { library: true, home: false, shared: false },
     minimum_items: 1,
@@ -135,31 +144,15 @@ function blankDraft(library: string, fields: BuilderField[], source: Source = { 
   };
 }
 
-function listValue(source: Source): ListSourceValue | null {
-  return source.kind === "list" && source.builder && source.value ? { builder: source.builder, value: source.value, label: source.label } : null;
-}
-
-function canSave(draft: Draft): boolean {
+function canSave(draft: Draft, mode: StartMode): boolean {
   if (!draft.title.trim()) return false;
-  if (draft.source.kind === "list") return Boolean(draft.source.builder && draft.source.value);
+  if (mode === "list") return draft.sources.length > 0 && draft.sources.every(sourceReady);
   return true;
 }
 
-function fieldByKey(fields: BuilderField[], key: string): BuilderField | undefined {
-  return fields.find((field) => field.key === key);
-}
-
-function groupFields(fields: BuilderField[]): { group: string; fields: BuilderField[] }[] {
-  const order: string[] = [];
-  const map = new Map<string, BuilderField[]>();
-  for (const field of fields) {
-    if (!map.has(field.group)) {
-      order.push(field.group);
-      map.set(field.group, []);
-    }
-    map.get(field.group)!.push(field);
-  }
-  return order.map((group) => ({ group, fields: map.get(group)! }));
+function startModeOf(input: CollectionInput): StartMode {
+  const sources = sourcesOf(input);
+  return sources.length === 1 && sources[0]?.kind === "filters" ? "filters" : "list";
 }
 
 function saveProblems(error: unknown): string[] {
@@ -171,72 +164,34 @@ function saveProblems(error: unknown): string[] {
   return [];
 }
 
-function RuleRow({
-  library,
-  fields,
-  rule,
+/** Checkbox that keeps ``null`` ("Plex's setting") until the user toggles it. */
+function VisibleCheck({
+  checked,
   onChange,
-  onRemove,
-  canRemove,
+  children,
 }: {
-  library: string;
-  fields: BuilderField[];
-  rule: DraftRule;
-  onChange: (rule: DraftRule) => void;
-  onRemove: () => void;
-  canRemove: boolean;
+  checked: boolean | null;
+  onChange: (checked: boolean) => void;
+  children: React.ReactNode;
 }) {
-  const field = fieldByKey(fields, rule.field) ?? fields[0];
-  const groups = groupFields(fields);
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = checked === null;
+  }, [checked]);
   return (
-    <div className="flex flex-col gap-2 rounded-control border border-border bg-surface-2 p-3" role="group" aria-label="Filter rule">
-      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">Field</span>
-          <select
-            className={inputClass}
-            value={field?.key ?? ""}
-            onChange={(event) => {
-              const next = fieldByKey(fields, event.target.value);
-              if (!next) return;
-              onChange({ field: next.key, modifier: next.modifiers[0]?.key ?? "", value: emptyValue(next) });
-            }}
-            aria-label="Field"
-          >
-            {groups.map((group) => (
-              <optgroup key={group.group} label={group.group}>
-                {group.fields.map((entry) => (
-                  <option key={entry.key} value={entry.key}>
-                    {entry.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted">Modifier</span>
-          <select
-            className={inputClass}
-            value={rule.modifier}
-            onChange={(event) => onChange({ ...rule, modifier: event.target.value })}
-            aria-label="Modifier"
-          >
-            {(field?.modifiers ?? []).map((modifier) => (
-              <option key={modifier.key || "is"} value={modifier.key}>
-                {modifier.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex items-end">
-          <Button onClick={onRemove} disabled={!canRemove} aria-label="Remove rule">
-            Remove
-          </Button>
-        </div>
-      </div>
-      {field && <RuleValueInput library={library} field={field} value={rule.value} onChange={(value) => onChange({ ...rule, value })} />}
-    </div>
+    <label className="flex min-h-11 items-start gap-2 text-sm">
+      <input
+        ref={ref}
+        type="checkbox"
+        className="mt-1 size-4 shrink-0 accent-accent"
+        checked={checked === true}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>
+        {children}
+        {checked === null && <span className="block text-xs text-muted">Plex&apos;s setting</span>}
+      </span>
+    </label>
   );
 }
 
@@ -420,14 +375,17 @@ function BuilderForm({
   const [draft, setDraft] = useState(baseline);
   const [baselineSnap] = useState(baseline);
   const [mode, setMode] = useState<StartMode | null>(initialMode);
-  const [autoTitle, setAutoTitle] = useState<string | null>(
-    baseline.source.kind === "list" ? baseline.source.label : null,
-  );
+  const [autoTitle, setAutoTitle] = useState<string | null>(() => {
+    const first = baseline.sources[0];
+    return first?.kind === "list" ? first.label : null;
+  });
   const [confirmMore, setConfirmMore] = useState<NeedsConfirm | null>(null);
-  const dirty = JSON.stringify(toInput(draft)) !== JSON.stringify(toInput(baselineSnap));
+  const dirty =
+    mode !== null && JSON.stringify(toInput(draft, mode)) !== JSON.stringify(toInput(baselineSnap, initialMode ?? mode));
   const kometaUrl =
     baselineSnap.poster?.kind === "url" && isKometaPosterUrl(baselineSnap.poster.url) ? baselineSnap.poster.url : null;
   const isList = mode === "list";
+  const apiSources = isList ? toApiSources(draft.sources) : [];
 
   const [previewArgs, setPreviewArgs] = useState<{ filters: FilterSpec; sort_by: string | null } | null>(null);
   useEffect(() => {
@@ -458,7 +416,7 @@ function BuilderForm({
 
   const save = useMutation({
     mutationFn: async (confirm_requests: boolean) => {
-      const body = { ...toInput(draft), confirm_requests };
+      const body = { ...toInput(draft, mode!), confirm_requests };
       return id === null ? builderApi.create(body) : builderApi.update(id, body);
     },
     onSuccess: (saved) => {
@@ -490,67 +448,32 @@ function BuilderForm({
     save.error instanceof ApiError && save.error.status === 409 && !needsConfirm(save.error) ? save.error.message : null;
   const removeNotice = remove.error instanceof ApiError ? remove.error.message : null;
 
-  const setRule = (index: number, rule: DraftRule) =>
-    setDraft((current) => ({
-      ...current,
-      filters: { ...current.filters, rules: current.filters.rules.map((entry, i) => (i === index ? rule : entry)) },
-    }));
-
-  const addRule = () => {
-    const field = fields.fields[0];
-    if (!field) return;
-    setDraft((current) => ({
-      ...current,
-      filters: {
-        ...current.filters,
-        rules: [...current.filters.rules, { field: field.key, modifier: field.modifiers[0]?.key ?? "", value: emptyValue(field) }],
-      },
-    }));
-  };
-
   const switchMode = (next: StartMode) => {
     setMode(next);
     if (next === "filters") {
       setDraft((current) => {
-        if (current.source.kind === "filters") return current;
-        const blank = blankDraft(library, fields.fields, { kind: "filters" });
+        const blank = blankDraft(library, fields.fields);
         return {
           ...current,
-          source: { kind: "filters" },
-          filters: blank.filters,
+          filters: current.filters.rules.length > 0 ? current.filters : blank.filters,
+          sources: [blankListSource()],
           sort_by: null,
           limit: null,
+          download_missing: false,
+          request_cap: null,
+          request_profile: null,
         };
       });
       return;
     }
-    setDraft((current) => {
-      if (current.source.kind === "list") return current;
-      return {
-        ...current,
-        source: { kind: "list", builder: "", value: "", label: null },
-        filters: { match: "all", rules: [] },
-        sort_by: "custom",
-        limit: null,
-      };
-    });
+    setDraft((current) => ({
+      ...current,
+      sources: current.sources.length > 0 ? current.sources : [blankListSource()],
+      filters: { match: "all", rules: [] },
+      sort_by: current.sort_by && LIST_SORTS.some((s) => s.key === current.sort_by) ? current.sort_by : "custom",
+      limit: null,
+    }));
   };
-
-  const setListSource = (next: ListSourceValue) => {
-    const label = next.label;
-    setDraft((current) => {
-      const title =
-        !current.title.trim() || (autoTitle !== null && current.title === autoTitle) ? (label ?? current.title) : current.title;
-      return {
-        ...current,
-        title,
-        source: { kind: "list", builder: next.builder, value: next.value, label: next.label },
-      };
-    });
-    if (label) setAutoTitle(label);
-  };
-
-  const list = listValue(draft.source);
 
   return (
     <div className="flex max-w-[1400px] flex-col gap-5">
@@ -619,61 +542,32 @@ function BuilderForm({
             </section>
 
             {isList ? (
-              <section className="flex flex-col gap-3" aria-labelledby="list-heading">
-                <h3 id="list-heading" className="text-[15px] font-semibold">
-                  List
-                </h3>
-                <ListSource library={library} value={list} onChange={setListSource} />
-              </section>
+              <SourcesEditor
+                library={library}
+                libraryType={fields.library_type ?? "movie"}
+                fields={fields.fields}
+                sources={draft.sources}
+                onChange={(sources) => setDraft({ ...draft, sources })}
+                onListPicked={(label) => {
+                  setDraft((current) => {
+                    const title =
+                      !current.title.trim() || (autoTitle !== null && current.title === autoTitle) ? (label ?? current.title) : current.title;
+                    return { ...current, title };
+                  });
+                  if (label) setAutoTitle(label);
+                }}
+              />
             ) : (
               <section className="flex flex-col gap-3" aria-labelledby="filters-heading">
                 <h3 id="filters-heading" className="text-[15px] font-semibold">
                   Filters
                 </h3>
-                <fieldset className="flex flex-wrap gap-4">
-                  <legend className="sr-only">Match rules</legend>
-                  <label className="flex min-h-11 items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="match"
-                      className="size-4 accent-accent"
-                      checked={draft.filters.match === "all"}
-                      onChange={() => setDraft({ ...draft, filters: { ...draft.filters, match: "all" } })}
-                    />
-                    Match all of these rules
-                  </label>
-                  <label className="flex min-h-11 items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="match"
-                      className="size-4 accent-accent"
-                      checked={draft.filters.match === "any"}
-                      onChange={() => setDraft({ ...draft, filters: { ...draft.filters, match: "any" } })}
-                    />
-                    Match any of these rules
-                  </label>
-                </fieldset>
-                <div className="flex flex-col gap-3">
-                  {draft.filters.rules.map((rule, index) => (
-                    <RuleRow
-                      key={index}
-                      library={library}
-                      fields={fields.fields}
-                      rule={rule}
-                      onChange={(next) => setRule(index, next)}
-                      onRemove={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          filters: { ...current.filters, rules: current.filters.rules.filter((_, i) => i !== index) },
-                        }))
-                      }
-                      canRemove={draft.filters.rules.length > 1}
-                    />
-                  ))}
-                </div>
-                <Button onClick={addRule} disabled={fields.fields.length === 0}>
-                  Add rule
-                </Button>
+                <FilterRules
+                  library={library}
+                  fields={fields.fields}
+                  value={draft.filters}
+                  onChange={(filters) => setDraft({ ...draft, filters })}
+                />
               </section>
             )}
 
@@ -743,15 +637,21 @@ function BuilderForm({
               <h3 id="visible-heading" className="text-[15px] font-semibold">
                 Where it shows
               </h3>
-              <Checkbox checked={draft.visible.library} onChange={(checked) => setDraft({ ...draft, visible: { ...draft.visible, library: checked } })}>
+              <VisibleCheck
+                checked={draft.visible.library}
+                onChange={(checked) => setDraft({ ...draft, visible: { ...draft.visible, library: checked } })}
+              >
                 Library recommended
-              </Checkbox>
-              <Checkbox checked={draft.visible.home} onChange={(checked) => setDraft({ ...draft, visible: { ...draft.visible, home: checked } })}>
+              </VisibleCheck>
+              <VisibleCheck checked={draft.visible.home} onChange={(checked) => setDraft({ ...draft, visible: { ...draft.visible, home: checked } })}>
                 My home
-              </Checkbox>
-              <Checkbox checked={draft.visible.shared} onChange={(checked) => setDraft({ ...draft, visible: { ...draft.visible, shared: checked } })}>
+              </VisibleCheck>
+              <VisibleCheck
+                checked={draft.visible.shared}
+                onChange={(checked) => setDraft({ ...draft, visible: { ...draft.visible, shared: checked } })}
+              >
                 Friends' home
-              </Checkbox>
+              </VisibleCheck>
             </section>
 
             <section className="flex flex-col gap-3" aria-labelledby="details-heading">
@@ -766,11 +666,10 @@ function BuilderForm({
               </Field>
             </section>
 
-            {isList && list && (
+            {isList && (
               <MissingTitles
                 library={library}
-                builder={list.builder}
-                value={list.value}
+                sources={apiSources}
                 downloadMissing={draft.download_missing}
                 requestCap={draft.request_cap}
                 libraryType={fields.library_type ?? "movie"}
@@ -786,15 +685,7 @@ function BuilderForm({
             <h3 id="preview-heading" className="mb-3 text-[15px] font-semibold">
               Preview
             </h3>
-            {isList ? (
-              list ? (
-                <ListPreview library={library} builder={list.builder} value={list.value} />
-              ) : (
-                <p className="text-sm text-muted">Pick a list to preview.</p>
-              )
-            ) : (
-              <PreviewPane preview={preview.data} updating={preview.isFetching} />
-            )}
+            {isList ? <ListPreview library={library} sources={apiSources} /> : <PreviewPane preview={preview.data} updating={preview.isFetching} />}
           </section>
         </div>
       )}
@@ -811,7 +702,7 @@ function BuilderForm({
 
       {mode !== null && (
         <StickyActions>
-          <Button variant="primary" onClick={() => save.mutate(false)} disabled={!canSave(draft) || save.isPending}>
+          <Button variant="primary" onClick={() => save.mutate(false)} disabled={!canSave(draft, mode) || save.isPending}>
             {save.isPending ? "Saving…" : id === null ? "Create" : "Save"}
           </Button>
           {id !== null && (
@@ -864,10 +755,7 @@ function NewBuilder({ library }: { library: string }) {
 
   const baseline = useMemo(() => {
     if (!fieldData.data) return null;
-    if (template.data) {
-      const draft = fromInput({ ...template.data, source: template.data.source ?? { kind: "filters" } });
-      return draft;
-    }
+    if (template.data) return fromInput(template.data);
     return blankDraft(library, fieldData.data.fields);
   }, [fieldData.data, template.data, library]);
 
@@ -932,7 +820,7 @@ function EditBuilder({ id }: { id: number }) {
       fields={fieldData.data}
       baseline={baseline}
       templateError={null}
-      initialMode={baseline.source.kind === "list" ? "list" : "filters"}
+      initialMode={startModeOf(collection.data)}
     />
   );
 }

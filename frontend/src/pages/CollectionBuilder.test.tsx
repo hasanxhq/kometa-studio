@@ -257,7 +257,7 @@ describe("CollectionBuilder", () => {
     expect(screen.getByRole("radio", { name: "Organise what I have" })).not.toBeChecked();
     expect(screen.getByRole("radio", { name: "Get something new" })).not.toBeChecked();
     expect(screen.queryByRole("group", { name: "Filter rule" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "List", level: 3 })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Sources", level: 3 })).not.toBeInTheDocument();
 
     await pickOrganise();
     expect(screen.getAllByRole("group", { name: "Filter rule" })).toHaveLength(1);
@@ -394,6 +394,7 @@ describe("CollectionBuilder", () => {
       library: "Movies",
       title: "My Action",
       source: { kind: "filters" },
+      sources: [{ kind: "filters" }],
       filters: { match: "all", rules: [{ field: "genre", modifier: "", value: ["Action"] }] },
       sort_by: "year.desc",
       limit: 25,
@@ -715,6 +716,7 @@ describe("CollectionBuilder", () => {
       library: "Movies",
       title: "Die Hard Collection",
       source: { kind: "list", builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" },
+      sources: [{ kind: "list", builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }],
       filters: { match: "all", rules: [] },
       sort_by: "release",
       limit: null,
@@ -935,5 +937,157 @@ describe("CollectionBuilder", () => {
     expect(screen.getByLabelText("Order")).toHaveValue("alpha");
     expect(screen.queryByRole("group", { name: "Filter rule" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Limit")).not.toBeInTheDocument();
+  });
+
+  it("adds a second list source and a titles source; Create sends both in sources", async () => {
+    const calls = mockApi(
+      baseRoutes({
+        "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+        "POST /collections": (body) => ({
+          ...(body as CollectionInput),
+          id: 30,
+          state: "queued",
+          plex_items: null,
+          thumb: null,
+          last_built_at: null,
+          last_error: null,
+          run_id: 11,
+        }),
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    await screen.findByLabelText("Chosen source");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add another source" }));
+    fireEvent.click(screen.getByRole("button", { name: "Individual titles" }));
+    fireEvent.change(await screen.findByLabelText("Title ids"), {
+      target: { value: "550\nhttps://www.themoviedb.org/movie/603" },
+    });
+    expect(screen.getByText("Read 2 ids.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /collections")).toBe(true));
+    const sent = calls.find((c) => c.route === "POST /collections")!.body as CollectionInput;
+    expect(sent.sources).toEqual([
+      { kind: "list", builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" },
+      { kind: "titles", builder: "tmdb_movie", ids: ["550", "603"], label: "TMDb movie · 2" },
+    ]);
+    expect(sent.source).toEqual(sent.sources![0]);
+  });
+
+  it("removes a source", async () => {
+    mockApi(
+      baseRoutes({
+        "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    await screen.findByLabelText("Chosen source");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add another source" }));
+    fireEvent.click(screen.getByRole("button", { name: "Individual titles" }));
+    expect(screen.getAllByRole("listitem", { name: /^Source:/ })).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove source 2" }));
+    expect(screen.getAllByRole("listitem", { name: /^Source:/ })).toHaveLength(1);
+    expect(screen.getByLabelText("Chosen source")).toHaveTextContent("Die Hard Collection");
+  });
+
+  it("removing a source keeps each remaining row's own ids", async () => {
+    mockApi(
+      baseRoutes({
+        "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    await screen.findByLabelText("Chosen source");
+    for (const ids of ["550", "603\n604"]) {
+      fireEvent.click(screen.getByRole("button", { name: "Add another source" }));
+      fireEvent.click(screen.getByRole("button", { name: "Individual titles" }));
+      const boxes = await screen.findAllByLabelText("Title ids");
+      fireEvent.change(boxes[boxes.length - 1], { target: { value: ids } });
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove source 2" })); // the first titles source
+    const boxes = screen.getAllByLabelText("Title ids");
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]).toHaveValue("603\n604");
+  });
+
+  it("editing an old single-source collection still works", async () => {
+    mockApi(
+      baseRoutes({
+        "GET /collections/8": () => ({ ...listSample, sources: undefined }),
+      }),
+    );
+    renderBuilder("/collections/8");
+    expect(await screen.findByRole("radio", { name: "Get something new" })).toBeChecked();
+    expect(screen.getByLabelText("Chosen source")).toHaveTextContent("Die Hard Collection");
+    expect(screen.getByLabelText("Title")).toHaveValue("Die Hard Collection");
+  });
+
+  it("a Plex search source uses the rule editor", async () => {
+    mockApi(baseRoutes());
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.click(await screen.findByRole("button", { name: "Add another source" }));
+    fireEvent.click(screen.getByRole("button", { name: "Plex search" }));
+    expect(screen.getByRole("listitem", { name: "Source: Plex search" })).toBeInTheDocument();
+    expect(screen.getAllByRole("group", { name: "Filter rule" }).length).toBeGreaterThanOrEqual(1);
+    fireEvent.click(screen.getByRole("button", { name: "Remove source 1" }));
+    expect(screen.getByRole("listitem", { name: "Source: Plex search" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Filter rule" })).toBeInTheDocument();
+  });
+
+  it("keeps null visibility until the checkbox is changed, and Save sends null", async () => {
+    const imported: BuiltCollection = {
+      ...listSample,
+      id: 42,
+      visible: { library: null, home: null, shared: null },
+    };
+    const calls = mockApi(
+      baseRoutes({
+        "GET /collections/42": () => imported,
+        "PUT /collections/42": (body) => ({ ...imported, ...(body as CollectionInput) }),
+      }),
+    );
+    renderBuilder("/collections/42");
+    expect(await screen.findAllByText("Plex's setting")).toHaveLength(3);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "PUT /collections/42")).toBe(true));
+    const sent = calls.find((c) => c.route === "PUT /collections/42")!.body as CollectionInput;
+    expect(sent.visible).toEqual({ library: null, home: null, shared: null });
+  });
+
+  it("changing a null visibility checkbox sends a boolean and leaves the others null", async () => {
+    const imported: BuiltCollection = {
+      ...listSample,
+      id: 43,
+      visible: { library: null, home: null, shared: null },
+    };
+    const calls = mockApi(
+      baseRoutes({
+        "GET /collections/43": () => imported,
+        "PUT /collections/43": (body) => ({ ...imported, ...(body as CollectionInput) }),
+      }),
+    );
+    renderBuilder("/collections/43");
+    await screen.findAllByText("Plex's setting");
+    fireEvent.click(screen.getByRole("checkbox", { name: /Library recommended/ }));
+    expect(screen.getAllByText("Plex's setting")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "PUT /collections/43")).toBe(true));
+    const sent = calls.find((c) => c.route === "PUT /collections/43")!.body as CollectionInput;
+    expect(sent.visible).toEqual({ library: true, home: null, shared: null });
   });
 });

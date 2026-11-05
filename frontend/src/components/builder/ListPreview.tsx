@@ -1,8 +1,8 @@
-// In-library / missing poster grids for a list source, or the why when Studio can't preview yet.
+// In-library / missing poster grids for list and titles sources, plus skipped sources Studio can't preview yet.
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
-import { builderApi, type SourcePreview } from "../../builderApi";
+import { builderApi, type Source, type SourcePreview } from "../../builderApi";
 import { PlexPoster, posterGrid } from "../PlexPoster";
 
 function MissingPoster({ poster, title }: { poster: string | null; title: string }) {
@@ -18,6 +18,8 @@ function MissingPoster({ poster, title }: { poster: string | null; title: string
 }
 
 function PreviewBody({ preview, updating }: { preview: SourcePreview; updating: boolean }) {
+  const skipped = preview.skipped ?? [];
+
   if (preview.problems.length > 0) {
     return (
       <div className="flex flex-col gap-2">
@@ -27,6 +29,7 @@ function PreviewBody({ preview, updating }: { preview: SourcePreview; updating: 
             <li key={problem}>{problem}</li>
           ))}
         </ul>
+        {skipped.length > 0 && <SkippedList skipped={skipped} />}
       </div>
     );
   }
@@ -36,6 +39,7 @@ function PreviewBody({ preview, updating }: { preview: SourcePreview; updating: 
       <div className="flex flex-col gap-2">
         {updating && <p className="text-sm text-muted">Updating…</p>}
         <p className="text-sm text-muted">{preview.why ?? "This list can't be previewed yet."}</p>
+        {skipped.length > 1 && <SkippedList skipped={skipped} />}
       </div>
     );
   }
@@ -43,6 +47,7 @@ function PreviewBody({ preview, updating }: { preview: SourcePreview; updating: 
   return (
     <div className="flex flex-col gap-5">
       {updating && <p className="text-sm text-muted">Updating…</p>}
+      {skipped.length > 0 && <SkippedList skipped={skipped} />}
       <section className="flex flex-col gap-3" aria-labelledby="in-library-heading">
         <h4 id="in-library-heading" className="text-[13px] font-semibold">
           In your library ({preview.in_library_count})
@@ -83,24 +88,40 @@ function PreviewBody({ preview, updating }: { preview: SourcePreview; updating: 
   );
 }
 
-export function ListPreview({
-  library,
-  builder,
-  value,
-}: {
-  library: string;
-  builder: string;
-  value: string;
-}) {
+function SkippedList({ skipped }: { skipped: { label: string; why: string }[] }) {
+  return (
+    <ul className="flex flex-col gap-1 text-sm text-muted" aria-label="Sources not in preview">
+      {skipped.map((entry) => (
+        <li key={`${entry.label}:${entry.why}`}>
+          <span className="font-medium text-text">{entry.label}</span>
+          {": "}
+          {entry.why}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Sources the preview endpoint can try to read (list + titles). Search/filters are skipped server-side. */
+function previewableSources(sources: Source[]): Source[] {
+  return sources.filter((source) => source.kind === "list" || source.kind === "titles" || source.kind === "search");
+}
+
+export function ListPreview({ library, sources }: { library: string; sources: Source[] }) {
+  const ready = previewableSources(sources).filter((source) => {
+    if (source.kind === "list") return Boolean(source.builder && source.value);
+    if (source.kind === "titles") return source.ids.length > 0;
+    return source.kind === "search";
+  });
   const preview = useQuery({
-    queryKey: ["builder", "sources", "preview", library, builder, value],
-    queryFn: () => builderApi.previewSource({ library, source: { builder, value } }),
-    enabled: Boolean(builder && value),
+    queryKey: ["builder", "sources", "preview", library, ready],
+    queryFn: () => builderApi.previewSource({ library, sources: ready }),
+    enabled: ready.length > 0,
     placeholderData: keepPreviousData,
   });
 
-  if (!builder || !value) {
-    return <p className="text-sm text-muted">Pick a list to preview.</p>;
+  if (ready.length === 0) {
+    return <p className="text-sm text-muted">Add a list or titles to preview.</p>;
   }
   if (preview.isPending && !preview.data) {
     return <p className="text-sm text-muted">Loading preview…</p>;
