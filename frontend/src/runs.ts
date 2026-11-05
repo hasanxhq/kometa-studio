@@ -68,6 +68,7 @@ export const triggerLabels: Record<RunTrigger, string> = {
   maintainerr: "Before Maintainerr's redraw",
   "ready-made": "Ready-made",
   builder: "Collection builder",
+  requests: "Requested title arrived",
 };
 
 export const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

@@ -178,12 +178,7 @@ async def create_requests(body: CreateRequestBody, service: ServiceDep) -> Reque
 
 @router.post("/refresh")
 async def refresh_requests(service: ServiceDep) -> dict[str, int]:
-    now = datetime.now(UTC)
-    counts = await service.refresh(now)
-    server = service.plex_server()
-    if server is not None:
-        await service.label_imported(server, now)
-    return counts
+    return await service.check(datetime.now(UTC))
 
 
 @router.post("/{row_id}/cancel")

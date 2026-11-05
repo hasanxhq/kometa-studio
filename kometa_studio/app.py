@@ -44,7 +44,7 @@ from .plex_routes import router as plex_router
 from .ready_made_routes import needs_count, plex_is_configured
 from .ready_made_routes import router as ready_made_router
 from .builder_routes import router as builder_router
-from .collection_requests import MissingRequester
+from .collection_requests import MissingRequester, rebuild_arrived
 from .requesting import RequestService
 from .requests_routes import router as requests_router
 from .ready_made_runs import ReadyMadeRecorder
@@ -150,6 +150,7 @@ def create_app(
             settings.kometa_config,
             settings.data_dir,
         )
+        app.state.requests.after_labelling = lambda: rebuild_arrived(app.state.db, runner)
         app.state.requests.start()
         app.state.arr.on_imports = app.state.requests.on_imports
         maintainerr = Maintainerr(app.state.db, app.state.http, app.state.secrets, settings.kometa_config, settings.kometa_entry.parent if settings.kometa_entry else None)
