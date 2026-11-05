@@ -137,7 +137,7 @@ loginctl enable-linger $USER
 
 ## 5. First start
 
-Open `http://127.0.0.1:8484` in your browser (or through an SSH tunnel if remote: `ssh -L 8484:localhost:8484 user@host`).
+On a shared server, set up sign-in first (see [Security on shared servers](#security-on-shared-servers)). Then open `http://127.0.0.1:8484` in your browser (or through an SSH tunnel if remote: `ssh -L 8484:localhost:8484 user@host`).
 
 First-run setup opens automatically. It will ask for:
 - Connection to your Plex Media Server (sign-in or token)
@@ -146,17 +146,19 @@ First-run setup opens automatically. It will ask for:
 
 ## Security on shared servers
 
-By default, Starr Studio treats requests from loopback and private local network ranges as trusted and does not require authentication.
+By default, Studio lets in requests from loopback and the private network without asking who they are, until a username and password are set. On a shared machine or seedbox, other users are on that network too.
 
-On a shared machine or seedbox where multiple users have local shell access:
-1. Configure a username and password in **Settings → General**.
-2. Add `STUDIO_ALLOW_LOCAL=false` to `~/.config/starr-studio/studio.env`.
-3. Restart the service:
-   ```bash
-   systemctl --user restart starr-studio
-   ```
+On a seedbox, use [`deploy/install-seedbox.sh`](../deploy/install-seedbox.sh), which does all of this for you (see [the Ultra.cc guide](seedboxes/ultra.md)). By hand, set sign-in **before the first start**:
 
-When `STUDIO_ALLOW_LOCAL=false` is set, all visitors must log in, even when connecting from `127.0.0.1`.
+```bash
+set -a; . ~/.config/starr-studio/studio.env; set +a
+~/starr-studio/.venv/bin/starr-studio create-user --username <you>
+~/starr-studio/.venv/bin/starr-studio set-proxy --url-base /starr-studio --trusted 127.0.0.1   # behind a proxy on this machine
+```
+
+Then put `STUDIO_ALLOW_LOCAL=false` in `~/.config/starr-studio/studio.env` and start the service. Studio never answers without a password, and every visitor signs in, even from `127.0.0.1`.
+
+`create-user` asks for the password twice (or reads one line from standard input with `--password-stdin`). It refuses to replace an existing user unless you add `--replace`, which also signs every browser out.
 
 ## Updating
 

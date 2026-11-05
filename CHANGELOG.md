@@ -9,7 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Install and deployment guides:** documentation for non-Docker installs (`docs/install-without-docker.md`), reverse proxy configurations (`docs/reverse-proxy.md`), Ultra.cc seedboxes (`docs/seedboxes/ultra.md`), and systemd and nginx templates in `deploy/`.
+- **Seedbox install script** (`deploy/install-seedbox.sh`): installs Kometa and Studio without root or Docker, creates your user and sets the URL base and trusted proxy **before Studio first starts** (so it never answers without a password), sets `STUDIO_ALLOW_LOCAL=false`, and starts a `systemd --user` service; on Ultra.cc it also adds the nginx location. Run it again to update. New commands for it: `starr-studio create-user` and `starr-studio set-proxy`.
+- **Install and deployment guides:** non-Docker installs (`docs/install-without-docker.md`), reverse proxies (`docs/reverse-proxy.md`: nginx, Caddy, Traefik, SWAG), Ultra.cc (`docs/seedboxes/ultra.md`), and systemd, nginx and env templates in `deploy/`.
 - **HDR10+** and **Dolby Atmos** in the collection builder's Media filters (movie and TV libraries), new in Kometa 2.5.4. In TV libraries they match shows with an episode that has them, as Kometa does. Plex servers without these filters can't use them: Kometa refuses the collection.
 - **Collections fill themselves:** when a title a collection requested reaches Plex, Studio rebuilds just that collection (run trigger *Requested title arrived*), without waiting for a scheduled run or Radarr/Sonarr's own run-after-import setting.
 - **Quality profile per collection:** with Download missing ticked, the builder lets a collection request in another Radarr/Sonarr quality profile than the default in Settings → Requests (now labelled *Default quality profile*). If that profile is later removed from Radarr/Sonarr, requests use the default. Requests that go through Seerr leave the choice to it.

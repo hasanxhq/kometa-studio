@@ -43,7 +43,7 @@ Settings in `compose.yaml` can be overridden with environment variables or a `.e
 Other setups:
 - [Install without Docker](docs/install-without-docker.md) (Python 3.12, systemd user service)
 - [Reverse proxy setup](docs/reverse-proxy.md) (nginx, Caddy, Traefik, SWAG)
-- [Ultra.cc seedbox](docs/seedboxes/ultra.md)
+- [Ultra.cc seedbox](docs/seedboxes/ultra.md) (one script: `deploy/install-seedbox.sh`)
 
 ### Before you open it up
 
