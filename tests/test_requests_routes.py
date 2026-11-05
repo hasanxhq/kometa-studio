@@ -482,3 +482,17 @@ def test_carry_over_waits_for_config_yml(tmp_path: Path):
         assert client.portal.call(app.state.requests.carry_over) is True
         assert f"apikey: {SEERR_KEY}" in config.read_text()
         assert _seerr_health(client) == []
+
+
+def test_health_warns_when_kometa_would_request_from_seerr_itself(test_setup):
+    client, mock, app, tmp_path = test_setup
+    config = tmp_path / "config" / "config.yml"
+    assert [c for c in client.get("/api/v1/status").json()["health"] if c["source"] == "seerr_add_missing"] == []
+
+    (tmp_path / "config" / "mine.yml").write_text("collections:\n  Top Picks:\n    tmdb_list: 1\n    seerr_add_missing: true\n")
+    config.write_text(CONFIG.replace("  Movies: {}\n", "  Movies:\n    collection_files:\n      - file: " + str(tmp_path / "config" / "mine.yml") + "\n") + f"seerr:\n  url: {SEERR_URL}\n  apikey: {SEERR_KEY}\n")
+
+    [check] = [c for c in client.get("/api/v1/status").json()["health"] if c["source"] == "seerr_add_missing"]
+    assert check["level"] == "warning"
+    assert check["message"].startswith("Top Picks sets seerr_add_missing: true, so Kometa will also request its missing titles from Seerr on every run, outside Studio's limits.")
+    assert check["link"] == "/files?path=mine.yml"

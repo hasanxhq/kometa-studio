@@ -239,3 +239,29 @@ def test_the_connect_page_says_what_studio_knows_and_can_turn_on_the_report(tmp_
     ]
     assert after[0]["reports"] is True
     assert "save_report: true" in config.read_text()
+
+
+def test_seerr_add_missing_is_found_in_the_users_own_files_and_their_templates(config):
+    (config.parent / "asks.yml").write_text(
+        "templates:\n"
+        "  ask:\n    default:\n      ask: true\n    seerr_add_missing: <<ask>>\n"
+        "  always:\n    seerr_add_missing: true\n"
+        "collections:\n"
+        "  Kometa Asks:\n    tmdb_list: 1\n    seerr_add_missing: true\n"
+        "  Through A Template:\n    tmdb_list: 2\n    template: {name: ask}\n"
+        "  Template Turned Off:\n    tmdb_list: 3\n    template: {name: ask, ask: false}\n"
+        "  Literal Template:\n    tmdb_list: 4\n    template: always\n"
+        "  Studio Asks:\n    tmdb_list: 5\n"
+        "  Said No:\n    tmdb_list: 6\n    seerr_add_missing: false\n"
+    )
+    config.write_text(config.read_text().replace("      - file: config/lists.yml\n", "      - file: config/lists.yml\n      - file: config/asks.yml\n      - default: genre\n"))
+
+    assert wanted.seerr_add_missing(config, None) == [
+        ("asks.yml", "Kometa Asks"),
+        ("asks.yml", "Through A Template"),
+        ("asks.yml", "Literal Template"),
+    ]
+
+
+def test_no_seerr_add_missing_finds_nothing(config):
+    assert wanted.seerr_add_missing(config, None) == []

@@ -190,6 +190,69 @@ def plan(config: Path, kometa_root: Path | None) -> dict[str, LibraryPlan]:
     return plans
 
 
+# --- Kometa's own Seerr requests ----------------------------------------------------
+
+SEERR_ADD_MISSING = "seerr_add_missing"
+PLACEHOLDER = re.compile(r"<<(\w+)>>")
+
+
+def _truthy(value: Any) -> bool:
+    return value is True or (isinstance(value, str) and value.strip().lower() == "true")
+
+
+def _template_calls(body: dict) -> list[tuple[str, dict]]:
+    templates = body.get("template")
+    if templates is None:
+        return []
+    if not isinstance(templates, list):
+        templates = [templates]
+    return [(str(t.get("name")), t) if isinstance(t, dict) else (str(t), {}) for t in templates if t]
+
+
+def requests_seerr_itself(body: Any, templates: dict) -> bool:
+    """Whether a collection has Kometa request its missing titles from Seerr: ``seerr_add_missing`` true on it,
+    or in a template it uses (literally, or through a template variable it or the template's defaults set)."""
+    body = _mapping(body)
+    if _truthy(body.get(SEERR_ADD_MISSING)):
+        return True
+    for name, call in _template_calls(body):
+        if _truthy(call.get(SEERR_ADD_MISSING)):
+            return True
+        template = _mapping(templates.get(name))
+        value = template.get(SEERR_ADD_MISSING)
+        variable = PLACEHOLDER.fullmatch(str(value)) if value is not None else None
+        if variable:
+            value = call.get(variable[1], _mapping(template.get("default")).get(variable[1]))
+        if _truthy(value):
+            return True
+    return False
+
+
+def seerr_add_missing(config: Path, kometa_root: Path | None) -> list[tuple[str, str]]:
+    """(file, collection) for each collection in the user's own files that has Kometa request from Seerr itself.
+
+    Kometa's defaults are left out (none of them set it). Raises FileNotFoundError or ValueError like ConfigReader.
+    """
+    reader = ConfigReader(config, kometa_root)
+    found: list[tuple[str, str]] = []
+    seen: set[Path] = set()
+    for library in reader.read().libraries:
+        for reference in library.collection_files:
+            if reference.kind == "default":
+                continue
+            for path in _paths(reader, reference) or []:
+                if path in seen:
+                    continue
+                seen.add(path)
+                data = _mapping(_load(path))
+                templates = _mapping(data.get("templates"))
+                for key in ("collections", "dynamic_collections"):
+                    for name, collection in _mapping(data.get(key)).items():
+                        if requests_seerr_itself(collection, templates):
+                            found.append((path.relative_to(config.parent).as_posix() if path.is_relative_to(config.parent) else str(path), str(name)))
+    return found
+
+
 # --- Deciding -----------------------------------------------------------------------
 
 
