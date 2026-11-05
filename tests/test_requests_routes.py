@@ -148,11 +148,11 @@ class FakeRouteEnvironment:
                 return httpx.Response(200, json={"records": self.sonarr_queue})
             return httpx.Response(404)
 
-        if url_str.startswith(SEERR_URL):
+        if request.url.host.endswith("seerr.test"):  # SEERR_URL, and the one the save check refuses
             if path == "/api/v1/status":
                 return httpx.Response(200, json={"version": "1.33.2"})
             if path == "/api/v1/settings/public":
-                return httpx.Response(200, json={"applicationTitle": "Overseerr"})
+                return httpx.Response(200, json={"applicationTitle": "Seerr"})
             if path == "/api/v1/auth/me":
                 if request.headers.get("X-Api-Key") == SEERR_KEY:
                     return httpx.Response(200, json={"id": 1})
@@ -239,37 +239,72 @@ def test_options_route(test_setup):
     assert data["sonarr"]["root_folders"] == ["/tv"]
 
 
+def _validated(tmp_path: Path) -> list[dict]:
+    calls = tmp_path / "config" / "validate_calls.jsonl"
+    return [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
+
+
 def test_seerr_routes(test_setup):
     client, mock, app, tmp_path = test_setup
+    config = tmp_path / "config" / "config.yml"
 
     # 1. Test invalid connection
-    test_bad = client.post("/api/v1/requests/seerr/test", json={"kind": "overseerr", "url": SEERR_URL, "api_key": "wrong"})
+    test_bad = client.post("/api/v1/requests/seerr/test", json={"url": SEERR_URL, "api_key": "wrong"})
     assert test_bad.status_code == 200
     assert test_bad.json()["ok"] is False
 
     # 2. Test valid connection
-    test_ok = client.post("/api/v1/requests/seerr/test", json={"kind": "overseerr", "url": SEERR_URL, "api_key": SEERR_KEY})
-    assert test_ok.status_code == 200
-    assert test_ok.json()["ok"] is True
-    assert test_ok.json()["app"] == "overseerr"
-    assert test_ok.json()["version"] == "1.33.2"
+    test_ok = client.post("/api/v1/requests/seerr/test", json={"url": SEERR_URL, "api_key": SEERR_KEY})
+    assert test_ok.json() == {"ok": True, "title": "Seerr", "version": "1.33.2"}
 
-    # 3. Save connection (PUT)
-    save_res = client.put("/api/v1/requests/seerr", json={"kind": "overseerr", "url": SEERR_URL, "api_key": SEERR_KEY})
-    assert save_res.status_code == 200
+    # A wrong key isn't saved: tested again on the server.
+    refused = client.put("/api/v1/requests/seerr", json={"url": SEERR_URL, "api_key": "wrong"})
+    assert refused.status_code == 422
+    assert "seerr" not in config.read_text()
+
+    # 3. Save connection (PUT): config.yml's seerr:, through Kometa's check, with the proxy login kept by Studio
+    save_res = client.put("/api/v1/requests/seerr", json={"url": SEERR_URL, "api_key": SEERR_KEY, "username": "admin", "password": "s3cret-pw"})
+    assert save_res.status_code == 200, save_res.text
     saved_data = save_res.json()
     assert saved_data["connected"]["seerr"] is True
-    assert saved_data["seerr"]["api_key"] == "…-key"
+    assert saved_data["seerr"] == {"url": SEERR_URL, "api_key": "…-key", "username": "admin", "has_password": True}
+    text = config.read_text()
+    assert f"seerr:\n  url: {SEERR_URL}\n  apikey: {SEERR_KEY}\n" in text
+    assert "admin" not in text and "s3cret-pw" not in text
+    assert any(f"apikey: {SEERR_KEY}" in call["files"]["config.yml"] for call in _validated(tmp_path))  # Kometa checked it before it was written
+    assert list((tmp_path / "data" / "backups").glob("*"))  # and config.yml was backed up first
 
     # Key should never appear in GET /settings
     get_res = client.get("/api/v1/requests/settings")
     assert get_res.json()["seerr"]["api_key"] == "…-key"
+    assert SEERR_KEY not in get_res.text
 
-    # 4. DELETE /seerr
+    # Saving again without a key keeps the one in config.yml, and without a password keeps the saved one.
+    mock.requests.clear()
+    again = client.put("/api/v1/requests/seerr", json={"url": SEERR_URL, "api_key": None, "username": "admin", "password": None})
+    assert again.status_code == 200
+    me = next(r for r in mock.requests if r.url.path == "/api/v1/auth/me")
+    assert me.headers["X-Api-Key"] == SEERR_KEY
+    assert me.headers["Authorization"] == httpx.BasicAuth("admin", "s3cret-pw")._auth_header
+
+    # 4. DELETE /seerr removes the section and the login
     del_res = client.delete("/api/v1/requests/seerr")
     assert del_res.status_code == 200
     assert del_res.json()["connected"]["seerr"] is False
     assert del_res.json()["seerr"] is None
+    assert "seerr" not in config.read_text()
+    assert "plex:" in config.read_text()
+
+
+def test_seerr_save_refused_by_kometa_check(test_setup):
+    client, mock, app, tmp_path = test_setup
+    config = tmp_path / "config" / "config.yml"
+    before = config.read_text()
+    # Seerr answers, but the fake Kometa refuses any file with BROKEN in it.
+    res = client.put("/api/v1/requests/seerr", json={"url": "http://BROKEN.seerr.test:5055", "api_key": SEERR_KEY})
+    assert res.status_code == 422
+    assert res.json()["detail"]["message"] == "Kometa found problems, so nothing was saved."
+    assert config.read_text() == before
 
 
 def test_disabled_requests_return_409(test_setup):

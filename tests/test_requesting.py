@@ -19,16 +19,13 @@ from starr_studio.requesting import (
     RequestService,
     RequestSettings,
     RequestsDisabled,
+    REQUESTS_SEERR,
     SeerrConnection,
-    SeerrConnectionIn,
-    delete_seerr_connection,
-    load_seerr_connection,
     load_settings,
-    probe_seerr_connection,
-    save_seerr_connection,
+    save_seerr_login,
     save_settings,
-    seerr_json,
 )
+from starr_studio.db import get_setting, set_setting
 
 RADARR_URL = "http://radarr.test:7878"
 SONARR_URL = "http://sonarr.test:8989"
@@ -207,7 +204,7 @@ class FakeMockEnvironment:
             if path == "/api/v1/status":
                 return httpx.Response(200, json={"version": "1.33.2"})
             if path == "/api/v1/settings/public":
-                return httpx.Response(200, json={"applicationTitle": "Overseerr"})
+                return httpx.Response(200, json={"applicationTitle": "Seerr"})
             if path == "/api/v1/auth/me":
                 if request.headers.get("X-Api-Key") == SEERR_KEY:
                     return httpx.Response(200, json={"id": 1})
@@ -270,44 +267,74 @@ def test_settings_storage(env):
     assert reloaded.daily_cap == 10
 
 
-def test_seerr_connection_storage_and_masking(env):
+def connect_seerr(config: Path, url: str = SEERR_URL, key: str = SEERR_KEY) -> None:
+    """Seerr in config.yml, as Settings → Requests writes it."""
+    config.write_text(config.read_text() + f"seerr:\n  url: {url}\n  apikey: {key}\n")
+
+
+def save_legacy_seerr(db, box, url: str = SEERR_URL, key: str = SEERR_KEY, login: tuple[str, str] | None = None, kind: str = "overseerr") -> None:
+    """The connection as Studio kept it before config.yml's seerr: (all in SQLite)."""
+    set_setting(
+        db,
+        REQUESTS_SEERR,
+        {
+            "kind": kind,
+            "url": url,
+            "api_key": box.encrypt(key),
+            "username": login[0] if login else None,
+            "password": box.encrypt(login[1]) if login and login[1] else None,
+        },
+    )
+
+
+def test_seerr_connection_from_config_with_studio_login(env):
     service, mock, db, box, config, client = env
     assert service.load_seerr_connection() is None
     assert service.seerr_json() is None
 
-    conn = SeerrConnection(
-        kind="overseerr",
-        url="http://seerr.test:5055",
-        api_key="1234567890abcdef",
-        login=("admin", "secretpass"),
-    )
-    service.save_seerr(conn)
+    connect_seerr(config, key="1234567890abcdef")
+    save_seerr_login(db, box, ("admin", "secretpass"))
 
     loaded = service.load_seerr_connection()
-    assert loaded is not None
-    assert loaded.kind == "overseerr"
-    assert loaded.url == "http://seerr.test:5055"
-    assert loaded.api_key == "1234567890abcdef"
-    assert loaded.login == ("admin", "secretpass")
+    assert loaded == SeerrConnection(url=SEERR_URL, api_key="1234567890abcdef", login=("admin", "secretpass"))
+    # The login is Studio's own, encrypted; config.yml only has what Kometa reads.
+    assert "secretpass" not in str(get_setting(db, "requests.seerr_login"))
+    assert "admin" not in config.read_text()
 
     json_info = service.seerr_json()
-    assert json_info["api_key"] == "…cdef"
-    assert "secretpass" not in str(json_info)
-    assert json_info["has_password"] is True
+    assert json_info == {"url": SEERR_URL, "api_key": "…cdef", "username": "admin", "has_password": True}
+    assert "kind" not in json_info
 
-    service.delete_seerr()
-    assert service.load_seerr_connection() is None
+
+def test_seerr_connection_falls_back_to_the_old_setting(env):
+    service, mock, db, box, config, client = env
+    save_legacy_seerr(db, box, login=("admin", "pw"))
+    assert service.load_seerr_connection() == SeerrConnection(url=SEERR_URL, api_key=SEERR_KEY, login=("admin", "pw"))
+    assert service.connected()["seerr"] is True
+
+    # Once config.yml has one, that's the one used.
+    connect_seerr(config, url="http://other.test:5055")
+    assert service.load_seerr_connection().url == "http://other.test:5055"
+
+
+def test_config_seerr_apikey_is_masked(env):
+    from starr_studio.kometa_files import mask_secrets
+
+    service, mock, db, box, config, client = env
+    connect_seerr(config, key="1234567890abcdef")
+    masked, _ = mask_secrets(config.read_text())
+    assert "1234567890abcdef" not in masked
+    assert SEERR_URL in masked
 
 
 @pytest.mark.anyio
 async def test_seerr_connection_test(env):
     service, mock, db, box, config, client = env
-    conn = SeerrConnection(kind="overseerr", url=SEERR_URL, api_key=SEERR_KEY)
+    conn = SeerrConnection(url=SEERR_URL, api_key=SEERR_KEY)
     res = await service.test_seerr(conn)
-    assert res["app"] == "overseerr"
-    assert res["version"] == "1.33.2"
+    assert res == {"title": "Seerr", "version": "1.33.2"}
 
-    bad_conn = SeerrConnection(kind="overseerr", url=SEERR_URL, api_key="wrong-key")
+    bad_conn = SeerrConnection(url=SEERR_URL, api_key="wrong-key")
     with pytest.raises(arr.ArrProblem, match="rejected"):
         await service.test_seerr(bad_conn)
 
@@ -439,7 +466,7 @@ async def test_requests_via_seerr(env):
     settings.via = "seerr"
     service.save_settings(settings)
 
-    service.save_seerr(SeerrConnection(kind="overseerr", url=SEERR_URL, api_key=SEERR_KEY))
+    connect_seerr(config)
 
     outcome = await service.request(
         [
@@ -458,6 +485,25 @@ async def test_requests_via_seerr(env):
     tv_req = [r for r in mock.seerr_requests.values() if r["mediaType"] == "tv"][0]
     assert tv_req["mediaId"] == 1399
     assert tv_req["seasons"] == "all"
+    assert {row["via"] for row in db.execute("SELECT via FROM requests")} == {"seerr"}
+
+
+@pytest.mark.anyio
+async def test_requests_to_seerr_send_the_proxy_login(env):
+    service, mock, db, box, config, client = env
+    settings = service.load_settings()
+    settings.enabled = True
+    settings.via = "seerr"
+    service.save_settings(settings)
+    connect_seerr(config)
+    save_seerr_login(db, box, ("admin", "pw"))
+
+    outcome = await service.request([Item(item="tmdb-movie:603", title="The Matrix")], library="Movies", collection_id=1, now=T0)
+
+    assert outcome.requested == 1
+    sent = [r for r in mock.requests if r.url.path == "/api/v1/request"]
+    assert sent[0].headers["X-Api-Key"] == SEERR_KEY
+    assert sent[0].headers["Authorization"] == httpx.BasicAuth("admin", "pw")._auth_header
 
 
 @pytest.mark.anyio
@@ -467,7 +513,7 @@ async def test_seerr_already_requested_becomes_exists(env):
     settings.enabled = True
     settings.via = "seerr"
     service.save_settings(settings)
-    service.save_seerr(SeerrConnection(kind="overseerr", url=SEERR_URL, api_key=SEERR_KEY))
+    connect_seerr(config)
 
     mock.seerr_fail_409 = True
 
@@ -583,7 +629,7 @@ async def test_refresh_tags_seerr_items_in_arr(env):
     settings.enabled = True
     settings.via = "seerr"
     service.save_settings(settings)
-    service.save_seerr(SeerrConnection(kind="overseerr", url=SEERR_URL, api_key=SEERR_KEY))
+    connect_seerr(config)
 
     await service.request(
         [Item(item="tmdb-movie:603", title="The Matrix")],
@@ -674,7 +720,7 @@ async def test_cancel_request(env):
     )
     # 2. Cancel Seerr request
     mock.seerr_requests[20] = {"id": 20}
-    service.save_seerr(SeerrConnection(kind="overseerr", url=SEERR_URL, api_key=SEERR_KEY))
+    connect_seerr(config)
     db.execute(
         """
         INSERT INTO requests (id, item, media, title, library, via, external_id, status, requested_at, updated_at)
@@ -748,7 +794,7 @@ async def test_auto_via_selection(env):
     assert row1["via"] == "radarr"
 
     # With Seerr connected -> goes to Seerr
-    service.save_seerr(SeerrConnection(kind="overseerr", url=SEERR_URL, api_key=SEERR_KEY))
+    connect_seerr(config)
     outcome2 = await service.request(
         [Item(item="tmdb-movie:102", title="Movie 102")],
         library="Movies",
@@ -757,7 +803,7 @@ async def test_auto_via_selection(env):
     )
     assert outcome2.requested == 1
     row2 = db.execute("SELECT * FROM requests WHERE item = 'tmdb-movie:102'").fetchone()
-    assert row2["via"] == "overseerr"
+    assert row2["via"] == "seerr"
 
 
 
