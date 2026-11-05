@@ -14,6 +14,12 @@ describe("Filters in words", () => {
     expect(describeFilter("has_dolby_vision", true)).toBe("Has dolby vision");
   });
 
+  it("names the number filters Kometa 2.5.4 added or fixed", () => {
+    expect(describeFilter("dovi_profile", 8)).toBe("Dolby Vision profile: 8");
+    expect(describeFilter("dovi_level.gte", 6)).toBe("Dolby Vision level ≥ 6");
+    expect(describeFilter("stinger_rating.gte", 3)).toBe("Stinger rating ≥ 3");
+  });
+
   it("adds genres to a list that's there, and replaces numbers", () => {
     expect(withFilter({ genre: "Comedy" }, "genre", "Drama, Comedy")).toEqual({ genre: ["Comedy", "Drama"] });
     expect(withFilter({}, "genre.not", "Horror")).toEqual({ "genre.not": "Horror" });

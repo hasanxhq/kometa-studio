@@ -8,7 +8,7 @@ import { Button, Card, inputClass } from "./ui";
 
 type Filters = Record<string, unknown>;
 
-// What can be added here: Kometa 2.5.3's names (modules/builder.py: number_filters, tag_filters).
+// What can be added here: Kometa 2.5.4's names (modules/builder.py: number_filters, tag_filters).
 const ADDABLE: { key: string; label: string; input: "year" | "rating" | "list" }[] = [
   { key: "year.gte", label: "Year from", input: "year" },
   { key: "year.lte", label: "Year up to", input: "year" },
@@ -36,6 +36,9 @@ const ATTRIBUTES: Record<string, string> = {
   last_played: "Last played",
   plays: "Plays",
   duration: "Length (min)",
+  dovi_level: "Dolby Vision level",
+  dovi_profile: "Dolby Vision profile",
+  stinger_rating: "Stinger rating",
 };
 
 const MODIFIERS: Record<string, string> = {

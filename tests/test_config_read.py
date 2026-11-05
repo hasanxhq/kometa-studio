@@ -199,6 +199,13 @@ def test_sources_are_unavailable_until_config_yml_has_what_they_need():
     assert "radarr" not in unavailable_sources(document, "Movies")
     assert "radarr" in unavailable_sources(document, None)
     assert "mdblist" in unavailable_sources({"libraries": {"Movies": {"mdblist": {"apikey": "k"}}}}, "Movies")
+
+
+def test_myanimelist_through_kometas_own_app_needs_no_client_secret():
+    # Kometa 2.5.4: the "Use Kometa App" client_id works without a client_secret; any other client_id still needs one.
+    assert "mal" not in unavailable_sources({"mal": {"client_id": "006daa2b5a3ae32abaac83f55f9b1ccf"}})
+    assert "mal" in unavailable_sources({"mal": {"client_id": "someone-elses-app"}})
+    assert "mal" not in unavailable_sources({"mal": {"client_id": "someone-elses-app", "client_secret": "s"}})
     # Half a shared block, finished in the library's own.
     shared = {"libraries": {"Movies": {"radarr": {"token": "k"}}}, "radarr": {"url": "http://radarr:7878"}}
     assert "radarr" not in unavailable_sources(shared, "Movies")
