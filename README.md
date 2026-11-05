@@ -40,6 +40,11 @@ Then open http://localhost:8484, and first-run setup takes it from there. `confi
 
 Settings in `compose.yaml` can be overridden with environment variables or a `.env` file: `PUID`, `PGID`, `TZ`, `STUDIO_PORT`, `KOMETA_CONFIG_DIR`, `KOMETA_TAG`. Set `TZ` to your timezone, such as `Europe/Paris`: it's UTC otherwise. Schedules use `TZ` unless `STUDIO_TIMEZONE` is set.
 
+Other setups:
+- [Install without Docker](docs/install-without-docker.md) (Python 3.12, systemd user service)
+- [Reverse proxy setup](docs/reverse-proxy.md) (nginx, Caddy, Traefik, SWAG)
+- [Ultra.cc seedbox](docs/seedboxes/ultra.md)
+
 ### Before you open it up
 
 Until you set up a sign-in, Studio answers anyone on your local network without asking who they are. Internet addresses are refused. Set a username and password in first-run setup or Settings → General, and always before you put Studio behind a reverse proxy.
