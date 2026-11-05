@@ -204,7 +204,8 @@ async def carry_over_seerr(db: sqlite3.Connection, box: SecretBox, config: Path 
         if last.get("config") == digest:
             return False
         if writer is None or digest == "missing":
-            set_setting(db, SEERR_CARRY, {"error": "Kometa's config.yml doesn't exist yet.", "config": digest})
+            error = "Kometa's config.yml doesn't exist yet." if writer is not None else "Studio doesn't know where Kometa's config.yml is."
+            set_setting(db, SEERR_CARRY, {"error": error, "config": digest})
             return False
         try:
             await save_section(writer, "seerr", {"url": legacy.url, "apikey": legacy.api_key}, "Moved Seerr's connection into config.yml")

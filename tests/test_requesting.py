@@ -859,3 +859,14 @@ async def test_migration_0016_renames_old_seerr_rows_and_they_still_work(tmp_pat
         assert (await service.cancel(2, T0))["status"] == "cancelled"
         assert 42 not in mock.seerr_requests
     db.close()
+
+
+@pytest.mark.anyio
+async def test_carry_over_without_a_writer_keeps_the_old_setting(env):
+    service, mock, db, box, config, client = env  # no ConfigWriter: Studio doesn't know where config.yml is
+    save_legacy_seerr(db, box)
+    assert await service.carry_over() is False
+    assert get_setting(db, REQUESTS_SEERR) is not None
+    assert get_setting(db, "requests.seerr_carry")["error"] == "Studio doesn't know where Kometa's config.yml is."
+    assert "seerr" not in config.read_text()
+    assert service.load_seerr_connection().url == SEERR_URL
