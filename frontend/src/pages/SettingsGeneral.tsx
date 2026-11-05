@@ -56,7 +56,10 @@ export function SignIn({ settings }: { settings: GeneralSettings }) {
             ? "Studio asks for this username and password on its login page."
             : "Not set up yet: Studio only answers this computer and your local network, without asking who you are. Set a username and password before you reach it from anywhere else."}
         </p>
-        <Field label="Authentication required">
+        <Field
+          label="Authentication required"
+          hint={!settings.auth.allow_local ? "Turned off by STUDIO_ALLOW_LOCAL=false: every address signs in, including local ones." : undefined}
+        >
           <select className={inputClass} value={required} onChange={(e) => setRequired(e.target.value as AuthRequired)}>
             <option value="enabled">Enabled: everyone signs in</option>
             <option value="disabled_for_local">Disabled for local addresses: only the internet signs in</option>
