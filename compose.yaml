@@ -11,6 +11,8 @@ services:
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
       TZ: ${TZ:-UTC}
+      # false on a shared server (seedbox): local addresses there belong to other customers
+      STUDIO_ALLOW_LOCAL: ${STUDIO_ALLOW_LOCAL:-true}
     ports:
       - "${STUDIO_PORT:-8484}:8484"
     volumes:

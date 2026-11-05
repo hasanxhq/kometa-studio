@@ -5,38 +5,13 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import { ApiError, api } from "../api";
-import { Button, Card, Checkbox, StickyActions, Tag, type Tone } from "../components/ui";
-import { importApi, type FileLanding, type ImportReport, type Landing, type LibraryReport, type SwitchOver } from "../importApi";
+import { FileBlock } from "../components/ImportLanding";
+import { Button, Card, Checkbox, StickyActions, Tag } from "../components/ui";
+import { importApi, type ImportReport, type LibraryReport, type SwitchOver } from "../importApi";
 import { requestsApi } from "../requestsApi";
 import { formatTime } from "../runs";
 
 const STEPS = ["Connections", "Libraries", "Collections", "Overlays", "Schedules & more", "Switch over"] as const;
-
-const fileActionLabel: Record<FileLanding["action"], string> = {
-  replace: "Replaced by Studio",
-  keep: "Kept as a Kometa file",
-  studio: "Studio's own",
-};
-
-const fileActionTone: Record<FileLanding["action"], Tone> = {
-  replace: "info",
-  keep: "muted",
-  studio: "ok",
-};
-
-const resultLabel: Record<Landing["result"], string> = {
-  imported: "Imported",
-  ready_made: "Ready-made",
-  kept: "Kept",
-  studio: "Studio's own",
-};
-
-const resultTone: Record<Landing["result"], Tone> = {
-  imported: "ok",
-  ready_made: "info",
-  kept: "muted",
-  studio: "ok",
-};
 
 function StepNav({ step, onStep }: { step: number; onStep: (n: number) => void }) {
   return (
@@ -157,50 +132,6 @@ function LibraryRow({ library }: { library: LibraryReport }) {
         Libraries
       </Link>
     </li>
-  );
-}
-
-function CollectionLanding({ landing }: { landing: Landing }) {
-  return (
-    <li className="flex flex-col gap-1 border-b border-border py-2 last:border-0">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="min-w-0 flex-1 break-words font-medium">{landing.name}</span>
-        <Tag tone={resultTone[landing.result]}>{resultLabel[landing.result]}</Tag>
-      </div>
-      {landing.reason && <p className="text-sm text-muted">{landing.reason}</p>}
-      {landing.notes.length > 0 && (
-        <ul className="list-inside list-disc text-sm text-muted">
-          {landing.notes.map((note) => (
-            <li key={note}>{note}</li>
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-}
-
-function FileBlock({ file }: { file: FileLanding }) {
-  const label = file.path ?? file.value;
-  const openByDefault = file.action !== "studio";
-  return (
-    <details open={openByDefault} className="rounded-control border border-border">
-      <summary className="flex min-h-11 cursor-pointer flex-wrap items-center gap-2 px-3 py-2">
-        <span className="min-w-0 flex-1 break-all font-mono text-xs">{label}</span>
-        <Tag tone={fileActionTone[file.action]}>{fileActionLabel[file.action]}</Tag>
-      </summary>
-      <div className="border-t border-border px-3 py-2">
-        {file.reason && <p className="mb-2 text-sm text-muted">{file.reason}</p>}
-        {file.collections.length === 0 ? (
-          <p className="text-sm text-muted">No collections in this file.</p>
-        ) : (
-          <ul>
-            {file.collections.map((landing) => (
-              <CollectionLanding key={landing.name} landing={landing} />
-            ))}
-          </ul>
-        )}
-      </div>
-    </details>
   );
 }
 

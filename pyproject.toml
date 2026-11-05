@@ -40,5 +40,10 @@ packages = ["starr_studio"]
 # The built frontend is git-ignored, so list it explicitly or Hatch leaves it out.
 artifacts = ["starr_studio/static/**"]
 
+# Same files for the sdist: `python -m build` builds the wheel from the sdist,
+# so without this the wheel loses the frontend even when artifacts are set above.
+[tool.hatch.build.targets.sdist]
+artifacts = ["starr_studio/static/**"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
