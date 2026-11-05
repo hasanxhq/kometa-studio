@@ -29,6 +29,7 @@ from .requesting import (
     RequestsDisabled,
     SeerrConnectionIn,
     save_seerr_login,
+    seerr_default_server,
 )
 from .runs_routes import get_db
 
@@ -98,9 +99,23 @@ async def get_options(service: ServiceDep) -> dict:
         except ArrProblem as problem:
             errors["sonarr"] = str(problem)
 
+    # Through Seerr, a collection's quality profile is one on Seerr's default Radarr/Sonarr server.
+    seerr_opts = None
+    seerr_conn = service.load_seerr_connection()
+    if seerr_conn is not None:
+        try:
+            servers = {app: await seerr_default_server(service.http, seerr_conn, app) for app in ("radarr", "sonarr")}
+            seerr_opts = {
+                app: {"server": server.name, "quality_profiles": [name for _, name in server.profiles]} if server else None
+                for app, server in servers.items()
+            }
+        except ArrProblem as problem:
+            errors["seerr"] = str(problem)
+
     return {
         "radarr": radarr_opts,
         "sonarr": sonarr_opts,
+        "seerr": seerr_opts,
         "errors": errors,
     }
 

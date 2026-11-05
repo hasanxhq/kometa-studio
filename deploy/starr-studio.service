@@ -1,0 +1,13 @@
+[Unit]
+Description=Starr Studio
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/starr-studio/studio.env
+ExecStart=%h/starr-studio/.venv/bin/starr-studio serve
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
