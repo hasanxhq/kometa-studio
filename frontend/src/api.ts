@@ -31,7 +31,7 @@ export type AuthStatus = {
 export type AuthRequired = "enabled" | "disabled_for_local";
 
 export type GeneralSettings = {
-  auth: { configured: boolean; username: string | null; required: AuthRequired };
+  auth: { configured: boolean; username: string | null; required: AuthRequired; allow_local: boolean };
   api_key: string;
   timezone: string;
   host: string;
