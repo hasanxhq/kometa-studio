@@ -112,7 +112,7 @@ def test_undo_shows_what_it_loses_and_puts_everything_back(root):
 
         preview = client.get("/api/v1/import/undo").json()
         assert preview["loses"]["added"] == [{"library": "Movies", "title": "Added Later"}]
-        assert "config.yml" in preview["files"] and "lists.yml" in preview["files"]
+        assert preview["files"] == ["config.yml"]  # only what Undo changes: lists.yml was never touched
         assert "studio/Movies/built.yml" in preview["removes"]
 
         assert client.post("/api/v1/import/undo", json={}).status_code == 422
