@@ -9,13 +9,14 @@ import shutil
 import sqlite3
 import time
 from dataclasses import asdict, dataclass
+from urllib.parse import quote
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
 from ruamel.yaml import YAMLError
 
-from . import arr, full_backup, plex, usage
+from . import arr, full_backup, plex, usage, wanted
 from .auth import auth_settings
 from .config_routes import FULL_CHECK
 from .config_sections import read_document
@@ -23,11 +24,13 @@ from .db import get_setting
 from .kometa_command import installed_version
 from .kometa_config import read_plex
 from .kometa_files import setup_steps
+from .requesting import REQUESTS_SEERR, SEERR_CARRY
 from .settings import Settings
 
 PLEX_CHECK_TTL = 300
 LOW_DISK = 1024**3  # warn below 1 GiB free
 VERY_LOW_DISK = 200 * 1024**2
+SEERR_GUARD_TTL = 30  # seconds; walking every collection file on each sidebar poll is more than a cheap check
 BACKUP_AGE = timedelta(days=14)  # Original Posters older than this in the newest full backup: warn
 
 
@@ -140,6 +143,58 @@ def _arr_checks(db: sqlite3.Connection) -> list[Check]:
     return checks
 
 
+def _requests_checks(db: sqlite3.Connection) -> list[Check]:
+    carry = get_setting(db, SEERR_CARRY)
+    if isinstance(carry, dict) and get_setting(db, REQUESTS_SEERR):
+        return [
+            Check(
+                "seerr",
+                "warning",
+                f"Studio couldn't move Seerr's connection into Kometa's config.yml, so it keeps using the one it saved: {carry.get('error')}",
+                "/settings/requests",
+            )
+        ]
+    return []
+
+
+_seerr_guard: dict[str, object] = {}
+
+
+def _seerr_add_missing(settings: Settings) -> list[tuple[str, str]]:
+    config = settings.kometa_config
+    stat = config.stat()
+    key = (str(config), stat.st_mtime_ns, stat.st_size)
+    if _seerr_guard.get("key") == key and time.monotonic() - float(_seerr_guard.get("at", 0)) < SEERR_GUARD_TTL:
+        return _seerr_guard["found"]  # type: ignore[return-value]
+    try:
+        found = wanted.seerr_add_missing(config, settings.kometa_entry.parent if settings.kometa_entry else None)
+    except (FileNotFoundError, ValueError):
+        found = []
+    _seerr_guard.update(key=key, at=time.monotonic(), found=found)
+    return found
+
+
+def _seerr_guard_checks(settings: Settings) -> list[Check]:
+    """Kometa's own seerr_add_missing asks Seerr for every missing title on every run, with none of Studio's guards."""
+    if settings.kometa_config is None or not settings.kometa_config.is_file():
+        return []
+    found = _seerr_add_missing(settings)
+    if not found:
+        return []
+    names = [name for _, name in found]
+    shown = _listed(names) if len(names) <= 3 else f"{', '.join(names[:3])} and {len(names) - 3} more"
+    return [
+        Check(
+            "seerr_add_missing",
+            "warning",
+            f"{shown} {'sets' if len(names) == 1 else 'set'} seerr_add_missing: true, so Kometa will also request "
+            f"{'its' if len(names) == 1 else 'their'} missing titles from Seerr on every run, outside Studio's limits. "
+            "Turn it off there and use Download missing instead.",
+            f"/files?path={quote(found[0][0])}",
+        )
+    ]
+
+
 def _usage_checks(db: sqlite3.Connection) -> list[Check]:
     reason = usage.held(db, datetime.now(UTC))
     return [Check("mdblist", "warning", f"Runs after imports are waiting: {reason}.", "/system/status")] if reason else []
@@ -197,6 +252,8 @@ async def health(
             checks.append(plex_result)
     checks += _run_checks(db)
     checks += _arr_checks(db)
+    checks += _requests_checks(db)
+    checks += _seerr_guard_checks(settings)
     checks += _usage_checks(db)
     checks += _maintainerr_checks(maintainerr)
     checks += _backup_checks(db, settings)

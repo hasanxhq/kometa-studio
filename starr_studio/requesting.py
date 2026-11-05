@@ -1,7 +1,14 @@
-"""Requests service: send missing media to Radarr/Sonarr or Overseerr/Jellyseerr, and track them."""
+"""Requests service: send missing media to Radarr/Sonarr or Seerr, and track them.
+
+Seerr's connection is Kometa's own: config.yml's ``seerr:`` (url, apikey), which Settings → Requests
+writes. A seedbox's proxy login in front of it (HTTP Basic) is Studio's alone, kept encrypted, since
+Kometa can't send one. Studio does the requesting itself (cap, dedupe, tracking, cancel); it never
+writes Kometa's ``seerr_add_missing``, which would request everything missing on every run.
+"""
 
 import asyncio
 import contextlib
+import hashlib
 import logging
 import sqlite3
 from collections.abc import Callable
@@ -15,7 +22,8 @@ from pydantic import BaseModel, Field
 
 from . import arr, tmdb_details
 from .arr import ArrProblem, Connection, Kind
-from .config_sections import read_section
+from .config_sections import read_section, save_section
+from .config_write import ConfigWriter, SaveRefused
 from .crypto import SecretBox
 from .db import delete_setting, get_setting, set_setting
 from .kometa_config import read_plex
@@ -26,7 +34,10 @@ from .services import mask
 log = logging.getLogger(__name__)
 
 REQUESTS_SETTINGS = "requests.settings"
+# Before Seerr's connection lived in config.yml: url, encrypted key and proxy login. Carried into config.yml.
 REQUESTS_SEERR = "requests.seerr"
+SEERR_LOGIN = "requests.seerr_login"  # the proxy login in front of Seerr, if any (url and key are in config.yml's seerr:)
+SEERR_CARRY = "requests.seerr_carry"  # why the old connection couldn't move into config.yml: {"error", "config": its hash}
 POLL_EVERY = 300.0  # 5 minutes
 TIMEOUT = 10.0
 
@@ -81,19 +92,17 @@ class RequestOutcome(BaseModel):
 
 
 class SeerrConnectionIn(BaseModel):
-    kind: Literal["overseerr", "jellyseerr"] = "overseerr"
     url: str = Field(max_length=500)
-    api_key: str | None = Field(default=None, max_length=200)
-    username: str | None = Field(default=None, max_length=200)
-    password: str | None = Field(default=None, max_length=500)
+    api_key: str | None = Field(default=None, max_length=200)  # None: keep the key in config.yml
+    username: str | None = Field(default=None, max_length=200)  # for a proxy in front of Seerr; empty: none
+    password: str | None = Field(default=None, max_length=500)  # None: keep the saved one
 
 
 @dataclass
 class SeerrConnection:
-    kind: Literal["overseerr", "jellyseerr"]
     url: str
     api_key: str
-    login: tuple[str, str] | None = None
+    login: tuple[str, str] | None = None  # for a proxy in front of Seerr (HTTP Basic), as on a seedbox
 
 
 def load_settings(db: sqlite3.Connection) -> RequestSettings:
@@ -105,59 +114,114 @@ def save_settings(db: sqlite3.Connection, settings: RequestSettings) -> None:
     set_setting(db, REQUESTS_SETTINGS, settings.model_dump())
 
 
-def load_seerr_connection(db: sqlite3.Connection, box: SecretBox) -> SeerrConnection | None:
+def kometa_seerr(config: Path | None) -> tuple[str | None, str | None]:
+    """The url and apikey in config.yml's seerr: section, if there are both."""
+    section = read_section(config, "seerr") or {}
+    url, key = section.get("url"), section.get("apikey")
+    return (str(url) if url else None, str(key) if key else None)
+
+
+def _login(raw: dict, box: SecretBox) -> tuple[str, str] | None:
+    if not raw.get("username"):
+        return None
+    return raw["username"], (box.decrypt(raw["password"]) or "") if raw.get("password") else ""
+
+
+def seerr_login(db: sqlite3.Connection, box: SecretBox) -> tuple[str, str] | None:
+    """Studio's own proxy login in front of Seerr: Kometa can't send one."""
+    saved = get_setting(db, SEERR_LOGIN)
+    if saved is not None:
+        return _login(saved, box)
+    return _login(get_setting(db, REQUESTS_SEERR) or {}, box)  # not carried over yet
+
+
+def save_seerr_login(db: sqlite3.Connection, box: SecretBox, login: tuple[str, str] | None) -> None:
+    set_setting(db, SEERR_LOGIN, {"username": login[0], "password": box.encrypt(login[1]) if login[1] else None} if login else {})
+
+
+def legacy_seerr(db: sqlite3.Connection, box: SecretBox) -> SeerrConnection | None:
+    """A connection saved before it lived in config.yml (url, key and login all in SQLite)."""
     raw = get_setting(db, REQUESTS_SEERR)
     if not raw or not raw.get("url") or not raw.get("api_key"):
         return None
     api_key = box.decrypt(raw["api_key"])
     if not api_key:
         return None
-    login = None
-    if raw.get("username"):
-        login = (raw["username"], (box.decrypt(raw["password"]) or "") if raw.get("password") else "")
-    return SeerrConnection(
-        kind=raw.get("kind", "overseerr"),
-        url=raw["url"],
-        api_key=api_key,
-        login=login,
-    )
+    return SeerrConnection(url=raw["url"], api_key=api_key, login=_login(raw, box))
 
 
-def save_seerr_connection(db: sqlite3.Connection, box: SecretBox, conn: SeerrConnection) -> None:
-    data = {
-        "kind": conn.kind,
-        "url": conn.url,
-        "api_key": box.encrypt(conn.api_key),
-        "username": conn.login[0] if conn.login else None,
-        "password": box.encrypt(conn.login[1]) if conn.login and conn.login[1] else None,
-    }
-    set_setting(db, REQUESTS_SEERR, data)
+def load_seerr_connection(db: sqlite3.Connection, box: SecretBox, config: Path | None) -> SeerrConnection | None:
+    """config.yml's seerr: with Studio's proxy login; until that's been carried over, the one saved in SQLite."""
+    url, key = kometa_seerr(config)
+    if url and key:
+        return SeerrConnection(url=url, api_key=key, login=seerr_login(db, box))
+    return legacy_seerr(db, box)
 
 
-def delete_seerr_connection(db: sqlite3.Connection) -> None:
-    delete_setting(db, REQUESTS_SEERR)
-
-
-def seerr_json(db: sqlite3.Connection, box: SecretBox) -> dict | None:
-    conn = load_seerr_connection(db, box)
+def seerr_json(db: sqlite3.Connection, box: SecretBox, config: Path | None) -> dict | None:
+    conn = load_seerr_connection(db, box, config)
     if conn is None:
-        raw = get_setting(db, REQUESTS_SEERR)
-        if not raw or not raw.get("url"):
+        url = kometa_seerr(config)[0] or (get_setting(db, REQUESTS_SEERR) or {}).get("url")
+        if not url:
             return None
-        return {
-            "kind": raw.get("kind", "overseerr"),
-            "url": raw["url"],
-            "api_key": None,
-            "username": raw.get("username"),
-            "has_password": bool(raw.get("password")),
-        }
+        login = seerr_login(db, box)
+        return {"url": url, "api_key": None, "username": login[0] if login else None, "has_password": bool(login and login[1])}
     return {
-        "kind": conn.kind,
         "url": conn.url,
-        "api_key": mask(conn.api_key),
+        "api_key": mask(conn.api_key),  # the key and password never leave the server
         "username": conn.login[0] if conn.login else None,
         "has_password": bool(conn.login and conn.login[1]),
     }
+
+
+def _config_hash(config: Path | None) -> str:
+    try:
+        return hashlib.sha256(config.read_bytes()).hexdigest() if config is not None else "missing"
+    except OSError:
+        return "missing"
+
+
+def _refusal(refused: SaveRefused) -> str:
+    errors = refused.validation.errors if refused.validation else []
+    return f"{refused.message} {errors[0]}" if errors else refused.message
+
+
+async def carry_over_seerr(db: sqlite3.Connection, box: SecretBox, config: Path | None, writer: ConfigWriter | None) -> bool:
+    """Move a connection saved before Seerr lived in config.yml into config.yml's seerr:, once. True once done.
+
+    The proxy login stays Studio's. The old setting is deleted only after the save went through; until
+    then Studio keeps using it, and ``SEERR_CARRY`` says why for Health. A refused save would be refused
+    again, so it's only tried again once config.yml has changed.
+    """
+    raw = get_setting(db, REQUESTS_SEERR)
+    if not raw:
+        return True
+    url, key = kometa_seerr(config)
+    legacy = legacy_seerr(db, box)
+    if not (url and key) and legacy is not None:
+        digest = _config_hash(config)
+        last = get_setting(db, SEERR_CARRY) or {}
+        if last.get("config") == digest:
+            return False
+        if writer is None or digest == "missing":
+            error = "Kometa's config.yml doesn't exist yet." if writer is not None else "Studio doesn't know where Kometa's config.yml is."
+            set_setting(db, SEERR_CARRY, {"error": error, "config": digest})
+            return False
+        try:
+            await save_section(writer, "seerr", {"url": legacy.url, "apikey": legacy.api_key}, "Moved Seerr's connection into config.yml")
+        except SaveRefused as refused:
+            set_setting(db, SEERR_CARRY, {"error": _refusal(refused), "config": _config_hash(config)})
+            log.warning("Seerr's connection stays in Studio's database for now: %s", _refusal(refused))
+            return False
+        log.info("Moved Seerr's connection into config.yml's seerr:")
+    elif legacy is None and not (url and key):
+        return False  # a key Studio can't decrypt: nothing to carry; Settings → Requests asks for it again
+    # config.yml has it now (or already had its own, which wins): only the proxy login is left to keep.
+    if get_setting(db, SEERR_LOGIN) is None:
+        set_setting(db, SEERR_LOGIN, {"username": raw.get("username"), "password": raw.get("password")} if raw.get("username") else {})
+    delete_setting(db, REQUESTS_SEERR)
+    delete_setting(db, SEERR_CARRY)
+    return True
 
 
 async def probe_seerr_connection(http: httpx.AsyncClient, conn: SeerrConnection) -> dict:
@@ -179,7 +243,7 @@ async def probe_seerr_connection(http: httpx.AsyncClient, conn: SeerrConnection)
     try:
         status_data = res.json()
     except ValueError:
-        raise ArrProblem("That address answered, but not like Overseerr or Jellyseerr") from None
+        raise ArrProblem("That address answered, but not like Seerr") from None
     version = str(status_data.get("version") or "")
 
     # 2. auth/me to verify API key
@@ -194,23 +258,16 @@ async def probe_seerr_connection(http: httpx.AsyncClient, conn: SeerrConnection)
     if auth_res.status_code != 200:
         raise ArrProblem(f"Auth check answered HTTP {auth_res.status_code}")
 
-    # 3. determine app / kind
-    app = conn.kind
+    # 3. the name it goes by (Seerr's own setting, so it's only reported, never checked)
+    title = None
     try:
         pub_res = await http.get(f"{url}/api/v1/settings/public", timeout=5.0, auth=auth)
         if pub_res.status_code == 200:
-            title = str(pub_res.json().get("applicationTitle") or "").lower()
-            if "jellyseerr" in title:
-                app = "jellyseerr"
-            elif "overseerr" in title:
-                app = "overseerr"
-    except Exception:
+            title = str(pub_res.json().get("applicationTitle") or "") or None
+    except (httpx.HTTPError, ValueError, AttributeError):
         pass
 
-    return {
-        "app": app,
-        "version": version,
-    }
+    return {"title": title, "version": version}
 
 
 test_seerr_connection = probe_seerr_connection
@@ -233,13 +290,16 @@ class RequestService:
         box: SecretBox,
         config: Path | None,
         data_dir: Path | None = None,
+        writer: ConfigWriter | None = None,
     ):
         self.db = db
         self.http = http
         self.box = box
         self.config = config
         self.data_dir = data_dir
+        self.writer = writer
         self._task: asyncio.Task | None = None
+        self._carrying = asyncio.Lock()
         # Called after each check; the app uses it to rebuild collections whose requested titles reached Plex.
         self.after_labelling: Callable[[], object] | None = None
 
@@ -254,6 +314,11 @@ class RequestService:
 
     async def _loop(self) -> None:
         while True:
+            # At start-up, then on every check while the old setting is still there (only after config.yml changed).
+            try:
+                await self.carry_over()
+            except Exception:
+                log.exception("Moving Seerr's connection into config.yml failed")
             try:
                 if self.load_settings().enabled:
                     await self.check(datetime.now(UTC))
@@ -278,29 +343,27 @@ class RequestService:
         save_settings(self.db, settings)
 
     def load_seerr_connection(self) -> SeerrConnection | None:
-        return load_seerr_connection(self.db, self.box)
+        return load_seerr_connection(self.db, self.box, self.config)
 
-    def save_seerr(self, conn: SeerrConnection) -> None:
-        save_seerr_connection(self.db, self.box, conn)
-
-    def delete_seerr(self) -> None:
-        delete_seerr_connection(self.db)
+    async def carry_over(self) -> bool:
+        async with self._carrying:
+            return await carry_over_seerr(self.db, self.box, self.config, self.writer)
 
     def seerr_json(self) -> dict | None:
-        return seerr_json(self.db, self.box)
+        return seerr_json(self.db, self.box, self.config)
 
     def seerr_from_input(self, body: SeerrConnectionIn) -> SeerrConnection:
         saved = self.load_seerr_connection()
         key = (body.api_key or "").strip() or (saved.api_key if saved else "")
         url = body.url.strip()
         if not url or not key:
-            raise ArrProblem("Enter Overseerr/Jellyseerr's URL and API key")
+            raise ArrProblem("Enter Seerr's URL and API key")
         username = (body.username or "").strip() or None
         login = None
         if username:
             password = body.password if body.password is not None else (saved.login[1] if saved and saved.login else "")
             login = (username, password or "")
-        return SeerrConnection(kind=body.kind, url=url, api_key=key, login=login)
+        return SeerrConnection(url=url, api_key=key, login=login)
 
     async def test_seerr(self, conn: SeerrConnection) -> dict:
         return await test_seerr_connection(self.http, conn)
@@ -693,7 +756,7 @@ class RequestService:
         profile: str | None = None,
     ) -> RequestOutcome:
         """Ask for ``items``. ``profile`` names the Radarr/Sonarr quality profile to use instead of the default
-        (Overseerr/Jellyseerr pick their own)."""
+        (Seerr picks its own)."""
         settings = self.load_settings()
         if not settings.enabled:
             raise RequestsDisabled("Requests are disabled")
@@ -766,14 +829,14 @@ class RequestService:
             if target_app == "seerr":
                 seerr_conn = self.load_seerr_connection()
                 if seerr_conn is None:
-                    error_msg = "Overseerr/Jellyseerr isn't connected"
+                    error_msg = "Seerr isn't connected"
                     status = "failed"
                     external_id = None
-                    self._record(it.item, media, it.title, it.year, library, collection_id, "overseerr", None, status, error_msg, now)
+                    self._record(it.item, media, it.title, it.year, library, collection_id, "seerr", None, status, error_msg, now)
                     outcome.failed += 1
                     outcome.items.append(RequestItemResult(item=it.item, status=status, error=error_msg))
                     continue
-                via_record = seerr_conn.kind
+                via_record = "seerr"
                 status, external_id, error_msg = await self._request_seerr(seerr_conn, it, media, kind_id)
             elif target_app == "radarr":
                 via_record = "radarr"
@@ -878,7 +941,7 @@ class RequestService:
                         movie = movie_list[0]
                         movie_id = movie["id"]
 
-                        if via in ("overseerr", "jellyseerr") and radarr_starr_tag_id is not None:
+                        if via == "seerr" and radarr_starr_tag_id is not None:
                             tags = movie.get("tags") or []
                             if radarr_starr_tag_id not in tags:
                                 movie["tags"] = [*tags, radarr_starr_tag_id]
@@ -913,7 +976,7 @@ class RequestService:
                         series = series_list[0]
                         series_id = series["id"]
 
-                        if via in ("overseerr", "jellyseerr") and sonarr_starr_tag_id is not None:
+                        if via == "seerr" and sonarr_starr_tag_id is not None:
                             tags = series.get("tags") or []
                             if sonarr_starr_tag_id not in tags:
                                 series["tags"] = [*tags, sonarr_starr_tag_id]
@@ -1054,7 +1117,7 @@ class RequestService:
                         await arr._put(self.http, conn, f"/api/v3/series/{external_id}", json=series)
                 except Exception as e:
                     log.warning("Could not unmonitor series %s in Sonarr: %s", external_id, e)
-        elif via in ("overseerr", "jellyseerr") and external_id:
+        elif via == "seerr" and external_id:
             seerr_conn = self.load_seerr_connection()
             if seerr_conn:
                 try:

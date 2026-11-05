@@ -1,4 +1,4 @@
-// Settings → Requests: turn missing-title downloads on, choose Radarr/Sonarr or Overseerr/Jellyseerr, set limits.
+// Settings → Requests: turn missing-title downloads on, choose Radarr/Sonarr or Seerr, set limits.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
@@ -55,14 +55,12 @@ const SERIES_TYPE: { value: RequestSettings["sonarr"]["series_type"]; label: str
 
 function SeerrForm({ current }: { current: SeerrJson | null }) {
   const queryClient = useQueryClient();
-  const [kind, setKind] = useState<SeerrIn["kind"]>(current?.kind ?? "overseerr");
   const [url, setUrl] = useState(current?.url ?? "");
   const [apiKey, setApiKey] = useState("");
   const [proxy, setProxy] = useState(current?.username !== null && current?.username !== undefined);
   const [username, setUsername] = useState(current?.username ?? "");
   const [password, setPassword] = useState("");
   const body = (): SeerrIn => ({
-    kind,
     url,
     api_key: apiKey || null,
     username: proxy ? username || null : null,
@@ -90,21 +88,15 @@ function SeerrForm({ current }: { current: SeerrJson | null }) {
   };
 
   return (
-    <form className="flex flex-col gap-3" onSubmit={submit} aria-label="Overseerr / Jellyseerr connection">
+    <form className="flex flex-col gap-3" onSubmit={submit} aria-label="Seerr connection">
       <div className="flex flex-wrap gap-3">
-        <Field label="App">
-          <select className={`${inputClass} w-44`} value={kind} onChange={(e) => changed(setKind)(e.target.value as SeerrIn["kind"])}>
-            <option value="overseerr">Overseerr</option>
-            <option value="jellyseerr">Jellyseerr</option>
-          </select>
-        </Field>
         <div className="min-w-0 flex-1 basis-64">
           <Field label="URL">
             <input
               className={inputClass}
               value={url}
               onChange={(e) => changed(setUrl)(e.target.value)}
-              placeholder={kind === "overseerr" ? "http://overseerr:5055" : "http://jellyseerr:5055"}
+              placeholder="http://seerr:5055"
               inputMode="url"
               spellCheck={false}
             />
@@ -161,7 +153,7 @@ function SeerrForm({ current }: { current: SeerrJson | null }) {
           <ConfirmButton
             label="Remove"
             confirm="Remove"
-            warning="Studio stops sending requests through Overseerr/Jellyseerr."
+            warning="Studio stops sending requests through Seerr, and its seerr: section leaves Kometa's config.yml."
             onConfirm={() => remove.mutate()}
             busy={remove.isPending}
           />
@@ -214,7 +206,7 @@ function SettingsForm({ state }: { state: RequestsSettingsState }) {
       <form className="flex flex-col gap-5" onSubmit={submit} aria-label="Requests settings">
         <Checkbox checked={draft.enabled} onChange={setEnabled}>
           Requests
-          <span className="block text-xs text-muted">Ask Radarr, Sonarr or Overseerr/Jellyseerr for titles a collection is missing.</span>
+          <span className="block text-xs text-muted">Ask Radarr, Sonarr or Seerr for titles a collection is missing.</span>
         </Checkbox>
 
         <fieldset className="flex flex-col gap-2">
@@ -224,9 +216,9 @@ function SettingsForm({ state }: { state: RequestsSettingsState }) {
               {
                 value: "auto" as const,
                 label: "Automatic",
-                hint: "Overseerr/Jellyseerr when connected, else Radarr/Sonarr",
+                hint: "Seerr when connected, else Radarr/Sonarr",
                 ok: state.connected.seerr || state.connected.radarr || state.connected.sonarr,
-                why: "Connect Radarr, Sonarr or Overseerr/Jellyseerr first",
+                why: "Connect Radarr, Sonarr or Seerr first",
               },
               {
                 value: "arr" as const,
@@ -237,10 +229,10 @@ function SettingsForm({ state }: { state: RequestsSettingsState }) {
               },
               {
                 value: "seerr" as const,
-                label: "Overseerr or Jellyseerr",
+                label: "Seerr",
                 hint: null,
                 ok: state.connected.seerr,
-                why: "Connect Overseerr or Jellyseerr below",
+                why: "Connect Seerr below",
               },
             ] as const
           ).map((option) => (
@@ -476,7 +468,7 @@ function SettingsForm({ state }: { state: RequestsSettingsState }) {
           }}
           onCancel={() => setAskEnable(false)}
         >
-          Studio will ask Radarr and Sonarr (or Overseerr/Jellyseerr) to download titles your collections are missing. That uses disk space, bandwidth and your
+          Studio will ask Radarr and Sonarr (or Seerr) to download titles your collections are missing. That uses disk space, bandwidth and your
           indexers&apos; limits. Nothing is requested until you tick Download missing on a collection.
         </ConfirmDialog>
       )}
@@ -500,8 +492,11 @@ export function SettingsRequests() {
           <SettingsForm key={JSON.stringify(settings.data.settings) + JSON.stringify(settings.data.connected)} state={settings.data} />
         )}
       </Card>
-      <Card title="Overseerr / Jellyseerr">
-        <p className="mb-4 text-sm text-muted">Optional. When connected and Send requests to is Automatic or Overseerr/Jellyseerr, Studio files requests there.</p>
+      <Card title="Seerr">
+        <p className="mb-4 text-sm text-muted">
+          Optional. When connected and Send requests to is Automatic or Seerr, Studio files requests there. The URL and API key are saved in Kometa&apos;s
+          config.yml (<code className="font-mono text-xs">seerr:</code>); Studio still does the asking, with your limits.
+        </p>
         {settings.isPending ? (
           <p className="text-muted">Loading…</p>
         ) : settings.isError ? (

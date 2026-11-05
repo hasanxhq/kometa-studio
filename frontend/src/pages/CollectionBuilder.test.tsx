@@ -868,6 +868,34 @@ describe("CollectionBuilder", () => {
     expect(sent.request_profile).toBe("Ultra-HD");
   });
 
+  it("Download missing through Seerr has no quality profile: Seerr picks it", async () => {
+    mockApi(
+      baseRoutes({
+        "GET /requests/settings": () => ({
+          settings: {
+            enabled: true,
+            via: "auto",
+            radarr: { quality_profile: "HD-1080p", root_folder: null, minimum_availability: "released", search: true },
+            sonarr: { quality_profile: null, root_folder: null, monitor: "all", search: true, series_type: "standard" },
+            daily_cap: null,
+            confirm_over: 25,
+          },
+          seerr: { url: "http://seerr:5055", api_key: "…ab12", username: null, has_password: false },
+          connected: { radarr: true, sonarr: false, seerr: true },
+        }),
+        "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    await screen.findByLabelText("Chosen source");
+    fireEvent.click(screen.getByRole("checkbox", { name: /Download missing/ }));
+    expect(await screen.findByText("Requests go through Seerr, which picks the quality.")).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Quality profile" })).toBeNull();
+  });
+
   it("edit opens a list collection in the list view with source and order", async () => {
     mockApi(
       baseRoutes({

@@ -24,8 +24,8 @@ export type RequestSettings = {
   confirm_over: number;
 };
 
+// Seerr's url and key are config.yml's seerr:; the proxy login is Studio's own.
 export type SeerrJson = {
-  kind: "overseerr" | "jellyseerr";
   url: string;
   api_key: string | null;
   username: string | null;
@@ -33,7 +33,6 @@ export type SeerrJson = {
 };
 
 export type SeerrIn = {
-  kind: "overseerr" | "jellyseerr";
   url: string;
   api_key: string | null;
   username: string | null;
@@ -54,7 +53,7 @@ export type RequestsOptions = {
   errors: Record<string, string>;
 };
 
-export type SeerrTest = { ok: true; version?: string | null } | { ok: false; error: string };
+export type SeerrTest = { ok: true; title?: string | null; version?: string | null } | { ok: false; error: string };
 
 export type RequestStatus = "requested" | "downloading" | "imported" | "failed" | "cancelled" | "exists";
 

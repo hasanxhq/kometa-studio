@@ -1,4 +1,9 @@
-"""/api/v1/requests: endpoints for missing media requests."""
+"""/api/v1/requests: endpoints for missing media requests.
+
+Seerr's url and API key are Kometa's, in config.yml's ``seerr:``; a save writes them there through the
+normal save flow (Kometa's check, backup, formatting kept). A proxy login is Studio's own. Nothing is
+saved without a passing test, made again on the server when saving.
+"""
 
 import sqlite3
 from datetime import UTC, datetime
@@ -9,14 +14,21 @@ from pydantic import BaseModel
 
 from . import arr
 from .arr import ArrProblem
+from .config_routes import Writer, _write_call
+from .config_sections import read_document, save_section
+from .db import delete_setting
 from .plex_library import PlexNotFound
 from .requesting import (
+    REQUESTS_SEERR,
+    SEERR_CARRY,
+    SEERR_LOGIN,
     Item,
     RequestOutcome,
     RequestService,
     RequestSettings,
     RequestsDisabled,
     SeerrConnectionIn,
+    save_seerr_login,
 )
 from .runs_routes import get_db
 
@@ -39,23 +51,23 @@ class CreateRequestBody(BaseModel):
     cap: int | None = None
 
 
-@router.get("/settings")
-async def get_settings(service: ServiceDep) -> dict:
+def _state(service: RequestService) -> dict:
     return {
         "settings": service.load_settings().model_dump(),
         "seerr": service.seerr_json(),
         "connected": service.connected(),
     }
+
+
+@router.get("/settings")
+async def get_settings(service: ServiceDep) -> dict:
+    return _state(service)
 
 
 @router.put("/settings")
 async def put_settings(body: RequestSettings, service: ServiceDep) -> dict:
     service.save_settings(body)
-    return {
-        "settings": service.load_settings().model_dump(),
-        "seerr": service.seerr_json(),
-        "connected": service.connected(),
-    }
+    return _state(service)
 
 
 @router.get("/options")
@@ -106,31 +118,34 @@ async def test_seerr(body: SeerrConnectionIn, service: ServiceDep) -> dict:
 
 
 @router.put("/seerr")
-async def put_seerr(body: SeerrConnectionIn, service: ServiceDep) -> dict:
+async def put_seerr(body: SeerrConnectionIn, service: ServiceDep, writer: Writer) -> dict:
+    """Test again, then write url and apikey to config.yml's seerr: and keep the proxy login."""
     try:
         conn = service.seerr_from_input(body)
     except ArrProblem as problem:
         raise HTTPException(422, f"Not saved: {problem}") from None
+    if not writer.config_path.is_file():
+        raise HTTPException(409, "Not saved: Kometa's config.yml doesn't exist yet. Connect Plex first.")
     try:
         await service.test_seerr(conn)
     except ArrProblem as problem:
         raise HTTPException(422, f"Not saved: {problem}") from None
-    service.save_seerr(conn)
-    return {
-        "settings": service.load_settings().model_dump(),
-        "seerr": service.seerr_json(),
-        "connected": service.connected(),
-    }
+    await _write_call(save_section(writer, "seerr", {"url": conn.url, "apikey": conn.api_key}, "Connected Seerr in Settings → Requests"))
+    save_seerr_login(service.db, service.box, conn.login)
+    delete_setting(service.db, REQUESTS_SEERR)  # config.yml holds it now: nothing left to carry over
+    delete_setting(service.db, SEERR_CARRY)
+    return _state(service)
 
 
 @router.delete("/seerr")
-async def delete_seerr(service: ServiceDep) -> dict:
-    service.delete_seerr()
-    return {
-        "settings": service.load_settings().model_dump(),
-        "seerr": service.seerr_json(),
-        "connected": service.connected(),
-    }
+async def delete_seerr(service: ServiceDep, writer: Writer) -> dict:
+    """Remove config.yml's seerr: (Kometa stops using it too) and Studio's proxy login."""
+    if "seerr" in (read_document(service.config) or {}):
+        await _write_call(save_section(writer, "seerr", None, "Removed Seerr in Settings → Requests"))
+    delete_setting(service.db, SEERR_LOGIN)
+    delete_setting(service.db, REQUESTS_SEERR)
+    delete_setting(service.db, SEERR_CARRY)
+    return _state(service)
 
 
 @router.get("")
