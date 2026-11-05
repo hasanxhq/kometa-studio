@@ -697,6 +697,27 @@ def to_kometa(spec: dict, sort_by: str | None = None, limit: int | None = None) 
     return result
 
 
+def validate_search(library_type: str, spec: dict) -> list[str]:
+    """Problems with a filter spec used as a Kometa ``plex_search`` (a builder that can sit beside list builders).
+
+    Kometa checks a ``plex_search`` exactly as it checks a ``smart_filter``: both go through ``build_filter``, which takes
+    only ``plex.searches`` attributes for the library's type (kometa/modules/builder.py, ``build_filter``). So the fields and
+    modifiers are the smart filter's. What a ``plex_search`` source can't hold is a sort or a limit: the collection's order
+    and size come from the collection, not from one of its sources.
+    """
+    if not isinstance(spec, dict):
+        return ["A Plex search must be a set of rules"]
+    extra = sorted(str(key) for key in spec if key not in ("match", "rules"))
+    if extra:
+        return [f"A Plex search can't have {', '.join(extra)}"]
+    return [f"Plex search: {problem}" for problem in validate(library_type, spec)]
+
+
+def to_plex_search(spec: dict) -> dict:
+    """Kometa's ``plex_search`` mapping for a spec: ``{any|all: {field.modifier: value}}``, no sort or limit."""
+    return to_kometa(spec)
+
+
 def _normalize_date_arg(value: object) -> str:
     """Normalize date argument for before/after filter (kometa/modules/builder.py validate_attribute, line 5175)."""
     val_str = str(value).strip()

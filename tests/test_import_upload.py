@@ -23,9 +23,8 @@ MIXED = (
     "  Dune:\n"
     "    tmdb_collection: 726871\n"
     "  Search:\n"
-    "    plex_search:\n"
-    "      any:\n"
-    "        studio: A24\n"
+    "    tmdb_discover:\n"
+    "      with_companies: 41077\n"
 )
 
 BROKEN = "collections:\n  BROKEN Dune:\n    tmdb_collection: 726871\n"
@@ -117,8 +116,8 @@ def test_broken_file_changes_nothing(root):
     client, _plex, _m = make_client(root)
     with client:
         wait_for_flags(client)
-        # Mixed file with BROKEN so action is keep (plex_search) and the copy is refused by Kometa's check.
-        text = "collections:\n  BROKEN Search:\n    plex_search:\n      any:\n        studio: A24\n"
+        # Mixed file with BROKEN so action is keep (tmdb_discover, which the builder doesn't offer) and the copy is refused by Kometa's check.
+        text = "collections:\n  BROKEN Search:\n    tmdb_discover:\n      with_companies: 41077\n"
         staged = upload(client, "Movies", text, "broken.yml")
         assert staged.status_code == 200
         token = staged.json()["token"]

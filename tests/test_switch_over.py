@@ -18,7 +18,7 @@ LISTS = "collections:\n  Dune:\n    tmdb_collection: 726871\n    collection_orde
 def setup_kometa(root, lists: str = LISTS, extra: str = "") -> dict[str, bytes]:
     config = root / "config"
     (config / "lists.yml").write_text(lists)
-    (config / "kept.yml").write_text("collections:\n  Search:\n    plex_search:\n      any:\n        studio: A24\n")
+    (config / "kept.yml").write_text("collections:\n  Search:\n    tmdb_discover:\n      with_companies: 41077\n")
     text = (config / "config.yml").read_text().replace(
         "Movies: {}",
         f"Movies:\n    collection_files:\n    - file: {config / 'lists.yml'}\n    - file: {config / 'kept.yml'}\n    - default: basic\n{extra}",
@@ -76,7 +76,7 @@ def test_switch_over_imports_writes_one_save_and_runs_just_those(root):
 
 
 def test_nothing_to_import_is_refused(root):
-    setup_kometa(root, lists="collections:\n  Search:\n    plex_search:\n      any:\n        studio: A24\n")
+    setup_kometa(root, lists="collections:\n  Search:\n    tmdb_discover:\n      with_companies: 41077\n")
     config = root / "config"
     (config / "config.yml").write_text((config / "config.yml").read_text().replace("    - default: basic\n", ""))
     client, _plex, _m = make_client(root)

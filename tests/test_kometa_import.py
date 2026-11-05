@@ -9,6 +9,7 @@ from starr_studio import kometa_import
 from starr_studio.db import connect
 from starr_studio.kometa_files import ConfigReader
 from starr_studio.kometa_import import IMPORTED, KEPT, STUDIO, describe, describe_file
+from test_builder_sources import REAL
 from test_ready_made_routes import make_client, root  # noqa: F401 (root is a fixture)
 
 FIXTURES_ROOT = Path(__file__).parent / "fixtures" / "ready_made_defaults"
@@ -36,7 +37,7 @@ def test_a_smart_filter_collection_is_imported_with_its_settings():
         {"field": "year", "modifier": "gte", "value": 2000},
     ]}
     assert (definition["sort_by"], definition["limit"]) == ("release.desc", 50)
-    assert definition["visible"] == {"library": True, "home": True, "shared": False}
+    assert definition["visible"] == {"library": None, "home": True, "shared": None}  # only what the file sets
     assert definition["minimum_items"] == 3
     assert definition["summary"] == "Things that explode" and definition["sort_title"] == "!01 Action"
     assert definition["poster"] == {"kind": "url", "url": "https://example.org/a.jpg"}
@@ -60,9 +61,13 @@ def test_a_list_collection_is_imported_and_kometas_requests_are_turned_off():
 
 def test_what_the_builder_cant_describe_is_kept_with_the_reason():
     cases = {
-        "combined": ({"plex_search": {"any": {"studio": ["Marvel Studios"]}}, "imdb_list": "https://www.imdb.com/list/ls1/"}, "combines 2 sources"),
-        "two lists": ({"imdb_list": ["https://www.imdb.com/list/ls1/", "https://www.imdb.com/list/ls2/"]}, "reads 2 IMDb lists"),
-        "search": ({"plex_search": {"any": {"studio": ["A24"]}}}, "`plex_search` isn't one the builder offers"),
+        "smart with a list": ({"smart_filter": {"any": {"genre": ["Action"]}}, "imdb_list": "https://www.imdb.com/list/ls1/"}, "smart_filter only on its own"),
+        "discover": ({"tmdb_discover": {"with_companies": 41077}, "imdb_list": "https://www.imdb.com/list/ls1/"}, "`tmdb_discover` isn't one the builder offers"),
+        "two counts": ({"tmdb_popular": [10, 20]}, "takes one"),
+        "search with a limit": ({"plex_search": {"any": {"studio": ["A24"]}, "limit": 5}}, "`plex_search` uses `limit`"),
+        "search on a show field": ({"plex_search": {"any": {"network": ["HBO"]}}}, "only works for show libraries"),
+        "bad title id": ({"tmdb_movie": ["dune"]}, "isn't a TMDb movie id"),
+        "show ids in movies": ({"tvdb_show": [1]}, "can't be in a movie library"),
         "template": ({"template": {"name": "x"}, "tmdb_collection": 1}, "template"),
         "label": ({"tmdb_collection": 1, "label": ["Kids"]}, "label Kids"),
         "other key": ({"tmdb_collection": 1, "schedule": "weekly(sunday)"}, "`schedule`"),
@@ -76,6 +81,27 @@ def test_what_the_builder_cant_describe_is_kept_with_the_reason():
         landing = describe(name, body, "movie")
         assert landing.result == KEPT, name
         assert words in landing.reason, (name, landing.reason)
+
+
+def test_the_maintainers_combined_collections_import():
+    for (name, library_type), (body, sources) in REAL.items():
+        landing = describe(name, body, library_type)
+        assert landing.result == IMPORTED, (name, library_type, landing.reason)
+        definition = landing.definition
+        assert definition["sources"] == sources, (name, library_type)
+        assert definition["source"] == sources[0]
+        assert definition["sort_by"] == "release" and definition["sort_title"] == body["sort_title"] and definition["summary"] == body["summary"]
+        assert definition["filters"] == {"match": "all", "rules": []} and definition["limit"] is None
+
+
+def test_the_real_files_import_whole():
+    shows = (
+        "collections:\n  Avatar - The Last Airbender:\n    tmdb_show:\n      - 246                # Avatar\n      - 33880\n      - 82452\n"
+        "    tvdb_show:\n      - 460458\n    plex_search:\n      any:\n        studio:\n          - Avatar Studios\n"
+        "    collection_order: release\n    sort_title: \"!010_Avatar\"\n    summary: \"Every series in the Avatar: The Last Airbender universe.\"\n"
+    )
+    action, reason, landings = describe_file(shows, "show")
+    assert (action, reason) == ("replace", None) and landings[0].definition["sources"] == REAL[("Avatar - The Last Airbender", "show")][1]
 
 
 def test_a_file_poster_is_imported_only_when_studio_can_read_it(tmp_path):
@@ -95,7 +121,7 @@ def test_a_file_is_replaced_only_when_every_collection_in_it_imports():
     assert (action, reason) == ("replace", None)
     assert [landing.result for landing in landings] == [IMPORTED, IMPORTED]
 
-    mixed = good + "  C:\n    plex_search:\n      any:\n        studio: A24\n"
+    mixed = good + "  C:\n    tmdb_discover:\n      with_companies: 41077\n"
     action, reason, landings = describe_file(mixed, "movie")
     assert action == "keep" and reason == "C can't be imported"
     assert [(landing.result, landing.kept_with_file) for landing in landings] == [(IMPORTED, True), (IMPORTED, True), (KEPT, False)]
@@ -135,7 +161,7 @@ def test_report_covers_files_folders_defaults_remote_and_studios_own(tmp_path):
     config = tmp_path / "config"
     config.mkdir()
     (config / "lists.yml").write_text("collections:\n  Dune:\n    tmdb_collection: 726871\n")
-    (config / "mixed.yml").write_text("collections:\n  Dune 2:\n    tmdb_collection: 1\n  Search:\n    plex_search:\n      any:\n        studio: A24\n")
+    (config / "mixed.yml").write_text("collections:\n  Dune 2:\n    tmdb_collection: 1\n  Search:\n    tmdb_discover:\n      with_companies: 41077\n")
     (config / "folder").mkdir()
     (config / "folder" / "one.yml").write_text("collections:\n  One:\n    tmdb_collection: 2\n")
     (config / "studio" / "Movies").mkdir(parents=True)
@@ -203,3 +229,17 @@ def test_import_route_reads_and_writes_nothing(root):
     assert report["libraries"][0]["type"] == "movie"
     assert [(c["name"], c["result"]) for c in files[0]["collections"]] == [("Dune", "imported"), ("Taken", "studio")]
     assert {path: path.read_bytes() for path in config.rglob("*") if path.is_file()} == before
+
+
+def test_an_import_leaves_plexs_visibility_alone_unless_the_file_set_it():
+    from ruamel.yaml import YAML
+
+    from starr_studio.studio_files import render_built
+
+    plain = describe("Dune", {"tmdb_collection": 726871}, "movie")
+    shown = describe("Top", {"tmdb_collection": 1, "visible_home": "true", "visible_shared": False}, "movie")
+    assert plain.definition["visible"] == {"library": None, "home": None, "shared": None}
+    written = YAML(typ="safe").load(render_built([("Dune", plain.definition), ("Top", shown.definition)]))["collections"]
+    assert not any(key.startswith("visible_") for key in written["Dune"])
+    assert (written["Top"]["visible_home"], written["Top"]["visible_shared"]) == (True, False) and "visible_library" not in written["Top"]
+    assert describe("Bad", {"tmdb_collection": 1, "visible_home": "sometimes"}, "movie").result == KEPT
