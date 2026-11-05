@@ -103,7 +103,7 @@ def lockups(font_path: Path) -> None:
     em = font["head"].unitsPerEm
     scale = TYPE / em
     face = hb.Font(hb.Face(font_path.read_bytes()))
-    text = "Kometa Studio"
+    text = "Starr Studio"
     buffer = hb.Buffer()
     buffer.add_str(text)
     buffer.guess_segment_properties()
@@ -132,7 +132,7 @@ def lockups(font_path: Path) -> None:
 
     for name, (k, comet, word, accent) in LOCKUPS.items():
         (SVG / name).write_text(
-            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{left:.2f} {top:.2f} {width:.2f} {height:.2f}" width="{width * 2:.0f}" height="{height * 2:.0f}" role="img" aria-label="Kometa Studio">\n'
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{left:.2f} {top:.2f} {width:.2f} {height:.2f}" width="{width * 2:.0f}" height="{height * 2:.0f}" role="img" aria-label="Starr Studio">\n'
             f'  <g transform="scale({zoom})">\n    <path fill="{k}" d="{K}"/>\n    <path fill="{comet}" d="{COMET}"/>\n  </g>\n'
             f'  <path fill="{word}" d="{"".join(paths[False])}"/>\n  <path fill="{accent}" d="{"".join(paths[True])}"/>\n</svg>\n',
             encoding="utf-8",

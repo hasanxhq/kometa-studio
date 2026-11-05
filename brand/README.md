@@ -1,6 +1,8 @@
 # Streak K
 
-The Kometa Studio logo: a K whose upper arm is a comet. Design source: the [logo canvas](https://claude.ai/artifact/FZ6XVPHYfRpmPpSFVjV8Ez) (private until shared).
+The Starr Studio logo: a K whose upper arm is a comet. Design source: the [logo canvas](https://claude.ai/artifact/FZ6XVPHYfRpmPpSFVjV8Ez) (private until shared).
+
+The K comes from the project's first name, Kometa Studio. The lockups now read "Starr Studio", but the mark hasn't been redrawn yet.
 
 ## What's here
 
@@ -32,7 +34,7 @@ Plain amber is too faint on white, so on light backgrounds always use the `on-li
 
 - **Smallest size:** 20px tall for the mark. Below that, use the favicon, which is redrawn on a 16-pixel grid so its edges land on whole pixels.
 - **Clear space:** keep at least the width of the K's stem (about 1/6 of the mark's height) free on every side.
-- **Lockup:** the mark followed by "Kometa Studio" in Space Grotesk 600, with "Studio" in the accent colour. In the app, it's the mark plus live text.
+- **Lockup:** the mark followed by "Starr Studio" in Space Grotesk 600, with "Studio" in the accent colour. In the app, it's the mark plus live text.
 - **Don't** put the comet on an amber background in two colours (it disappears), add flames, or place the K inside a circle. Those belong to the upstream Kometa logo.
 
 ## Rebuilding
@@ -43,6 +45,6 @@ Edit the SVGs, then run this from this folder:
 uv run --no-project --with pillow --with fonttools python build_icons.py
 ```
 
-To redraw the lockups too, add `--with uharfbuzz` and the path to `SpaceGrotesk-SemiBold.ttf`. Space Grotesk is under the SIL Open Font License, from [Google Fonts](https://fonts.google.com/specimen/Space+Grotesk). It isn't kept in this repository.
+To redraw the lockups too, add `--with uharfbuzz` and the path to `SpaceGrotesk-SemiBold.ttf`. Space Grotesk is under the SIL Open Font License, from [Google Fonts](https://fonts.google.com/specimen/Space+Grotesk). It isn't kept in this repository. Google Fonts ships it as a variable font; a weight-600 instance (`fontTools.varLib.instancer`, `{"wght": 600}`) redraws the lockups exactly.
 
 The icons' `<g>` elements repeat their transform in `data-place` (x, y, scale), which is what `build_icons.py` reads.
