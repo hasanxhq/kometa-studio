@@ -72,9 +72,11 @@ _IMAGE_MAGIC = (
 
 
 class Visible(BaseModel):
-    library: bool = True
-    home: bool = False
-    shared: bool = False
+    """Where the collection shows in Plex. None leaves Plex's setting alone (collections imported from a file that didn't set it)."""
+
+    library: bool | None = True
+    home: bool | None = False
+    shared: bool | None = False
 
 
 class RuleIn(BaseModel):

@@ -248,7 +248,7 @@ def describe(name: str, body: Any, library_type: str, poster_path: Any = None) -
         "filters": {"match": "all", "rules": []},
         "sort_by": None,
         "limit": None,
-        "visible": {"library": True, "home": False, "shared": False},
+        "visible": {"library": None, "home": None, "shared": None},  # None: Studio leaves what Plex has (as the file did)
         "minimum_items": 1,
         "summary": None,
         "sort_title": None,
@@ -290,7 +290,9 @@ def describe(name: str, body: Any, library_type: str, poster_path: Any = None) -
             notes.append(f"`sync_mode: {body['sync_mode']}` becomes sync: titles that leave the list leave the collection")
 
     for key, setting in (("visible_library", "library"), ("visible_home", "home"), ("visible_shared", "shared")):
-        value = _bool(body.get(key), definition["visible"][setting])
+        if body.get(key) is None:
+            continue  # the file leaves it to Plex, and so does Studio
+        value = _bool(body[key], True)
         if value is None:
             return Landing(name, KEPT, f"Its `{key}` isn't true or false")
         definition["visible"][setting] = value

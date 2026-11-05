@@ -37,7 +37,7 @@ def test_a_smart_filter_collection_is_imported_with_its_settings():
         {"field": "year", "modifier": "gte", "value": 2000},
     ]}
     assert (definition["sort_by"], definition["limit"]) == ("release.desc", 50)
-    assert definition["visible"] == {"library": True, "home": True, "shared": False}
+    assert definition["visible"] == {"library": None, "home": True, "shared": None}  # only what the file sets
     assert definition["minimum_items"] == 3
     assert definition["summary"] == "Things that explode" and definition["sort_title"] == "!01 Action"
     assert definition["poster"] == {"kind": "url", "url": "https://example.org/a.jpg"}
@@ -229,3 +229,17 @@ def test_import_route_reads_and_writes_nothing(root):
     assert report["libraries"][0]["type"] == "movie"
     assert [(c["name"], c["result"]) for c in files[0]["collections"]] == [("Dune", "imported"), ("Taken", "studio")]
     assert {path: path.read_bytes() for path in config.rglob("*") if path.is_file()} == before
+
+
+def test_an_import_leaves_plexs_visibility_alone_unless_the_file_set_it():
+    from ruamel.yaml import YAML
+
+    from starr_studio.studio_files import render_built
+
+    plain = describe("Dune", {"tmdb_collection": 726871}, "movie")
+    shown = describe("Top", {"tmdb_collection": 1, "visible_home": "true", "visible_shared": False}, "movie")
+    assert plain.definition["visible"] == {"library": None, "home": None, "shared": None}
+    written = YAML(typ="safe").load(render_built([("Dune", plain.definition), ("Top", shown.definition)]))["collections"]
+    assert not any(key.startswith("visible_") for key in written["Dune"])
+    assert (written["Top"]["visible_home"], written["Top"]["visible_shared"]) == (True, False) and "visible_library" not in written["Top"]
+    assert describe("Bad", {"tmdb_collection": 1, "visible_home": "sometimes"}, "movie").result == KEPT

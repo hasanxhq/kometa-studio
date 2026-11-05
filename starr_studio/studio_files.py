@@ -261,9 +261,10 @@ def render_built(
             body["smart_filter"] = smart_filters.to_kometa(definition.get("filters") or {}, definition.get("sort_by"), definition.get("limit"))
         body["label"] = "Studio"  # adds the label without replacing others (Kometa's label, not label.sync)
         visible = definition.get("visible") or {}
-        body["visible_library"] = bool(visible.get("library", True))
-        body["visible_home"] = bool(visible.get("home", False))
-        body["visible_shared"] = bool(visible.get("shared", False))
+        for setting, key, default in (("library", "visible_library", True), ("home", "visible_home", False), ("shared", "visible_shared", False)):
+            value = visible.get(setting, default)
+            if value is not None:  # None (an imported collection whose file didn't say): Plex keeps what it has
+                body[key] = bool(value)
         body["minimum_items"] = int(definition.get("minimum_items") or 1)
         if definition.get("summary"):
             body["summary"] = str(definition["summary"])
