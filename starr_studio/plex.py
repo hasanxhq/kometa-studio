@@ -16,7 +16,7 @@ import httpx
 from . import __version__
 
 PLEX_TV = "https://plex.tv"
-PRODUCT = "Kometa Studio"
+PRODUCT = "Starr Studio"
 PROBE_TIMEOUT = 5.0
 
 

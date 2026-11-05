@@ -2,7 +2,7 @@ import sqlite3
 
 import pytest
 
-from kometa_studio.db import (
+from starr_studio.db import (
     Migration,
     SchemaTooNewError,
     apply_migrations,

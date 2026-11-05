@@ -11,11 +11,11 @@ from fastapi.testclient import TestClient
 from ruamel.yaml import YAML
 
 from fakeplex import FakePlex
-from kometa_studio import list_sources as ls
-from kometa_studio.app import create_app
-from kometa_studio.settings import Settings
-from kometa_studio.plex_library import PlexItem
-from kometa_studio.studio_files import render_built
+from starr_studio import list_sources as ls
+from starr_studio.app import create_app
+from starr_studio.settings import Settings
+from starr_studio.plex_library import PlexItem
+from starr_studio.studio_files import render_built
 from test_builder_routes import body as filter_body
 from test_builder_routes import built_file
 from test_ready_made_routes import root, wait_for_flags, wait_for_run  # noqa: F401 (root is a fixture)

@@ -4,9 +4,9 @@ import pytest
 from fakeplex import ACCOUNT_TOKEN, RELAY_URI, REMOTE_URI, SERVER_ID, SERVER_TOKEN, FakePlex
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.kometa_config import read_plex
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.kometa_config import read_plex
+from starr_studio.settings import Settings
 
 
 @pytest.fixture

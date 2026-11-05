@@ -7,10 +7,10 @@ import httpx
 import pytest
 from fakeplex import REMOTE_URI, SERVER_TOKEN, FakePlex
 
-from kometa_studio.auth import AUTH
-from kometa_studio.db import open_database, set_setting
-from kometa_studio.health import PlexCheck, health, kometa_updates
-from kometa_studio.settings import Settings
+from starr_studio.auth import AUTH
+from starr_studio.db import open_database, set_setting
+from starr_studio.health import PlexCheck, health, kometa_updates
+from starr_studio.settings import Settings
 
 
 @pytest.fixture
@@ -156,7 +156,7 @@ def test_original_posters_need_a_recent_full_backup(db, kometa):
 
     backups = kometa.data_dir / "full-backups"
     backups.mkdir(parents=True)
-    (backups / f"kometa-studio-{datetime.now(UTC):%Y%m%d-%H%M%S}.zip").write_bytes(b"zip")
+    (backups / f"starr-studio-{datetime.now(UTC):%Y%m%d-%H%M%S}.zip").write_bytes(b"zip")
     assert "full_backup" not in sources(check(db, kometa))
 
     with db:

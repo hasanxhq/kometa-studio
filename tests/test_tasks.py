@@ -10,12 +10,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio import full_backup
-from kometa_studio.app import create_app
-from kometa_studio.db import open_database
-from kometa_studio.scheduler import utc_text
-from kometa_studio.settings import Settings
-from kometa_studio.tasks import Tasks
+from starr_studio import full_backup
+from starr_studio.app import create_app
+from starr_studio.db import open_database
+from starr_studio.scheduler import utc_text
+from starr_studio.settings import Settings
+from starr_studio.tasks import Tasks
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
 
@@ -77,10 +77,24 @@ def test_only_the_newest_are_kept(config):
     dest = config / ".studio" / "full-backups"
     dest.mkdir(parents=True)
     for day in range(1, 6):
-        (dest / f"kometa-studio-202610{day:02d}-040000.zip").write_bytes(b"old")
+        (dest / f"starr-studio-202610{day:02d}-040000.zip").write_bytes(b"old")
     (dest / "notes.txt").write_text("not a backup")
     full_backup.prune(dest, keep=2)
-    assert sorted(p.name for p in dest.iterdir()) == ["kometa-studio-20261004-040000.zip", "kometa-studio-20261005-040000.zip", "notes.txt"]
+    assert sorted(p.name for p in dest.iterdir()) == ["notes.txt", "starr-studio-20261004-040000.zip", "starr-studio-20261005-040000.zip"]
+
+
+def test_backups_from_before_the_rename_still_count(config):
+    """Zips named kometa-studio-*.zip are listed, found and pruned with the new ones, oldest first by date, not by name."""
+    dest = config / ".studio" / "full-backups"
+    dest.mkdir(parents=True)
+    for name in ("kometa-studio-20261001-040000.zip", "starr-studio-20261002-040000.zip", "kometa-studio-20261003-040000.zip"):
+        (dest / name).write_bytes(b"zip")
+    listed = full_backup.list_full(config / ".studio")
+    assert [entry["name"] for entry in listed] == ["kometa-studio-20261003-040000.zip", "starr-studio-20261002-040000.zip", "kometa-studio-20261001-040000.zip"]
+    assert listed[0]["created"] == "2026-10-03T04:00:00Z"
+    assert full_backup.find(config / ".studio", "kometa-studio-20261001-040000.zip") == dest / "kometa-studio-20261001-040000.zip"
+    full_backup.prune(dest, keep=2)
+    assert sorted(p.name for p in dest.iterdir()) == ["kometa-studio-20261003-040000.zip", "starr-studio-20261002-040000.zip"]
 
 
 def test_a_backup_that_wont_fit_isnt_started(config, monkeypatch):
@@ -93,7 +107,7 @@ def test_a_backup_that_wont_fit_isnt_started(config, monkeypatch):
 
 def test_names_outside_the_backups_are_refused(config):
     assert full_backup.find(config / ".studio", "../studio.db") is None
-    assert full_backup.find(config / ".studio", "kometa-studio-20261030-040000.zip") is None  # well-formed, but not there
+    assert full_backup.find(config / ".studio", "starr-studio-20261030-040000.zip") is None  # well-formed, but not there
 
 
 # --- Scheduling ---------------------------------------------------------------------
@@ -130,7 +144,7 @@ def test_a_backup_cut_off_by_a_restart_is_marked_and_its_partial_removed(config)
     tasks.setup("UTC")
     with db:
         db.execute("UPDATE tasks SET last_status = 'running', last_started_at = '2026-10-30T04:30:00Z' WHERE name = 'full_backup'")
-    partial = config / ".studio" / "full-backups" / "kometa-studio-20261030-043000.zip.partial"
+    partial = config / ".studio" / "full-backups" / "starr-studio-20261030-043000.zip.partial"
     partial.parent.mkdir(parents=True)
     partial.write_bytes(b"half")
     tasks.setup("UTC")

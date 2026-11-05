@@ -7,11 +7,11 @@ import httpx
 import pytest
 from fakearr import RADARR_KEY, RADARR_URL, FakeArr
 
-from kometa_studio import arr, wanted
-from kometa_studio.arr import Arr
-from kometa_studio.crypto import SecretBox
-from kometa_studio.db import get_setting, open_database, set_setting
-from kometa_studio.kometa_command import RunRequest
+from starr_studio import arr, wanted
+from starr_studio.arr import Arr
+from starr_studio.crypto import SecretBox
+from starr_studio.db import get_setting, open_database, set_setting
+from starr_studio.kometa_command import RunRequest
 
 T0 = datetime(2026, 10, 30, 20, 0, tzinfo=UTC)
 
@@ -224,8 +224,8 @@ def test_every_import_counts_when_studio_cant_read_the_config(db, tmp_path):
 def test_the_connect_page_says_what_studio_knows_and_can_turn_on_the_report(tmp_path):
     from fastapi.testclient import TestClient
 
-    from kometa_studio.app import create_app
-    from kometa_studio.settings import Settings
+    from starr_studio.app import create_app
+    from starr_studio.settings import Settings
 
     config = tmp_path / "config.yml"
     config.write_text("libraries:\n  Movies:\n    collection_files:\n      - file: lists.yml\n")

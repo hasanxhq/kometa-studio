@@ -1,13 +1,13 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="brand/svg/lockup-on-dark.svg">
-  <img src="brand/svg/lockup-on-light.svg" alt="Kometa Studio" height="56">
+  <img src="brand/svg/lockup-on-light.svg" alt="Starr Studio" height="56">
 </picture>
 
-# Kometa Studio
+# Starr Studio
 
 An arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kometa): it schedules Kometa runs, edits Kometa's config and YAML files with validation, and shows what each run changed in Plex.
 
-> **Unofficial.** Kometa Studio is an independent project. It is not made by, endorsed by, or affiliated with the Kometa team. It runs an unmodified Kometa install and never changes Kometa's code.
+> **Unofficial.** Starr Studio is an independent project. It is not made by, endorsed by, or affiliated with the Kometa team. It runs an unmodified Kometa install and never changes Kometa's code.
 
 **Status: alpha.** It's new and has only been tested on one setup, so expect rough edges. It edits your Kometa config, and Kometa changes your Plex library. Studio backs up every file it changes, and you can restore from System → Backup.
 
@@ -30,8 +30,8 @@ An arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kometa): it sch
 There's no published image yet, so you build it from this repository:
 
 ```bash
-git clone https://github.com/hasanxhq/kometa-studio.git
-cd kometa-studio
+git clone https://github.com/hasanxhq/starr-studio.git
+cd starr-studio
 mkdir -p config
 docker compose up -d --build
 ```
@@ -60,7 +60,7 @@ Set a **URL base** (such as `/kometa`) in Settings → General. Studio answers w
 
 ```nginx
 location /kometa/ {
-    proxy_pass http://kometa-studio:8484;
+    proxy_pass http://starr-studio:8484;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
@@ -75,7 +75,7 @@ Requests that come through a proxy never count as local for sign-in, unless the 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
-kometa-studio serve          # API on http://127.0.0.1:8484
+starr-studio serve          # API on http://127.0.0.1:8484
 cd frontend && npm install && npm run dev   # UI on http://localhost:5173, proxying /api
 ```
 

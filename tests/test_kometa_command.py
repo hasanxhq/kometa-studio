@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from kometa_studio.kometa_command import ALWAYS, RunRequest, UnsupportedFlag, build_command, parse_help
+from starr_studio.kometa_command import ALWAYS, RunRequest, UnsupportedFlag, build_command, parse_help
 
 PY, ENTRY, CONFIG = Path("/.venv/bin/python3"), Path("/kometa.py"), Path("/config/config.yml")
 HELP = """usage: kometa.py [-h] [--config CONFIG] [--times TIMES] [--run] [--collections-only] [--overlays-only]

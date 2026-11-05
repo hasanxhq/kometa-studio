@@ -35,8 +35,8 @@ from .plex_routes import mask
 
 NOTIFIARR_URL = "https://notifiarr.com/api/v1/"
 TIMEOUT = 10.0
-TEST_TITLE = "Kometa Studio test notification"
-TEST_MESSAGE = "Kometa Studio sent this to check that Kometa can notify you here. Nothing else to do."
+TEST_TITLE = "Starr Studio test notification"
+TEST_MESSAGE = "Starr Studio sent this to check that Kometa can notify you here. Nothing else to do."
 
 
 @dataclass(frozen=True)
@@ -129,7 +129,7 @@ def read_webhooks(document: CommentedMap) -> dict:
         chosen: list[str] = []
         for target in _targets(hooks.get(event)):
             if is_studio_webhook(target):
-                column = {"id": "studio", "label": "Kometa Studio", "kind": "studio", "configured": True}
+                column = {"id": "studio", "label": "Starr Studio", "kind": "studio", "configured": True}
             elif target in SERVICES:
                 column = {"id": target, "label": SERVICES[target].label, "kind": "service", "configured": target in document}
             else:

@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "kometa-studio"
+name = "starr-studio"
 dynamic = ["version"]
 description = "Unofficial arr-style web GUI for Kometa"
 readme = "README.md"
@@ -28,7 +28,7 @@ dev = [
 ]
 
 [project.scripts]
-kometa-studio = "kometa_studio.cli:main"
+starr-studio = "starr_studio.cli:main"
 
 # The version lives only in VERSION (see AGENTS.md).
 [tool.hatch.version]
@@ -36,9 +36,9 @@ path = "VERSION"
 pattern = "^(?P<version>\\S+)\\s*$"
 
 [tool.hatch.build.targets.wheel]
-packages = ["kometa_studio"]
+packages = ["starr_studio"]
 # The built frontend is git-ignored, so list it explicitly or Hatch leaves it out.
-artifacts = ["kometa_studio/static/**"]
+artifacts = ["starr_studio/static/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

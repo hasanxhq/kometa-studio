@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
 FINISHED = {"succeeded", "failed", "cancelled", "interrupted", "timed_out"}
@@ -76,7 +76,7 @@ def test_a_run_streams_its_output_to_a_log(tmp_path, config):
     assert "--run --no-countdown --read-only-config --ignore-ghost --collections-only" in run["command"]
     assert "--run-libraries 'Movies|TV Shows'" in run["command"]
     assert "Starting Kometa\nFinished\n" in log
-    assert log.endswith("Kometa Studio: run succeeded (exit code 0)\n")
+    assert log.endswith("Starr Studio: run succeeded (exit code 0)\n")
     # Kometa's webhooks now reach Studio, and the user's settings are untouched.
     text = config.read_text()
     assert "api/v1/kometa/events?token=" in text and "url: http://plex:32400" in text
@@ -349,7 +349,7 @@ def test_the_log_stream_sends_the_whole_log_once(tmp_path, config):
     lines, end = _parse_sse(body)
     expected = [f"before {i}" for i in range(50)] + [f"after {i}" for i in range(50)]
     assert [line for line in lines if line.startswith(("before", "after"))] == expected
-    assert lines[-1] == "Kometa Studio: run succeeded (exit code 0)"  # Studio's own closing line streams too
+    assert lines[-1] == "Starr Studio: run succeeded (exit code 0)"  # Studio's own closing line streams too
     assert end == {"status": "succeeded", "dropped": False}
 
 

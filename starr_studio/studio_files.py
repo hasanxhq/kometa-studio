@@ -25,7 +25,7 @@ from .kometa_config import TEMPLATE_INDENT, _parse, render as render_yaml
 
 STUDIO_FOLDER = "studio"
 HEADER = (
-    'Written by Kometa Studio from Kometa\'s "{category}" default. '
+    'Written by Starr Studio from Kometa\'s "{category}" default. '
     "Studio rewrites this file on every save: change these collections in Studio."
 )
 # Kometa's Default resolution order for a library type (modules/meta.py load_file).
@@ -216,12 +216,16 @@ def _studio_prefix(library: str, all_libraries: list[str]) -> str:
     return f"{STUDIO_FOLDER}/{library_folders(all_libraries)[library]}/"
 
 
+# The old name stays recognised: files written before the rename are still Studio's, and get the new header on their next save.
+GENERATED_MARKS = ("Written by Starr Studio", "Written by Kometa Studio")
+
+
 def is_generated(text: str) -> bool:
     """True for a file Studio wrote: its header is in the first lines."""
-    return any("Written by Kometa Studio" in line for line in text.splitlines()[:3])
+    return any(mark in line for line in text.splitlines()[:3] for mark in GENERATED_MARKS)
 
 
-BUILT_HEADER = "Written by Kometa Studio from its collection builder. Studio rewrites this file on every save: change these collections in Studio."
+BUILT_HEADER = "Written by Starr Studio from its collection builder. Studio rewrites this file on every save: change these collections in Studio."
 
 
 def render_built(

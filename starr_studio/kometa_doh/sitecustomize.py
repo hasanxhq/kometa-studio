@@ -1,4 +1,4 @@
-"""Kometa Studio's network settings for Kometa's Python (network.py), loaded by Python itself when Studio
+"""Starr Studio's network settings for Kometa's Python (network.py), loaded by Python itself when Studio
 puts this folder on PYTHONPATH.
 
 ``socket.getaddrinfo`` answers the hosts in STUDIO_DOH_HOSTS (and their subdomains) through DNS over HTTPS

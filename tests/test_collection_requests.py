@@ -6,10 +6,10 @@ import asyncio
 
 from ruamel.yaml import YAML
 
-from kometa_studio import collection_requests as cr
-from kometa_studio import collections as col
-from kometa_studio.kometa_command import RunRequest
-from kometa_studio.requesting import RequestOutcome, RequestSettings, save_settings
+from starr_studio import collection_requests as cr
+from starr_studio import collections as col
+from starr_studio.kometa_command import RunRequest
+from starr_studio.requesting import RequestOutcome, RequestSettings, save_settings
 from test_builder_routes import body as filter_body
 from test_list_sources import tmdb_client
 from test_ready_made_routes import root, wait_for_flags, wait_for_run  # noqa: F401 (root is a fixture)

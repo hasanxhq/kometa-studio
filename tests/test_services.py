@@ -1,9 +1,9 @@
 import httpx
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.config_sections import read_section
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.config_sections import read_section
+from starr_studio.settings import Settings
 
 TMDB_KEY = "tmdb-good-key"
 MDBLIST_KEY = "mdb-good-key"
@@ -88,7 +88,7 @@ def test_kometas_python_resolves_tmdb_over_dns_over_https(tmp_path):
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-    from kometa_studio import network
+    from starr_studio import network
 
     asked = []
 

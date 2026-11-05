@@ -131,7 +131,12 @@ def write_plex(path: Path, url: str, token: str, backup_root: Path) -> Path | No
 
 WEBHOOK_EVENTS = ("error", "version", "run_start", "run_end", "changes", "delete")
 EVENTS_PATH = "/api/v1/kometa/events"
-STUDIO_MARK = "managed by Kometa Studio"
+STUDIO_MARK = "managed by Starr Studio"
+
+
+def _comment(seq: CommentedSeq, index: int) -> str:
+    """The end-of-line comment on one item, such as an old "managed by Kometa Studio" from before the rename."""
+    return "".join(getattr(token, "value", "") for token in seq.ca.items.get(index) or [] if token is not None)
 
 
 def is_studio_webhook(value: object) -> bool:
@@ -146,7 +151,7 @@ def _add_studio_webhook(container: CommentedMap, key: str, url: str) -> bool:
     else:
         targets = CommentedSeq([] if current is None or current == "" else [current])
     studio = [index for index, value in enumerate(targets) if is_studio_webhook(value)]
-    if targets is current and studio == [len(targets) - 1] and targets[-1] == url:
+    if targets is current and studio == [len(targets) - 1] and targets[-1] == url and STUDIO_MARK in _comment(targets, len(targets) - 1):
         return False
     for index in reversed(studio):  # an old port or token
         del targets[index]

@@ -1,9 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio import logs_routes
-from kometa_studio.app import create_app
-from kometa_studio.settings import Settings
+from starr_studio import logs_routes
+from starr_studio.app import create_app
+from starr_studio.settings import Settings
 
 # Shaped like Kometa 2.5's meta.log: fixed-width file name and level, wrapped lines indented.
 META = """\

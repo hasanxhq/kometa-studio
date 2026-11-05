@@ -5,11 +5,11 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from kometa_studio import arr, maintainerr
-from kometa_studio.app import create_app
-from kometa_studio.db import set_setting
-from kometa_studio.jobs import live_state, run_title
-from kometa_studio.settings import Settings
+from starr_studio import arr, maintainerr
+from starr_studio.app import create_app
+from starr_studio.db import set_setting
+from starr_studio.jobs import live_state, run_title
+from starr_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
 

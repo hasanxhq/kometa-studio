@@ -4,7 +4,7 @@ import time
 import httpx
 import pytest
 
-from kometa_studio import tmdb_languages
+from starr_studio import tmdb_languages
 
 CONFIG = "tmdb:\n  apikey: tmdb-key\n"
 ANSWER = [

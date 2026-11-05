@@ -6,10 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 from ruamel.yaml import YAML
 
-from kometa_studio.app import create_app
-from kometa_studio.config_sections import with_library_default, with_library_variables, with_overlay_order
-from kometa_studio.kometa_files import ConfigReader, _overlay_layout
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.config_sections import with_library_default, with_library_variables, with_overlay_order
+from starr_studio.kometa_files import ConfigReader, _overlay_layout
+from starr_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
 

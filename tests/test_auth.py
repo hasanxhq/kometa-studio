@@ -1,9 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.auth import check_password, hash_password, is_local
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.auth import check_password, hash_password, is_local
+from starr_studio.settings import Settings
 
 LOCAL = ("192.168.1.20", 50000)
 REMOTE = ("8.8.8.8", 50000)

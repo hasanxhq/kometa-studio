@@ -23,13 +23,14 @@ from pathlib import Path
 from .crypto import KEY_FILE
 
 FOLDER = "full-backups"
-NAME = re.compile(r"^kometa-studio-\d{8}-\d{6}\.zip$")
+# "kometa-": made before the rename to Starr Studio. They stay listed, restorable and pruned like the rest.
+NAME = re.compile(r"^(?:starr|kometa)-studio-(\d{8}-\d{6})\.zip$")
 SKIP_TOP = {"logs"}  # Kometa's logs, at the top of its config folder
 SKIP_SUFFIXES = (".cache", ".cache-journal", ".cache-wal", ".cache-shm")  # Kometa's cache database
 STORED = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".zip", ".gz"}
 SPARE = 50 * 1024**2  # room to leave on the disk besides the zip itself
 
-README = """Kometa Studio full backup, made {created}.
+README = """Starr Studio full backup, made {created}.
 
 config/  Kometa's config folder: config.yml, your collection and overlay files,
          and overlays/<library> Original Posters/ (Kometa's copies of posters
@@ -94,7 +95,7 @@ def create(config_dir: Path, data_dir: Path, db_path: Path, keep: int) -> dict:
         raise BackupFailed(f"Not enough disk space: the backup needs about {_mb(work.size + SPARE)}, and {_mb(free)} is free")
 
     now = datetime.now(UTC)
-    name = f"kometa-studio-{now:%Y%m%d-%H%M%S}.zip"
+    name = f"starr-studio-{now:%Y%m%d-%H%M%S}.zip"
     partial = dest / (name + ".partial")
     missing = 0
     try:
@@ -138,7 +139,7 @@ def _copy_database(source: Path, target: Path) -> None:
 
 
 def prune(dest: Path, keep: int) -> None:
-    for path in sorted(_zips(dest))[:-keep] if keep > 0 else []:
+    for path in sorted(_zips(dest), key=_stamp)[:-keep] if keep > 0 else []:
         path.unlink(missing_ok=True)
 
 
@@ -148,13 +149,18 @@ def _zips(dest: Path) -> list[Path]:
     return [path for path in dest.iterdir() if NAME.match(path.name) and path.is_file()]
 
 
+def _stamp(path: Path) -> str:
+    """When the zip was made, from its name: orders old and new names together."""
+    return NAME.match(path.name)[1]
+
+
 def describe(path: Path) -> dict:
-    created = datetime.strptime(path.name, "kometa-studio-%Y%m%d-%H%M%S.zip").replace(tzinfo=UTC)
+    created = datetime.strptime(_stamp(path), "%Y%m%d-%H%M%S").replace(tzinfo=UTC)
     return {"name": path.name, "size": path.stat().st_size, "created": created.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
 
 def list_full(data_dir: Path) -> list[dict]:
-    return [describe(path) for path in sorted(_zips(data_dir / FOLDER), reverse=True)]
+    return [describe(path) for path in sorted(_zips(data_dir / FOLDER), key=_stamp, reverse=True)]
 
 
 def find(data_dir: Path, name: str) -> Path | None:

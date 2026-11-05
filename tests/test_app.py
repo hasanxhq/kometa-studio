@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
-from kometa_studio import __version__
-from kometa_studio.app import create_app
-from kometa_studio.db import load_migrations
-from kometa_studio.settings import Settings
+from starr_studio import __version__
+from starr_studio.app import create_app
+from starr_studio.db import load_migrations
+from starr_studio.settings import Settings
 
 
 def make_client(tmp_path, static_dir=None, **settings):
