@@ -20,6 +20,7 @@ from .db import delete_setting
 from .plex_library import PlexNotFound
 from .requesting import (
     REQUESTS_SEERR,
+    SEERR_CARRY,
     SEERR_LOGIN,
     Item,
     RequestOutcome,
@@ -131,7 +132,8 @@ async def put_seerr(body: SeerrConnectionIn, service: ServiceDep, writer: Writer
         raise HTTPException(422, f"Not saved: {problem}") from None
     await _write_call(save_section(writer, "seerr", {"url": conn.url, "apikey": conn.api_key}, "Connected Seerr in Settings → Requests"))
     save_seerr_login(service.db, service.box, conn.login)
-    delete_setting(service.db, REQUESTS_SEERR)  # config.yml holds it now
+    delete_setting(service.db, REQUESTS_SEERR)  # config.yml holds it now: nothing left to carry over
+    delete_setting(service.db, SEERR_CARRY)
     return _state(service)
 
 
@@ -142,6 +144,7 @@ async def delete_seerr(service: ServiceDep, writer: Writer) -> dict:
         await _write_call(save_section(writer, "seerr", None, "Removed Seerr in Settings → Requests"))
     delete_setting(service.db, SEERR_LOGIN)
     delete_setting(service.db, REQUESTS_SEERR)
+    delete_setting(service.db, SEERR_CARRY)
     return _state(service)
 
 

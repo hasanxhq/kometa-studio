@@ -23,6 +23,7 @@ from .db import get_setting
 from .kometa_command import installed_version
 from .kometa_config import read_plex
 from .kometa_files import setup_steps
+from .requesting import REQUESTS_SEERR, SEERR_CARRY
 from .settings import Settings
 
 PLEX_CHECK_TTL = 300
@@ -140,6 +141,20 @@ def _arr_checks(db: sqlite3.Connection) -> list[Check]:
     return checks
 
 
+def _requests_checks(db: sqlite3.Connection) -> list[Check]:
+    carry = get_setting(db, SEERR_CARRY)
+    if isinstance(carry, dict) and get_setting(db, REQUESTS_SEERR):
+        return [
+            Check(
+                "seerr",
+                "warning",
+                f"Studio couldn't move Seerr's connection into Kometa's config.yml, so it keeps using the one it saved: {carry.get('error')}",
+                "/settings/requests",
+            )
+        ]
+    return []
+
+
 def _usage_checks(db: sqlite3.Connection) -> list[Check]:
     reason = usage.held(db, datetime.now(UTC))
     return [Check("mdblist", "warning", f"Runs after imports are waiting: {reason}.", "/system/status")] if reason else []
@@ -197,6 +212,7 @@ async def health(
             checks.append(plex_result)
     checks += _run_checks(db)
     checks += _arr_checks(db)
+    checks += _requests_checks(db)
     checks += _usage_checks(db)
     checks += _maintainerr_checks(maintainerr)
     checks += _backup_checks(db, settings)

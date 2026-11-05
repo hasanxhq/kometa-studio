@@ -149,6 +149,7 @@ def create_app(
             app.state.secrets,
             settings.kometa_config,
             settings.data_dir,
+            app.state.writer,
         )
         app.state.requests.after_labelling = lambda: rebuild_arrived(app.state.db, runner)
         app.state.requests.start()

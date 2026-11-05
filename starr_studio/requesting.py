@@ -8,6 +8,7 @@ writes Kometa's ``seerr_add_missing``, which would request everything missing on
 
 import asyncio
 import contextlib
+import hashlib
 import logging
 import sqlite3
 from collections.abc import Callable
@@ -21,7 +22,8 @@ from pydantic import BaseModel, Field
 
 from . import arr, tmdb_details
 from .arr import ArrProblem, Connection, Kind
-from .config_sections import read_section
+from .config_sections import read_section, save_section
+from .config_write import ConfigWriter, SaveRefused
 from .crypto import SecretBox
 from .db import delete_setting, get_setting, set_setting
 from .kometa_config import read_plex
@@ -35,8 +37,7 @@ REQUESTS_SETTINGS = "requests.settings"
 # Before Seerr's connection lived in config.yml: url, encrypted key and proxy login. Carried into config.yml.
 REQUESTS_SEERR = "requests.seerr"
 SEERR_LOGIN = "requests.seerr_login"  # the proxy login in front of Seerr, if any (url and key are in config.yml's seerr:)
-# requests.via for Seerr. Older rows name the app (overseerr, jellyseerr).
-SEERR_VIA = ("seerr", "overseerr", "jellyseerr")
+SEERR_CARRY = "requests.seerr_carry"  # why the old connection couldn't move into config.yml: {"error", "config": its hash}
 POLL_EVERY = 300.0  # 5 minutes
 TIMEOUT = 10.0
 
@@ -173,6 +174,55 @@ def seerr_json(db: sqlite3.Connection, box: SecretBox, config: Path | None) -> d
     }
 
 
+def _config_hash(config: Path | None) -> str:
+    try:
+        return hashlib.sha256(config.read_bytes()).hexdigest() if config is not None else "missing"
+    except OSError:
+        return "missing"
+
+
+def _refusal(refused: SaveRefused) -> str:
+    errors = refused.validation.errors if refused.validation else []
+    return f"{refused.message} {errors[0]}" if errors else refused.message
+
+
+async def carry_over_seerr(db: sqlite3.Connection, box: SecretBox, config: Path | None, writer: ConfigWriter | None) -> bool:
+    """Move a connection saved before Seerr lived in config.yml into config.yml's seerr:, once. True once done.
+
+    The proxy login stays Studio's. The old setting is deleted only after the save went through; until
+    then Studio keeps using it, and ``SEERR_CARRY`` says why for Health. A refused save would be refused
+    again, so it's only tried again once config.yml has changed.
+    """
+    raw = get_setting(db, REQUESTS_SEERR)
+    if not raw:
+        return True
+    url, key = kometa_seerr(config)
+    legacy = legacy_seerr(db, box)
+    if not (url and key) and legacy is not None:
+        digest = _config_hash(config)
+        last = get_setting(db, SEERR_CARRY) or {}
+        if last.get("config") == digest:
+            return False
+        if writer is None or digest == "missing":
+            set_setting(db, SEERR_CARRY, {"error": "Kometa's config.yml doesn't exist yet.", "config": digest})
+            return False
+        try:
+            await save_section(writer, "seerr", {"url": legacy.url, "apikey": legacy.api_key}, "Moved Seerr's connection into config.yml")
+        except SaveRefused as refused:
+            set_setting(db, SEERR_CARRY, {"error": _refusal(refused), "config": _config_hash(config)})
+            log.warning("Seerr's connection stays in Studio's database for now: %s", _refusal(refused))
+            return False
+        log.info("Moved Seerr's connection into config.yml's seerr:")
+    elif legacy is None and not (url and key):
+        return False  # a key Studio can't decrypt: nothing to carry; Settings → Requests asks for it again
+    # config.yml has it now (or already had its own, which wins): only the proxy login is left to keep.
+    if get_setting(db, SEERR_LOGIN) is None:
+        set_setting(db, SEERR_LOGIN, {"username": raw.get("username"), "password": raw.get("password")} if raw.get("username") else {})
+    delete_setting(db, REQUESTS_SEERR)
+    delete_setting(db, SEERR_CARRY)
+    return True
+
+
 async def probe_seerr_connection(http: httpx.AsyncClient, conn: SeerrConnection) -> dict:
     url = conn.url.rstrip("/")
     headers = {"X-Api-Key": conn.api_key, "Accept": "application/json"}
@@ -239,13 +289,16 @@ class RequestService:
         box: SecretBox,
         config: Path | None,
         data_dir: Path | None = None,
+        writer: ConfigWriter | None = None,
     ):
         self.db = db
         self.http = http
         self.box = box
         self.config = config
         self.data_dir = data_dir
+        self.writer = writer
         self._task: asyncio.Task | None = None
+        self._carrying = asyncio.Lock()
         # Called after each check; the app uses it to rebuild collections whose requested titles reached Plex.
         self.after_labelling: Callable[[], object] | None = None
 
@@ -260,6 +313,11 @@ class RequestService:
 
     async def _loop(self) -> None:
         while True:
+            # At start-up, then on every check while the old setting is still there (only after config.yml changed).
+            try:
+                await self.carry_over()
+            except Exception:
+                log.exception("Moving Seerr's connection into config.yml failed")
             try:
                 if self.load_settings().enabled:
                     await self.check(datetime.now(UTC))
@@ -285,6 +343,10 @@ class RequestService:
 
     def load_seerr_connection(self) -> SeerrConnection | None:
         return load_seerr_connection(self.db, self.box, self.config)
+
+    async def carry_over(self) -> bool:
+        async with self._carrying:
+            return await carry_over_seerr(self.db, self.box, self.config, self.writer)
 
     def seerr_json(self) -> dict | None:
         return seerr_json(self.db, self.box, self.config)
@@ -878,7 +940,7 @@ class RequestService:
                         movie = movie_list[0]
                         movie_id = movie["id"]
 
-                        if via in SEERR_VIA and radarr_starr_tag_id is not None:
+                        if via == "seerr" and radarr_starr_tag_id is not None:
                             tags = movie.get("tags") or []
                             if radarr_starr_tag_id not in tags:
                                 movie["tags"] = [*tags, radarr_starr_tag_id]
@@ -913,7 +975,7 @@ class RequestService:
                         series = series_list[0]
                         series_id = series["id"]
 
-                        if via in SEERR_VIA and sonarr_starr_tag_id is not None:
+                        if via == "seerr" and sonarr_starr_tag_id is not None:
                             tags = series.get("tags") or []
                             if sonarr_starr_tag_id not in tags:
                                 series["tags"] = [*tags, sonarr_starr_tag_id]
@@ -1054,7 +1116,7 @@ class RequestService:
                         await arr._put(self.http, conn, f"/api/v3/series/{external_id}", json=series)
                 except Exception as e:
                     log.warning("Could not unmonitor series %s in Sonarr: %s", external_id, e)
-        elif via in SEERR_VIA and external_id:
+        elif via == "seerr" and external_id:
             seerr_conn = self.load_seerr_connection()
             if seerr_conn:
                 try:

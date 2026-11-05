@@ -3,6 +3,8 @@
 import json
 import shutil
 import sys
+from collections.abc import Callable
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -11,6 +13,9 @@ from fakeplex import REMOTE_URI, SERVER_TOKEN, FakePlex
 from fastapi.testclient import TestClient
 
 from starr_studio.app import create_app
+from starr_studio.crypto import SecretBox
+from starr_studio.db import get_setting, open_database, set_setting
+from starr_studio.requesting import REQUESTS_SEERR, SEERR_CARRY
 from starr_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
@@ -23,6 +28,13 @@ RADARR_KEY = "radarr-key"
 SONARR_KEY = "sonarr-key"
 SEERR_KEY = "seerr-key"
 TMDB_KEY = "tmdb-key"
+CONFIG = (
+    f"plex:\n  url: {REMOTE_URI}\n  token: {SERVER_TOKEN}\n"
+    f"tmdb:\n  apikey: {TMDB_KEY}\n"
+    f"radarr:\n  url: {RADARR_URL}\n  token: {RADARR_KEY}\n"
+    f"sonarr:\n  url: {SONARR_URL}\n  token: {SONARR_KEY}\n"
+    "libraries:\n  Movies: {}\n  TV Shows: {}\n"
+)
 
 
 class FakeRouteEnvironment:
@@ -175,21 +187,16 @@ class FakeRouteEnvironment:
         return httpx.Response(404)
 
 
-@pytest.fixture
-def test_setup(tmp_path: Path):
+@contextmanager
+def started(tmp_path: Path, seed: Callable[[Settings], None] | None = None):
+    """Studio on a fake Kometa and config.yml; ``seed`` prepares its data before it starts."""
     kometa = tmp_path / "kometa"
     kometa.mkdir()
     shutil.copy(FAKE_KOMETA, kometa / "kometa.py")
     shutil.copytree(DEFAULTS_SRC, kometa / "defaults")
     config = tmp_path / "config"
     config.mkdir()
-    (config / "config.yml").write_text(
-        f"plex:\n  url: {REMOTE_URI}\n  token: {SERVER_TOKEN}\n"
-        f"tmdb:\n  apikey: {TMDB_KEY}\n"
-        f"radarr:\n  url: {RADARR_URL}\n  token: {RADARR_KEY}\n"
-        f"sonarr:\n  url: {SONARR_URL}\n  token: {SONARR_KEY}\n"
-        "libraries:\n  Movies: {}\n  TV Shows: {}\n"
-    )
+    (config / "config.yml").write_text(CONFIG)
     (config / "fake.json").write_text(json.dumps({"lines": ["ok"], "exit": 0}))
 
     mock = FakeRouteEnvironment()
@@ -200,9 +207,17 @@ def test_setup(tmp_path: Path):
         kometa_config=tmp_path / "config" / "config.yml",
         kill_after=0.5,
     )
+    if seed is not None:
+        seed(settings)
     app = create_app(settings, static_dir=tmp_path / "no-static", http_transport=httpx.MockTransport(mock.handle))
     with TestClient(app, client=("127.0.0.1", 50000)) as client:
         yield client, mock, app, tmp_path
+
+
+@pytest.fixture
+def test_setup(tmp_path: Path):
+    with started(tmp_path) as setup:
+        yield setup
 
 
 def test_settings_routes(test_setup):
@@ -384,3 +399,86 @@ def test_cancel_and_refresh_routes(test_setup):
     assert ref_res.status_code == 200
     assert "requested" in ref_res.json()
     assert "downloading" in ref_res.json()
+
+
+# --- Carrying a connection saved before config.yml's seerr: over ---------------------------------
+
+
+def old_seerr(url: str = SEERR_URL, remove_config: bool = False) -> Callable[[Settings], None]:
+    """Seed the connection as Studio kept it before (url, key and proxy login in SQLite, an app `kind`)."""
+
+    def seed(settings: Settings) -> None:
+        db = open_database(settings.db_path)
+        box = SecretBox.load_or_create(settings.data_dir)
+        set_setting(
+            db,
+            REQUESTS_SEERR,
+            {"kind": "jellyseerr", "url": url, "api_key": box.encrypt(SEERR_KEY), "username": "admin", "password": box.encrypt("s3cret-pw")},
+        )
+        db.close()
+        if remove_config:
+            settings.kometa_config.unlink()
+
+    return seed
+
+
+def _seerr_health(client: TestClient) -> list[dict]:
+    return [check for check in client.get("/api/v1/status").json()["health"] if check["source"] == "seerr"]
+
+
+def test_carry_over_moves_the_old_connection_into_config_yml(tmp_path: Path):
+    with started(tmp_path, old_seerr()) as (client, mock, app, _):
+        assert client.portal.call(app.state.requests.carry_over) is True  # done at start-up already, or now
+        config = tmp_path / "config" / "config.yml"
+        assert config.read_text() == CONFIG + f"seerr:\n  url: {SEERR_URL}\n  apikey: {SEERR_KEY}\n"
+        reasons = [json.loads(manifest.read_text())["reason"] for manifest in (tmp_path / "data" / "backups").glob("*/*.json")]
+        assert "Moved Seerr's connection into config.yml" in reasons  # backed up first, like any save
+        db = app.state.db
+        assert get_setting(db, REQUESTS_SEERR) is None
+        assert get_setting(db, SEERR_CARRY) is None
+        # The proxy login is still Studio's, and still used.
+        assert app.state.requests.load_seerr_connection().login == ("admin", "s3cret-pw")
+        assert client.get("/api/v1/requests/settings").json()["seerr"] == {"url": SEERR_URL, "api_key": "…-key", "username": "admin", "has_password": True}
+        assert _seerr_health(client) == []
+
+
+def test_carry_over_refused_keeps_the_old_setting(tmp_path: Path):
+    broken = "http://BROKEN.seerr.test:5055"  # the fake Kometa refuses a config.yml with BROKEN in it
+    with started(tmp_path, old_seerr(broken)) as (client, mock, app, _):
+        config = tmp_path / "config" / "config.yml"
+        assert client.portal.call(app.state.requests.carry_over) is False
+        assert config.read_text() == CONFIG
+        assert get_setting(app.state.db, REQUESTS_SEERR)["url"] == broken
+        # Studio keeps using it...
+        assert app.state.requests.load_seerr_connection().url == broken
+        assert client.get("/api/v1/requests/settings").json()["connected"]["seerr"] is True
+        # ...and says so.
+        [check] = _seerr_health(client)
+        assert check["level"] == "warning" and check["link"] == "/settings/requests"
+        assert "keeps using the one it saved" in check["message"] and "Kometa found problems" in check["message"]
+        # Refused once is refused again: not retried until config.yml changes.
+        checked = len(_validated(tmp_path))
+        assert client.portal.call(app.state.requests.carry_over) is False
+        assert len(_validated(tmp_path)) == checked
+
+        # Saving it in Settings → Requests replaces the old one, and the warning goes.
+        res = client.put("/api/v1/requests/seerr", json={"url": SEERR_URL, "api_key": None, "username": "admin", "password": None})
+        assert res.status_code == 200, res.text
+        assert get_setting(app.state.db, REQUESTS_SEERR) is None
+        assert app.state.requests.load_seerr_connection().login == ("admin", "s3cret-pw")
+        assert _seerr_health(client) == []
+
+
+def test_carry_over_waits_for_config_yml(tmp_path: Path):
+    with started(tmp_path, old_seerr(remove_config=True)) as (client, mock, app, _):
+        config = tmp_path / "config" / "config.yml"
+        assert client.portal.call(app.state.requests.carry_over) is False
+        assert not config.exists()  # never created just to hold seerr:
+        assert app.state.requests.load_seerr_connection().url == SEERR_URL
+        [check] = _seerr_health(client)
+        assert "config.yml doesn't exist yet" in check["message"]
+
+        config.write_text(CONFIG)  # Plex connected
+        assert client.portal.call(app.state.requests.carry_over) is True
+        assert f"apikey: {SEERR_KEY}" in config.read_text()
+        assert _seerr_health(client) == []

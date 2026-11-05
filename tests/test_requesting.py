@@ -25,7 +25,7 @@ from starr_studio.requesting import (
     save_seerr_login,
     save_settings,
 )
-from starr_studio.db import get_setting, set_setting
+from starr_studio.db import apply_migrations, connect, get_setting, load_migrations, set_setting
 
 RADARR_URL = "http://radarr.test:7878"
 SONARR_URL = "http://sonarr.test:8989"
@@ -724,7 +724,7 @@ async def test_cancel_request(env):
     db.execute(
         """
         INSERT INTO requests (id, item, media, title, library, via, external_id, status, requested_at, updated_at)
-        VALUES (2, 'tmdb-movie:20', 'movie', 'M20', 'Movies', 'overseerr', '20', 'downloading', '2026-11-05T12:00:00Z', '2026-11-05T12:00:00Z')
+        VALUES (2, 'tmdb-movie:20', 'movie', 'M20', 'Movies', 'seerr', '20', 'downloading', '2026-11-05T12:00:00Z', '2026-11-05T12:00:00Z')
         """
     )
     # 3. Imported row
@@ -821,3 +821,41 @@ async def test_a_collection_profile_overrides_the_default_and_falls_back_when_go
     by_tmdb = {m["tmdbId"]: m for m in mock.radarr_movies.values()}
     assert by_tmdb[603]["qualityProfileId"] == 6  # the collection's choice
     assert by_tmdb[604]["qualityProfileId"] == 4  # no longer in Radarr: the default from Settings → Requests
+
+
+@pytest.mark.anyio
+async def test_migration_0016_renames_old_seerr_rows_and_they_still_work(tmp_path: Path):
+    db = connect(tmp_path / "old.db")
+    migrations = load_migrations()
+    apply_migrations(db, migrations[:15])
+    rows = [
+        (1, "tmdb-movie:603", "overseerr", "41", "requested"),
+        (2, "tmdb-movie:604", "jellyseerr", "42", "requested"),
+        (3, "tmdb-movie:605", "radarr", "7", "requested"),
+    ]
+    for row_id, item, via, external_id, status in rows:
+        db.execute(
+            "INSERT INTO requests (id, item, media, library, via, external_id, status, requested_at, updated_at) VALUES (?, ?, 'movie', 'Movies', ?, ?, ?, ?, ?)",
+            (row_id, item, via, external_id, status, "2026-11-05T12:00:00Z", "2026-11-05T12:00:00Z"),
+        )
+    db.commit()
+
+    apply_migrations(db, migrations)
+
+    assert [r["via"] for r in db.execute("SELECT via FROM requests ORDER BY id")] == ["seerr", "seerr", "radarr"]
+
+    config = tmp_path / "config.yml"
+    config.write_text(f"radarr:\n  url: {RADARR_URL}\n  token: {RADARR_KEY}\nseerr:\n  url: {SEERR_URL}\n  apikey: {SEERR_KEY}\n")
+    mock = FakeMockEnvironment()
+    async with httpx.AsyncClient(transport=mock.transport()) as client:
+        service = RequestService(db, client, SecretBox.load_or_create(tmp_path / "data"), config, tmp_path / "data")
+        # Refresh: Seerr's rows get Radarr's starr tag, as before.
+        mock.radarr_movies[101] = {"id": 101, "tmdbId": 603, "tags": [1]}
+        await service.refresh(T0)
+        starr_id = next(t["id"] for t in mock.radarr_tags if t["label"] == "starr")
+        assert starr_id in mock.radarr_movies[101]["tags"]
+        # Cancel: removes the request in Seerr.
+        mock.seerr_requests[42] = {"id": 42}
+        assert (await service.cancel(2, T0))["status"] == "cancelled"
+        assert 42 not in mock.seerr_requests
+    db.close()
