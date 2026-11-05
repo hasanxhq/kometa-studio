@@ -109,6 +109,17 @@ describe("Requests page", () => {
     await waitFor(() => expect(calls.some((c) => c.route === "POST /requests/1/cancel")).toBe(true));
   });
 
+  it("shows the note on a title the app already had", async () => {
+    mockApi({
+      "GET /requests/settings": () => ({ ...settingsOff, settings: { ...settingsOff.settings, enabled: true } }),
+      "GET /requests?limit=200": () =>
+        list([row({ id: 4, title: "Breaking Bad", status: "exists", via: "seerr", external_id: null, error: "Seerr has every season already requested or available" })]),
+    });
+    renderAt("/requests");
+    expect(await screen.findByText("Breaking Bad (1995)")).toBeInTheDocument();
+    expect(screen.getByText("Movies · Seerr · Seerr has every season already requested or available")).toBeInTheDocument();
+  });
+
   it("polls while a row is requested or downloading", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const calls = mockApi({

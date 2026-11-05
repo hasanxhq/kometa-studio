@@ -38,6 +38,7 @@ REQUESTS_SETTINGS = "requests.settings"
 REQUESTS_SEERR = "requests.seerr"
 SEERR_LOGIN = "requests.seerr_login"  # the proxy login in front of Seerr, if any (url and key are in config.yml's seerr:)
 SEERR_CARRY = "requests.seerr_carry"  # why the old connection couldn't move into config.yml: {"error", "config": its hash}
+SEERR_NO_SEASONS = "Seerr has every season already requested or available"  # its HTTP 202 on POST /request
 POLL_EVERY = 300.0  # 5 minutes
 TIMEOUT = 10.0
 
@@ -271,6 +272,61 @@ async def probe_seerr_connection(http: httpx.AsyncClient, conn: SeerrConnection)
 
 
 test_seerr_connection = probe_seerr_connection
+
+
+@dataclass(frozen=True)
+class SeerrServer:
+    """Seerr's default (non-4K) Radarr or Sonarr server, with that server's quality profiles."""
+
+    id: int
+    name: str
+    profiles: tuple[tuple[int, str], ...]  # (id, name)
+
+    def profile_id(self, name: str | None) -> int | None:
+        """The profile called ``name``, ignoring case."""
+        if not name:
+            return None
+        wanted = name.casefold()
+        return next((pid for pid, pname in self.profiles if pname.casefold() == wanted), None)
+
+
+async def _seerr_get(http: httpx.AsyncClient, conn: SeerrConnection, path: str) -> Any:
+    try:
+        res = await http.get(
+            f"{conn.url.rstrip('/')}{path}",
+            headers={"X-Api-Key": conn.api_key, "Accept": "application/json"},
+            auth=conn.login or httpx.USE_CLIENT_DEFAULT,
+            timeout=TIMEOUT,
+        )
+    except httpx.TimeoutException:
+        raise ArrProblem(f"Seerr didn't answer within {TIMEOUT:g} s") from None
+    except httpx.HTTPError as error:
+        raise ArrProblem(f"Can't connect to Seerr: {error}") from None
+    if res.status_code in (401, 403):
+        raise ArrProblem("Seerr rejected the API key")
+    if res.status_code != 200:
+        raise ArrProblem(f"Seerr answered HTTP {res.status_code}")
+    try:
+        return res.json()
+    except ValueError:
+        raise ArrProblem("Seerr's answer wasn't JSON") from None
+
+
+async def seerr_default_server(http: httpx.AsyncClient, conn: SeerrConnection, app: Kind) -> SeerrServer | None:
+    """The Radarr or Sonarr server Seerr sends requests to by default (4K servers are ignored), or None if it has none."""
+    servers = await _seerr_get(http, conn, f"/api/v1/service/{app}")
+    default = next(
+        (s for s in servers if isinstance(s, dict) and s.get("isDefault") and not s.get("is4k") and isinstance(s.get("id"), int)),
+        None,
+    ) if isinstance(servers, list) else None
+    if default is None:
+        return None
+    details = await _seerr_get(http, conn, f"/api/v1/service/{app}/{default['id']}")
+    raw = details.get("profiles") if isinstance(details, dict) else None
+    profiles = tuple(
+        (p["id"], str(p["name"])) for p in (raw if isinstance(raw, list) else []) if isinstance(p, dict) and isinstance(p.get("id"), int) and p.get("name")
+    )
+    return SeerrServer(id=default["id"], name=str(default.get("name") or app), profiles=profiles)
 
 
 def _profile_id(profiles: list, name: str | None) -> int | None:
@@ -629,13 +685,40 @@ class RequestService:
         except Exception as e:
             return "failed", None, str(e)
 
+    async def _seerr_profile(self, conn: SeerrConnection, media: str, profile: str | None) -> tuple[SeerrServer | None, int | None, str | None]:
+        """The server and profile id a collection's ``profile`` means on Seerr, or (None, None, note) to leave
+        it to Seerr: no profile chosen, or the name isn't on Seerr's default server (as with Radarr/Sonarr,
+        a profile removed since falls back to the default)."""
+        if not profile:
+            return None, None, None
+        app: Kind = "radarr" if media == "movie" else "sonarr"
+        app_name = "Radarr" if app == "radarr" else "Sonarr"
+        try:
+            server = await seerr_default_server(self.http, conn, app)
+        except ArrProblem as problem:
+            log.warning("Couldn't read Seerr's %s profiles (%s); requesting with Seerr's default", app_name, problem)
+            return None, None, f"Seerr's default quality profile: couldn't read its profiles ({problem})"
+        if server is None:
+            log.info("Seerr has no default %s server; requesting with Seerr's default", app_name)
+            return None, None, f"Seerr's default quality profile: it has no default {app_name} server"
+        profile_id = server.profile_id(profile)
+        if profile_id is None:
+            log.info("The collection's quality profile %r isn't on Seerr's %s server; using Seerr's default", profile, app_name)
+            return None, None, f"Seerr's default quality profile: {profile!r} isn't on its {app_name} server"
+        return server, profile_id, None
+
     async def _request_seerr(
         self,
         conn: SeerrConnection,
         it: Item,
         media: str,
         kind_id: tuple[str, str],
+        server: SeerrServer | None = None,
+        profile_id: int | None = None,
+        note: str | None = None,
     ) -> tuple[str, str | None, str | None]:
+        """File one request. ``server`` and ``profile_id`` pick the quality profile (else Seerr's default);
+        ``note`` goes on a successful request (why the collection's profile wasn't used)."""
         kind, raw_id = kind_id
         if media == "movie":
             media_type = "movie"
@@ -667,6 +750,9 @@ class RequestService:
         }
         if media_type == "tv":
             body["seasons"] = "all"
+        if server is not None and profile_id is not None:
+            body["serverId"] = server.id
+            body["profileId"] = profile_id
 
         url = conn.url.rstrip("/")
         headers = {"X-Api-Key": conn.api_key, "Accept": "application/json"}
@@ -687,14 +773,18 @@ class RequestService:
 
         if response.status_code == 409:
             return "exists", None, None
+        if response.status_code == 202:
+            # Seerr's NoSeasonsAvailableError: every season of the show is already requested or available.
+            # Nothing was filed, but nothing is wrong either: the same as a 409 duplicate, with a note saying why.
+            return "exists", None, SEERR_NO_SEASONS
 
         if response.status_code in (200, 201):
             try:
                 data = response.json()
                 external_id = str(data["id"]) if isinstance(data, dict) and "id" in data else None
-                return "requested", external_id, None
+                return "requested", external_id, note
             except ValueError:
-                return "requested", None, None
+                return "requested", None, note
 
         resp_text = response.text.lower()
         if "already requested" in resp_text or "already available" in resp_text:
@@ -755,8 +845,8 @@ class RequestService:
         cap: int | None = None,
         profile: str | None = None,
     ) -> RequestOutcome:
-        """Ask for ``items``. ``profile`` names the Radarr/Sonarr quality profile to use instead of the default
-        (Seerr picks its own)."""
+        """Ask for ``items``. ``profile`` names the quality profile to use instead of the default: Radarr's/Sonarr's,
+        or, through Seerr, one on Seerr's default Radarr/Sonarr server."""
         settings = self.load_settings()
         if not settings.enabled:
             raise RequestsDisabled("Requests are disabled")
@@ -783,6 +873,7 @@ class RequestService:
             remaining_cap = None
 
         outcome = RequestOutcome()
+        seerr_choice: dict[str, tuple[SeerrServer | None, int | None, str | None]] = {}  # per media, looked up once
 
         for it in items:
             if it.item in active_items or it.item in seen_in_batch:
@@ -837,7 +928,10 @@ class RequestService:
                     outcome.items.append(RequestItemResult(item=it.item, status=status, error=error_msg))
                     continue
                 via_record = "seerr"
-                status, external_id, error_msg = await self._request_seerr(seerr_conn, it, media, kind_id)
+                if media not in seerr_choice:
+                    seerr_choice[media] = await self._seerr_profile(seerr_conn, media, profile)
+                server, profile_id, note = seerr_choice[media]
+                status, external_id, error_msg = await self._request_seerr(seerr_conn, it, media, kind_id, server, profile_id, note)
             elif target_app == "radarr":
                 via_record = "radarr"
                 radarr_conn = arr.connection(self.db, self.box, self.config, "radarr")

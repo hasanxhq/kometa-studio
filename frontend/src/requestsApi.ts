@@ -47,9 +47,13 @@ export type RequestsSettingsState = {
 
 export type ArrOptions = { quality_profiles: string[]; root_folders: string[] };
 
+// Seerr's default (non-4K) Radarr/Sonarr server and its profiles; null when it has none.
+export type SeerrServerOptions = { server: string; quality_profiles: string[] };
+
 export type RequestsOptions = {
   radarr: ArrOptions | null;
   sonarr: ArrOptions | null;
+  seerr?: { radarr: SeerrServerOptions | null; sonarr: SeerrServerOptions | null } | null;
   errors: Record<string, string>;
 };
 
