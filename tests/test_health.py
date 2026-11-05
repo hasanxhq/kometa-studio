@@ -7,10 +7,10 @@ import httpx
 import pytest
 from fakeplex import REMOTE_URI, SERVER_TOKEN, FakePlex
 
-from kometa_studio.auth import AUTH
-from kometa_studio.db import open_database, set_setting
-from kometa_studio.health import PlexCheck, health, kometa_updates
-from kometa_studio.settings import Settings
+from starr_studio.auth import AUTH
+from starr_studio.db import open_database, set_setting
+from starr_studio.health import PlexCheck, health, kometa_updates
+from starr_studio.settings import Settings
 
 
 @pytest.fixture

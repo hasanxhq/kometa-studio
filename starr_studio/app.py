@@ -58,7 +58,7 @@ from .settings import Settings
 from .tasks import Tasks
 from .tasks_routes import router as tasks_router
 
-STATIC_DIR = Path(str(files("kometa_studio") / "static"))
+STATIC_DIR = Path(str(files("starr_studio") / "static"))
 
 
 api = APIRouter(prefix="/api/v1")

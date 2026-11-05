@@ -1,4 +1,4 @@
-"""Unit and integration tests for kometa_studio.requesting (RequestService)."""
+"""Unit and integration tests for starr_studio.requesting (RequestService)."""
 
 import asyncio
 from datetime import UTC, datetime, timedelta
@@ -8,12 +8,12 @@ import httpx
 import pytest
 from fakeplex import REMOTE_URI, SERVER_TOKEN, FakePlex
 
-from kometa_studio import arr
-from kometa_studio.arr import Connection
-from kometa_studio.crypto import SecretBox
-from kometa_studio.db import open_database
-from kometa_studio.plex_library import PlexServer
-from kometa_studio.requesting import (
+from starr_studio import arr
+from starr_studio.arr import Connection
+from starr_studio.crypto import SecretBox
+from starr_studio.db import open_database
+from starr_studio.plex_library import PlexServer
+from starr_studio.requesting import (
     Item,
     RequestOutcome,
     RequestService,

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from kometa_studio import collections as col
-from kometa_studio.db import apply_migrations, connect, load_migrations, open_database, schema_version
+from starr_studio import collections as col
+from starr_studio.db import apply_migrations, connect, load_migrations, open_database, schema_version
 
 
 def table_names(db: sqlite3.Connection) -> set[str]:

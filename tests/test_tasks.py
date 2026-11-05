@@ -10,12 +10,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio import full_backup
-from kometa_studio.app import create_app
-from kometa_studio.db import open_database
-from kometa_studio.scheduler import utc_text
-from kometa_studio.settings import Settings
-from kometa_studio.tasks import Tasks
+from starr_studio import full_backup
+from starr_studio.app import create_app
+from starr_studio.db import open_database
+from starr_studio.scheduler import utc_text
+from starr_studio.settings import Settings
+from starr_studio.tasks import Tasks
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
 

@@ -4,12 +4,12 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.db import open_database
-from kometa_studio.kometa_command import RunRequest
-from kometa_studio.runner import Runner
-from kometa_studio.scheduler import Due, Scheduler, When, coalesce, covers, days_to_mask, utc_text
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.db import open_database
+from starr_studio.kometa_command import RunRequest
+from starr_studio.runner import Runner
+from starr_studio.scheduler import Due, Scheduler, When, coalesce, covers, days_to_mask, utc_text
+from starr_studio.settings import Settings
 
 EVERY_DAY = 0b1111111
 KOLKATA = "Asia/Kolkata"

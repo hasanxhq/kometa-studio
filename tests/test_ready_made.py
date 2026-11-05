@@ -6,8 +6,8 @@ import httpx
 import pytest
 
 from fakeplex import SERVER_TOKEN, FakePlex
-from kometa_studio.plex_library import PlexServer
-from kometa_studio.ready_made import (
+from starr_studio.plex_library import PlexServer
+from starr_studio.ready_made import (
     DYNAMIC_TYPE_SOURCES,
     Category,
     Entry,
@@ -357,7 +357,7 @@ PEOPLE_DEFAULT = """dynamic_collections:
 
 @pytest.mark.anyio
 async def test_count_ranks_people_from_credits(plex_server, tmp_path):
-    from kometa_studio.plex_people import PeopleScan
+    from starr_studio.plex_people import PeopleScan
 
     fake, server = plex_server
     path = tmp_path / "kometa" / "defaults" / "movie" / "director.yml"

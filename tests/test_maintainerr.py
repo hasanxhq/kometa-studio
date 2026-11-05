@@ -8,9 +8,9 @@ from fakemaintainerr import MAINTAINERR_URL, FakeMaintainerr
 from fakeplex import REMOTE_URI, SERVER_TOKEN, FakePlex
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.maintainerr_guard import reaches, risks
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.maintainerr_guard import reaches, risks
+from starr_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
 FINISHED = {"succeeded", "failed", "cancelled", "interrupted", "timed_out"}
@@ -214,7 +214,7 @@ def test_a_run_that_would_touch_its_collections_is_held(tmp_path, setup):
 
 
 def test_maintainerrs_overlays_go_on_last(tmp_path, setup):
-    from kometa_studio import maintainerr
+    from starr_studio import maintainerr
 
     _, _, fake = setup
     with make_client(tmp_path, setup) as client:
@@ -254,7 +254,7 @@ def test_turning_the_setting_off_or_disconnecting_gives_maintainer_its_schedule_
 
 
 def test_the_daily_redraw_lets_kometa_draw_first_when_something_is_new(tmp_path, setup):
-    from kometa_studio import maintainerr
+    from starr_studio import maintainerr
 
     _, plex, fake = setup
     with make_client(tmp_path, setup) as client:
@@ -329,7 +329,7 @@ def test_other_ways_kometa_changes_posters_are_wrapped(tmp_path, setup, library)
 
 
 def test_waits_for_maintainerrs_own_overlay_run(tmp_path, setup, monkeypatch):
-    from kometa_studio import maintainerr
+    from starr_studio import maintainerr
 
     _, _, fake = setup
     monkeypatch.setattr(maintainerr, "BUSY_WAIT", 0.3)
@@ -369,7 +369,7 @@ def test_maintainerr_down_holds_poster_runs_only_while_the_setting_is_on(tmp_pat
 
 
 def test_drawing_again_is_retried_until_it_works(tmp_path, setup, monkeypatch):
-    from kometa_studio import maintainerr
+    from starr_studio import maintainerr
 
     _, _, fake = setup
     real_handle = fake.handle
@@ -404,8 +404,8 @@ def test_drawing_again_is_retried_until_it_works(tmp_path, setup, monkeypatch):
 
 
 def test_overlays_an_older_studio_paused_are_switched_back_on(tmp_path, setup):
-    from kometa_studio import maintainerr
-    from kometa_studio.db import set_setting
+    from starr_studio import maintainerr
+    from starr_studio.db import set_setting
 
     _, _, fake = setup
     fake.overlays_enabled = False
@@ -438,7 +438,7 @@ def test_a_seedbox_proxy_login(tmp_path, setup):
 
 def test_a_revert_slower_than_the_request_is_waited_for(tmp_path, setup, monkeypatch):
     """As on the real seedbox: the revert walks ~230 shows, seasons and episodes and answers only when done."""
-    from kometa_studio import maintainerr
+    from starr_studio import maintainerr
 
     _, _, fake = setup
     monkeypatch.setattr(maintainerr, "POLL", 0.05)

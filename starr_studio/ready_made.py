@@ -12,9 +12,9 @@ from typing import Any
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
-from kometa_studio import plex_people, tmdb_details, tmdb_languages
-from kometa_studio.kometa_files import _banner, _read
-from kometa_studio.plex_library import PlexServer
+from starr_studio import plex_people, tmdb_details, tmdb_languages
+from starr_studio.kometa_files import _banner, _read
+from starr_studio.plex_library import PlexServer
 
 
 @dataclass

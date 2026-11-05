@@ -8,7 +8,7 @@ WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-# vite.config.ts writes the build to ../kometa_studio/static
+# vite.config.ts writes the build to ../starr_studio/static
 RUN npm run build
 
 # Kometa's image leaves out its JSON schemas (its .dockerignore), so take them from the same release's source
@@ -23,8 +23,8 @@ RUN mkdir /json-schema \
 FROM kometateam/kometa:${KOMETA_TAG}
 WORKDIR /studio
 COPY pyproject.toml VERSION README.md LICENSE ./
-COPY kometa_studio/ ./kometa_studio/
-COPY --from=frontend /src/kometa_studio/static/ ./kometa_studio/static/
+COPY starr_studio/ ./starr_studio/
+COPY --from=frontend /src/starr_studio/static/ ./starr_studio/static/
 COPY --from=schemas /json-schema/ /studio/json-schema/
 # Use the image's system Python, not Kometa's venv, so the two dependency sets never mix.
 RUN /usr/local/bin/python3 -m venv /studio/.venv \
@@ -41,4 +41,4 @@ ENV STUDIO_HOST=0.0.0.0 \
 EXPOSE 8484
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
   CMD ["/studio/.venv/bin/python", "-c", "import os, urllib.request; urllib.request.urlopen(f\"http://127.0.0.1:{os.environ['STUDIO_PORT']}/api/v1/ping\", timeout=4)"]
-ENTRYPOINT ["/tini", "-s", "--", "/studio/.venv/bin/kometa-studio", "serve"]
+ENTRYPOINT ["/tini", "-s", "--", "/studio/.venv/bin/starr-studio", "serve"]

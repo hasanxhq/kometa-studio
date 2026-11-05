@@ -1,9 +1,9 @@
 import httpx
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.config_sections import read_section
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.config_sections import read_section
+from starr_studio.settings import Settings
 
 URL = "http://tautulli.lan:8181"
 KEY = "tautulli-good-key"

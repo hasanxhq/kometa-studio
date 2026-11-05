@@ -7,9 +7,9 @@ import pytest
 from fakenotify import APPRISE_URL, GOTIFY_TOKEN, GOTIFY_URL, NOTIFIARR_KEY, NTFY_TOKEN, NTFY_TOPIC, NTFY_URL, FakeNotify
 from fastapi.testclient import TestClient
 
-from kometa_studio import notifications
-from kometa_studio.app import create_app
-from kometa_studio.settings import Settings
+from starr_studio import notifications
+from starr_studio.app import create_app
+from starr_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
 STUDIO_URL = "http://127.0.0.1:8484/api/v1/kometa/events?token=studio-secret"

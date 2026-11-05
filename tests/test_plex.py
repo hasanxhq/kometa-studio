@@ -5,8 +5,8 @@ import httpx
 import pytest
 from fakeplex import RELAY_URI, REMOTE_URI, RESOURCES_XML, SERVER_TOKEN, FakePlex
 
-from kometa_studio import plex
-from kometa_studio.plex import Candidate, Pin, Probe
+from starr_studio import plex
+from starr_studio.plex import Candidate, Pin, Probe
 
 
 def run(awaitable):

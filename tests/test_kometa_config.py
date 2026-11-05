@@ -3,7 +3,7 @@ import stat
 import pytest
 from ruamel.yaml import YAML
 
-from kometa_studio.kometa_config import ensure_studio_webhooks, read_plex, write_plex
+from starr_studio.kometa_config import ensure_studio_webhooks, read_plex, write_plex
 
 CONFIG = """\
 ## Kometa config, managed by hand until now

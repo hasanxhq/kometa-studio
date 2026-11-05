@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.kometa_files import ConfigReader, _is_builder, mask_secrets, setup_steps, unavailable_sources, unmask_secrets
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.kometa_files import ConfigReader, _is_builder, mask_secrets, setup_steps, unavailable_sources, unmask_secrets
+from starr_studio.settings import Settings
 
 CONFIG = """\
 libraries:

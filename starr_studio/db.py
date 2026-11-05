@@ -1,6 +1,6 @@
 """SQLite access and schema migrations.
 
-Migrations are numbered SQL files in ``kometa_studio/migrations/``
+Migrations are numbered SQL files in ``starr_studio/migrations/``
 (``0001_initial.sql``, ``0002_...``). The schema version is stored in SQLite's
 own ``PRAGMA user_version``, so there is no bookkeeping table to get out of step.
 """
@@ -30,7 +30,7 @@ class Migration:
 def load_migrations() -> list[Migration]:
     """Read the bundled migration files, sorted by version, and check numbering has no gaps."""
     found = []
-    for entry in files("kometa_studio.migrations").iterdir():
+    for entry in files("starr_studio.migrations").iterdir():
         match = MIGRATION_NAME.match(entry.name)
         if match:
             found.append(Migration(int(match.group(1)), entry.name, entry.read_text(encoding="utf-8")))

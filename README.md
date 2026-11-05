@@ -75,7 +75,7 @@ Requests that come through a proxy never count as local for sign-in, unless the 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"
-kometa-studio serve          # API on http://127.0.0.1:8484
+starr-studio serve          # API on http://127.0.0.1:8484
 cd frontend && npm install && npm run dev   # UI on http://localhost:5173, proxying /api
 ```
 

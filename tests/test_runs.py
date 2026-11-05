@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
 FINISHED = {"succeeded", "failed", "cancelled", "interrupted", "timed_out"}

@@ -14,11 +14,11 @@ from fakemaintainerr import MAINTAINERR_URL, FakeMaintainerr
 from fakeplex import REMOTE_URI, SERVER_TOKEN, FakePlex
 from fastapi.testclient import TestClient
 
-from kometa_studio import collections as col
-from kometa_studio.app import create_app
-from kometa_studio.kometa_command import RunRequest
-from kometa_studio.ready_made_runs import ReadyMadeRecorder
-from kometa_studio.settings import Settings
+from starr_studio import collections as col
+from starr_studio.app import create_app
+from starr_studio.kometa_command import RunRequest
+from starr_studio.ready_made_runs import ReadyMadeRecorder
+from starr_studio.settings import Settings
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
 DEFAULTS_SRC = Path(__file__).parent / "fixtures" / "ready_made_defaults" / "defaults"

@@ -6,8 +6,8 @@ import httpx
 import pytest
 from fakeplex import REMOTE_URI, SERVER_TOKEN, FakePlex
 
-from kometa_studio.plex_library import PlexServer
-from kometa_studio.smart_filters import (
+from starr_studio.plex_library import PlexServer
+from starr_studio.smart_filters import (
     Field,
     SmartFilterError,
     fields,

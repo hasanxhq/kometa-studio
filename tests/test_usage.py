@@ -9,12 +9,12 @@ import httpx
 from fastapi.testclient import TestClient
 from test_services import MDBLIST_KEY, FakeServices
 
-from kometa_studio import arr, usage
-from kometa_studio.app import create_app
-from kometa_studio.arr import Arr
-from kometa_studio.db import get_setting, open_database, set_setting
-from kometa_studio.kometa_command import RunRequest
-from kometa_studio.settings import Settings
+from starr_studio import arr, usage
+from starr_studio.app import create_app
+from starr_studio.arr import Arr
+from starr_studio.db import get_setting, open_database, set_setting
+from starr_studio.kometa_command import RunRequest
+from starr_studio.settings import Settings
 
 T0 = datetime(2026, 10, 30, 20, 0, tzinfo=UTC)
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"

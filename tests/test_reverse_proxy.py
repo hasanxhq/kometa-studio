@@ -1,9 +1,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.reverse_proxy import ReverseProxySettings, visitor
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.reverse_proxy import ReverseProxySettings, visitor
+from starr_studio.settings import Settings
 
 PROXY = ("127.0.0.1", 50000)  # a reverse proxy on the same host
 TRUSTED = ["127.0.0.1", "172.18.0.0/16"]

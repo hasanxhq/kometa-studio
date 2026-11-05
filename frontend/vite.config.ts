@@ -9,11 +9,11 @@ export default defineConfig({
   base: "./",
   build: {
     // FastAPI serves the built app from inside the Python package.
-    outDir: "../kometa_studio/static",
+    outDir: "../starr_studio/static",
     emptyOutDir: true,
   },
   server: {
-    // `npm run dev` on :5173 talks to `kometa-studio serve` on :8484.
+    // `npm run dev` on :5173 talks to `starr-studio serve` on :8484.
     proxy: { "/api": "http://127.0.0.1:8484" },
   },
   test: {

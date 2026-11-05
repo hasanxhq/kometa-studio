@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
-from kometa_studio.collections import Ref
-from kometa_studio.config_write import ConfigWriter, SaveRefused
-from kometa_studio.settings import Settings
-from kometa_studio.studio_files import (
+from starr_studio.collections import Ref
+from starr_studio.config_write import ConfigWriter, SaveRefused
+from starr_studio.settings import Settings
+from starr_studio.studio_files import (
     default_file,
     library_folders,
     hand_edited,
@@ -279,7 +279,7 @@ def test_render_built_writes_file_or_url_poster():
 
 
 def test_hand_edits_are_noticed_and_replaced_on_the_next_save(writer_env):
-    from kometa_studio import db as studio_db
+    from starr_studio import db as studio_db
 
     writer, kometa_root, config = writer_env
     (config / ".studio").mkdir(exist_ok=True)

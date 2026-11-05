@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from kometa_studio.tmdb_details import TMDbDetails, TMDbUnavailable
+from starr_studio.tmdb_details import TMDbDetails, TMDbUnavailable
 
 ANSWERS = {
     "/3/movie/348": {"id": 348, "belongs_to_collection": {"id": 8091, "name": "Alien Collection"}, "original_language": "en"},

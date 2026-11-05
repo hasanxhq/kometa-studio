@@ -1,4 +1,4 @@
-"""The ``kometa-studio`` command."""
+"""The ``starr-studio`` command."""
 
 import argparse
 from pathlib import Path
@@ -11,7 +11,7 @@ from .settings import Settings
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="kometa-studio", description="Arr-style web GUI for Kometa.")
+    parser = argparse.ArgumentParser(prog="starr-studio", description="Arr-style web GUI for Kometa.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 

@@ -6,10 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from kometa_studio import default_covers
-from kometa_studio.app import create_app
-from kometa_studio.default_covers import COVERS, DEFAULT_IMAGES, HEIGHT, PEOPLE_IMAGES, WIDTH, DefaultCovers, compose
-from kometa_studio.settings import Settings
+from starr_studio import default_covers
+from starr_studio.app import create_app
+from starr_studio.default_covers import COVERS, DEFAULT_IMAGES, HEIGHT, PEOPLE_IMAGES, WIDTH, DefaultCovers, compose
+from starr_studio.settings import Settings
 
 
 def poster(colour: str = "red") -> bytes:

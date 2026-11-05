@@ -19,7 +19,7 @@ build/
 node_modules/
 frontend/dist/
 # Built frontend, served by FastAPI (npm run build writes it here)
-kometa_studio/static/
+starr_studio/static/
 
 # Local runtime data and secrets
 /data/

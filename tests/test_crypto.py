@@ -1,6 +1,6 @@
 import stat
 
-from kometa_studio.crypto import KEY_FILE, SecretBox
+from starr_studio.crypto import KEY_FILE, SecretBox
 
 
 def test_round_trip_with_a_persistent_key(tmp_path):

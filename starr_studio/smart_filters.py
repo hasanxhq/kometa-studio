@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote, unquote
 
 if TYPE_CHECKING:
-    from kometa_studio.plex_library import PlexServer
+    from starr_studio.plex_library import PlexServer
 
 
 # ══════════════════════════════════════════════════════════════════════════════

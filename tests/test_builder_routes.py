@@ -9,8 +9,8 @@ from PIL import Image
 from ruamel.yaml import YAML
 
 from fakeplex import FakePlex
-from kometa_studio import collections as col
-from kometa_studio.default_covers import DEFAULT_IMAGES
+from starr_studio import collections as col
+from starr_studio.default_covers import DEFAULT_IMAGES
 from test_ready_made_routes import make_client, root, wait_for_flags, wait_for_run, wait_for_task  # noqa: F401 (root is a fixture)
 
 ACTION = {"match": "all", "rules": [{"field": "genre", "modifier": "", "value": ["Action"]}]}

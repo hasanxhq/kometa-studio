@@ -8,12 +8,12 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio import network
-from kometa_studio.app import create_app
-from kometa_studio.crypto import SecretBox
-from kometa_studio.db import open_database, set_setting
-from kometa_studio.network import NetworkSettings, NetworkTransport
-from kometa_studio.settings import Settings
+from starr_studio import network
+from starr_studio.app import create_app
+from starr_studio.crypto import SecretBox
+from starr_studio.db import open_database, set_setting
+from starr_studio.network import NetworkSettings, NetworkTransport
+from starr_studio.settings import Settings
 
 
 class Proxy:
@@ -262,7 +262,7 @@ def test_an_address_that_resets_is_skipped_for_the_next(tmp_path, db):
         async with httpx.AsyncClient(transport=NetworkTransport(db, None, None, httpx.MockTransport(handle))) as http:
             through_studio = (await http.get("https://api.themoviedb.org/3/")).status_code
         async with httpx.AsyncClient(transport=httpx.MockTransport(handle)) as plain:
-            from kometa_studio import doh
+            from starr_studio import doh
 
             through_doh_get = (await doh.get(plain, "https://api.themoviedb.org/3/")).status_code
         return through_studio, through_doh_get

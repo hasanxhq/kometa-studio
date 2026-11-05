@@ -1,4 +1,4 @@
-from kometa_studio.plex_people import rank
+from starr_studio.plex_people import rank
 
 
 def credits(*directors: list[str]) -> list[dict]:

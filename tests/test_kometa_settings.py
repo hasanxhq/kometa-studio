@@ -1,9 +1,9 @@
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.config_sections import with_settings
-from kometa_studio.kometa_files import settings_defaults
-from kometa_studio.settings import Settings
+from starr_studio.app import create_app
+from starr_studio.config_sections import with_settings
+from starr_studio.kometa_files import settings_defaults
+from starr_studio.settings import Settings
 
 TEXT = """\
 libraries:

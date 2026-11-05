@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from kometa_studio.app import create_app
-from kometa_studio.config_write import parse_report
-from kometa_studio.settings import Settings
-from kometa_studio.textmerge import merge3
+from starr_studio.app import create_app
+from starr_studio.config_write import parse_report
+from starr_studio.settings import Settings
+from starr_studio.textmerge import merge3
 
 FAKE_KOMETA = Path(__file__).parent / "fixtures" / "fake_kometa.py"
 
@@ -296,7 +296,7 @@ def test_three_way_merge_keeps_both_sides_or_gives_up():
 
 
 def test_studios_own_edits_keep_a_mixed_style_file_as_it_was(tmp_path):
-    from kometa_studio.kometa_config import write_plex
+    from starr_studio.kometa_config import write_plex
 
     original = (
         "libraries:\n  Movies:\n    collection_files:\n      - default: basic   # four-space list\n"
@@ -332,7 +332,7 @@ def test_sandbox_links_unedited_files_instead_of_copying(tmp_path, kometa):
 def test_removing_a_file_is_backed_up_and_restorable(tmp_path, kometa):
     import asyncio
 
-    from kometa_studio.config_write import ConfigWriter, Edit, SaveRefused, file_hash
+    from starr_studio.config_write import ConfigWriter, Edit, SaveRefused, file_hash
 
     settings = Settings(
         data_dir=kometa / "config" / ".studio",
