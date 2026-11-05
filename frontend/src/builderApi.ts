@@ -11,7 +11,11 @@ export type FilterSpec = { match: "all" | "any"; rules: FilterRule[] };
 
 export type Source =
   | { kind: "filters" }
-  | { kind: "list"; builder: string; value: string; label: string | null };
+  | { kind: "list"; builder: string; value: string; label: string | null }
+  | { kind: "titles"; builder: "tmdb_movie" | "tmdb_show" | "tvdb_show" | "imdb_id"; ids: string[]; label: string | null }
+  | { kind: "search"; filters: FilterSpec };
+
+export type TitleBuilder = Extract<Source, { kind: "titles" }>["builder"];
 
 export type SourceKind = {
   builder: string;
@@ -27,6 +31,8 @@ export type SourceKind = {
 
 export type SourceSearchResult = { value: string; title: string; year: number | null; poster: string | null };
 
+export type SkippedSource = { label: string; why: string };
+
 export type SourcePreview = {
   previewable: boolean;
   why: string | null;
@@ -36,6 +42,7 @@ export type SourcePreview = {
   missing: { id: string; title: string; year: number | null; poster: string | null }[];
   missing_count: number;
   problems: string[];
+  skipped?: SkippedSource[];
 };
 
 export type Poster =
@@ -67,14 +74,18 @@ export type BuilderPreview = {
   problems: string[];
 };
 
+export type VisibleFlags = { library: boolean | null; home: boolean | null; shared: boolean | null };
+
 export type CollectionInput = {
   library: string;
   title: string;
-  source: Source;
+  /** Prefer ``sources``; old responses may only send ``source`` (the first). */
+  source?: Source;
+  sources?: Source[];
   filters: FilterSpec;
   sort_by: string | null;
   limit: number | null;
-  visible: { library: boolean; home: boolean; shared: boolean };
+  visible: VisibleFlags;
   minimum_items: number;
   summary: string | null;
   sort_title: string | null;
@@ -97,6 +108,42 @@ export type BuiltCollection = CollectionInput & {
   run_id: number | null;
   requests: RequestSummary;
 };
+
+/** A collection's sources: ``sources`` when present, else the one ``source`` (old responses). */
+export function sourcesOf(input: { sources?: Source[] | null; source?: Source | null }): Source[] {
+  if (input.sources && input.sources.length > 0) return input.sources;
+  return [input.source ?? { kind: "filters" }];
+}
+
+export function sourceLabel(source: Source): string {
+  if (source.kind === "filters") return "Smart filter";
+  if (source.kind === "list") return source.label?.trim() || source.builder || "List";
+  if (source.kind === "titles") {
+    if (source.label?.trim()) return source.label.trim();
+    const names: Record<TitleBuilder, string> = {
+      tmdb_movie: "TMDb movie",
+      tmdb_show: "TMDb show",
+      tvdb_show: "TVDb show",
+      imdb_id: "IMDb title",
+    };
+    const n = source.ids?.length ?? 0;
+    return n > 0 ? `${names[source.builder]} · ${n}` : names[source.builder];
+  }
+  return "Plex search";
+}
+
+/** True when Download missing can apply (a list or titles source). */
+export function hasMissingSources(sources: Source[]): boolean {
+  return sources.some((source) => source.kind === "list" || source.kind === "titles");
+}
+
+/** True when at least one list/titles source is filled in enough to request missing titles. */
+export function canDownloadMissing(sources: Source[]): boolean {
+  return sources.some(
+    (source) =>
+      (source.kind === "list" && Boolean(source.builder && source.value)) || (source.kind === "titles" && source.ids.length > 0),
+  );
+}
 
 export function isKometaPosterUrl(url: string): boolean {
   return url.includes("raw.githubusercontent.com/Kometa-Team/");
@@ -136,7 +183,7 @@ export const builderApi = {
       "GET",
       `/builder/sources/search?library=${encodeURIComponent(library)}&builder=${encodeURIComponent(builder)}&q=${encodeURIComponent(q)}`,
     ),
-  previewSource: (body: { library: string; source: { builder: string; value: string } }) =>
+  previewSource: (body: { library: string; sources: Source[] } | { library: string; source: { builder: string; value: string } }) =>
     request<SourcePreview>("POST", "/builder/sources/preview", body),
   list: (library: string) => request<{ collections: BuiltCollection[] }>("GET", `/collections?library=${encodeURIComponent(library)}`),
   get: (id: number) => request<BuiltCollection>("GET", `/collections/${id}`),

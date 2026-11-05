@@ -1,17 +1,17 @@
-// Download missing for list-source collections: only shown when the collection can have missing titles.
+// Download missing for list/titles collections: only shown when those sources can have missing titles.
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router";
 
+import { canDownloadMissing, type Source } from "../../builderApi";
 import { requestsApi } from "../../requestsApi";
 import { builderApi } from "../../builderApi";
 import { Checkbox, Field, inputClass } from "../ui";
 
 export function MissingTitles({
   library,
-  builder,
-  value,
+  sources,
   downloadMissing,
   requestCap,
   libraryType,
@@ -21,8 +21,7 @@ export function MissingTitles({
   onRequestProfile,
 }: {
   library: string;
-  builder: string;
-  value: string;
+  sources: Source[];
   downloadMissing: boolean;
   requestCap: number | null;
   libraryType: "movie" | "show";
@@ -32,11 +31,12 @@ export function MissingTitles({
   onRequestProfile: (value: string | null) => void;
 }) {
   const [help, setHelp] = useState(false);
+  const canMissing = canDownloadMissing(sources);
   const settings = useQuery({ queryKey: ["requests", "settings"], queryFn: requestsApi.settings });
   const preview = useQuery({
-    queryKey: ["builder", "sources", "preview", library, builder, value],
-    queryFn: () => builderApi.previewSource({ library, source: { builder, value } }),
-    enabled: Boolean(builder && value) && downloadMissing,
+    queryKey: ["builder", "sources", "preview", library, sources],
+    queryFn: () => builderApi.previewSource({ library, sources }),
+    enabled: canMissing && downloadMissing,
   });
   const enabled = settings.data?.settings.enabled === true;
   const app = libraryType === "show" ? "sonarr" : "radarr";
@@ -53,6 +53,8 @@ export function MissingTitles({
   const defaultProfile = settings.data?.settings[app].quality_profile ?? `${appName}'s first`;
   const missing = preview.data?.missing_count;
   const capText = requestCap === null ? "" : String(requestCap);
+
+  if (!canMissing) return null;
 
   return (
     <section className="flex flex-col gap-3" aria-labelledby="missing-titles-heading">

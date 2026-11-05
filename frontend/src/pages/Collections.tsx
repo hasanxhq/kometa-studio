@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
 
 import { ApiError, api } from "../api";
-import { builderApi, type BuiltCollection } from "../builderApi";
+import { builderApi, sourceLabel, sourcesOf, type BuiltCollection } from "../builderApi";
 import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
 import { PlexPoster } from "../components/PlexPoster";
 import { RetryButton } from "../components/RetryButton";
@@ -29,9 +29,9 @@ function statusLine(collection: BuiltCollection): { text: string; tone: "muted" 
 }
 
 function sourceLine(collection: BuiltCollection): string {
-  const source = collection.source ?? { kind: "filters" as const };
-  if (source.kind === "list") return source.label?.trim() || source.builder;
-  return "Smart filter";
+  const sources = sourcesOf(collection);
+  if (sources.length > 1) return `${sources.length} sources`;
+  return sourceLabel(sources[0] ?? { kind: "filters" });
 }
 
 function CollectionCard({ collection }: { collection: BuiltCollection }) {
