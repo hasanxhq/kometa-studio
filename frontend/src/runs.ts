@@ -69,6 +69,7 @@ export const triggerLabels: Record<RunTrigger, string> = {
   "ready-made": "Ready-made",
   builder: "Collection builder",
   requests: "Requested title arrived",
+  switch_over: "Switch over from Kometa",
 };
 
 export const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];

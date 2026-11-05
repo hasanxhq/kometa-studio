@@ -119,7 +119,7 @@ export type RunSummary = {
   added_to_sonarr?: number;
 };
 
-export type RunTrigger = "manual" | "schedule" | "catch_up" | "arr" | "maintainerr" | "ready-made" | "builder" | "requests";
+export type RunTrigger = "manual" | "schedule" | "catch_up" | "arr" | "maintainerr" | "ready-made" | "builder" | "requests" | "switch_over";
 
 export type Run = {
   id: number;
