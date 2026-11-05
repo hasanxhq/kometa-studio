@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Wheel on each GitHub release:** publishing a release (or pre-release) builds the frontend into a Python wheel and sdist and attaches them. Install with `pip install` on the `.whl`, then run `starr-studio`.
 - **HDR10+** and **Dolby Atmos** in the collection builder's Media filters (movie and TV libraries), new in Kometa 2.5.4. In TV libraries they match shows with an episode that has them, as Kometa does. Plex servers without these filters can't use them: Kometa refuses the collection.
 - **Collections fill themselves:** when a title a collection requested reaches Plex, Studio rebuilds just that collection (run trigger *Requested title arrived*), without waiting for a scheduled run or Radarr/Sonarr's own run-after-import setting.
 - **Quality profile per collection:** with Download missing ticked, the builder lets a collection request in another Radarr/Sonarr quality profile than the default in Settings → Requests (now labelled *Default quality profile*). If that profile is later removed from Radarr/Sonarr, requests use the default. Requests that go through Seerr leave the choice to it.
