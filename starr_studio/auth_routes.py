@@ -27,7 +27,11 @@ Db = Annotated[sqlite3.Connection, Depends(get_db)]
 
 
 def _caller(request: Request) -> Caller:
-    return Caller.from_scope(request.scope, reverse_proxy.load(request.app.state.db).trusted)
+    return Caller.from_scope(
+        request.scope,
+        reverse_proxy.load(request.app.state.db).trusted,
+        allow_local=request.app.state.settings.allow_local,
+    )
 
 
 @router.get("/auth")
@@ -92,6 +96,7 @@ def general(request: Request, db: sqlite3.Connection) -> dict:
             "configured": current is not None,
             "username": current.get("username") if current else None,
             "required": current.get("required", "enabled") if current else "disabled_for_local",
+            "allow_local": settings.allow_local,
         },
         "api_key": auth.api_key(db),
         "timezone": request.app.state.timezone,

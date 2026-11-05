@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # The timezone new schedules use. Unset: the TZ environment variable, else UTC.
     timezone: str | None = None
 
+    # Whether loopback/private/link-local addresses count as local for sign-in. Off on a shared
+    # server (seedbox), where those addresses belong to other customers.
+    allow_local: bool = True
+
     # Runs (handoff v2 §5.3): stop a run after this many seconds, and give Kometa this long to exit after SIGTERM.
     run_timeout: int = 3 * 60 * 60
     kill_after: float = 30

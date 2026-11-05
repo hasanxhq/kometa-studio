@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`STUDIO_ALLOW_LOCAL`:** on a shared server (seedbox), set it to `false` so loopback and private addresses no longer count as local for sign-in. The first-run open-to-local path is refused, and "Disabled for local addresses" behaves like requiring everyone to sign in. Settings → General notes when the switch is off.
 - **HDR10+** and **Dolby Atmos** in the collection builder's Media filters (movie and TV libraries), new in Kometa 2.5.4. In TV libraries they match shows with an episode that has them, as Kometa does. Plex servers without these filters can't use them: Kometa refuses the collection.
 - **Collections fill themselves:** when a title a collection requested reaches Plex, Studio rebuilds just that collection (run trigger *Requested title arrived*), without waiting for a scheduled run or Radarr/Sonarr's own run-after-import setting.
 - **Quality profile per collection:** with Download missing ticked, the builder lets a collection request in another Radarr/Sonarr quality profile than the default in Settings → Requests (now labelled *Default quality profile*). If that profile is later removed from Radarr/Sonarr, requests use the default. Requests that go through Seerr leave the choice to it.
