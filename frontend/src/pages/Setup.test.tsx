@@ -93,6 +93,7 @@ describe("First-run setup", () => {
     expect(await screen.findByText("Kometa is ready to run")).toBeInTheDocument();
     expect(calls.find((c) => c.route === "POST /config/libraries")?.body).toEqual({ name: "Movies" });
     expect(screen.getByRole("link", { name: "Add a collection" })).toHaveAttribute("href", "/libraries");
+    expect(screen.getByRole("link", { name: "Move over" })).toHaveAttribute("href", "/setup/move-over");
     expect(screen.getByRole("link", { name: /connect Radarr, Sonarr/ })).toHaveAttribute("href", "/settings/connect");
   });
 

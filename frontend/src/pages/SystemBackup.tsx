@@ -2,12 +2,15 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router";
 
 import { api, type Backup, type FullBackup } from "../api";
 import { BuiltinTaskRow, useBuiltinTasks } from "../components/BuiltinTasks";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { FileDiff } from "../components/FileDiff";
-import { Button, Card, Tag } from "../components/ui";
+import { Button, Card, Checkbox, Tag } from "../components/ui";
 import { ValidationReport } from "../components/ValidationReport";
+import { importApi, type SwitchOver, type UndoPreview, type UndoResult } from "../importApi";
 import { formatTime } from "../runs";
 
 function Compare({ backup, path }: { backup: Backup; path: string }) {
@@ -159,10 +162,164 @@ function FullBackups() {
   );
 }
 
+function LossList({ label, items }: { label: string; items: { library: string; title: string }[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <p className="font-medium text-text">{label}</p>
+      <ul className="mt-1 list-inside list-disc">
+        {items.map((item) => (
+          <li key={`${item.library}:${item.title}`}>
+            {item.library}: {item.title}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function UndoDialog({ onClose }: { onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [deleteFromPlex, setDeleteFromPlex] = useState(false);
+  const preview = useQuery({ queryKey: ["import", "undo"], queryFn: importApi.undoPreview, retry: false });
+  const undo = useMutation({
+    mutationFn: () => importApi.undo(deleteFromPlex),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["import"] });
+      queryClient.invalidateQueries({ queryKey: ["backups"] });
+    },
+  });
+
+  if (undo.isSuccess) {
+    const result: UndoResult = undo.data;
+    return (
+      <ConfirmDialog title="Undone" confirm="Done" onConfirm={onClose} onCancel={onClose}>
+        <p>
+          Restored {result.restored_files} file{result.restored_files === 1 ? "" : "s"} from {result.backup}.
+        </p>
+        {result.deleted_from_plex.length > 0 && (
+          <ul className="mt-2 list-inside list-disc">
+            {result.deleted_from_plex.map((title) => (
+              <li key={title}>Deleted from Plex: {title}</li>
+            ))}
+          </ul>
+        )}
+      </ConfirmDialog>
+    );
+  }
+
+  if (preview.isPending) {
+    return (
+      <ConfirmDialog title="Undo move over" confirm="Undo" onConfirm={() => {}} onCancel={onClose}>
+        <p>Loading…</p>
+      </ConfirmDialog>
+    );
+  }
+
+  if (preview.isError) {
+    return (
+      <ConfirmDialog title="Undo move over" confirm="Close" onConfirm={onClose} onCancel={onClose}>
+        <p role="alert" className="text-err">
+          {preview.error.message}
+        </p>
+      </ConfirmDialog>
+    );
+  }
+
+  const data: UndoPreview = preview.data;
+  return (
+    <ConfirmDialog
+      title="Undo move over"
+      confirm="Undo"
+      danger
+      busy={undo.isPending}
+      onConfirm={() => undo.mutate()}
+      onCancel={onClose}
+    >
+      <div className="flex flex-col gap-3">
+        <p>This puts every file back from the switch-over backup. You will lose:</p>
+        <LossList label="Collections added since" items={data.loses.added} />
+        <LossList label="Collections changed since" items={data.loses.changed} />
+        {data.files.length > 0 && (
+          <div>
+            <p className="font-medium text-text">Files put back</p>
+            <ul className="mt-1 list-inside list-disc font-mono text-xs">
+              {data.files.map((path) => (
+                <li key={path}>{path}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {data.plex.length > 0 && (
+          <Checkbox checked={deleteFromPlex} onChange={setDeleteFromPlex}>
+            Also delete these collections from Plex
+            <ul className="mt-1 list-inside list-disc text-muted">
+              {data.plex.map((item) => (
+                <li key={`${item.library}:${item.title}`}>
+                  {item.library}: {item.title}
+                </li>
+              ))}
+            </ul>
+          </Checkbox>
+        )}
+        {undo.isError && (
+          <p role="alert" className="text-err">
+            {undo.error.message}
+          </p>
+        )}
+      </div>
+    </ConfirmDialog>
+  );
+}
+
+function MoveOverSection({ active }: { active: SwitchOver | null }) {
+  const [undoOpen, setUndoOpen] = useState(false);
+  if (!active) {
+    return (
+      <Card title="Move over from Kometa">
+        <p className="text-sm text-muted">
+          Bring an existing Kometa setup into Studio.{" "}
+          <Link className="underline" to="/setup/move-over">
+            Move over from Kometa
+          </Link>
+        </p>
+      </Card>
+    );
+  }
+  return (
+    <Card title="Move over from Kometa">
+      <p className="mb-3 text-sm text-muted">
+        Switched over on {formatTime(active.created_at)}. Undo puts every file back; Export downloads a zip of what Studio wrote.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button onClick={() => setUndoOpen(true)}>Undo</Button>
+        <a
+          href={importApi.exportUrl()}
+          download
+          className="inline-flex min-h-11 items-center rounded-control border border-border-strong bg-surface-2 px-4 text-sm font-medium hover:border-muted"
+        >
+          Export
+        </a>
+      </div>
+      {undoOpen && <UndoDialog onClose={() => setUndoOpen(false)} />}
+    </Card>
+  );
+}
+
 export function SystemBackup() {
   const list = useQuery({ queryKey: ["backups"], queryFn: api.backups.list });
+  const switchOver = useQuery({ queryKey: ["import", "switch-over"], queryFn: importApi.switchOver });
   return (
     <div className="flex max-w-5xl flex-col gap-4">
+      {switchOver.isPending ? null : switchOver.isError ? (
+        <Card title="Move over from Kometa">
+          <p role="alert" className="text-err">
+            {switchOver.error.message}
+          </p>
+        </Card>
+      ) : (
+        <MoveOverSection active={switchOver.data.active} />
+      )}
       <FullBackups />
       <Card title="Config backups">
         <p className="mb-2 text-sm text-muted">

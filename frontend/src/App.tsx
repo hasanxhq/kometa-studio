@@ -35,6 +35,7 @@ import { SettingsNotifications } from "./pages/SettingsNotifications";
 import { SettingsPlex } from "./pages/SettingsPlex";
 import { SettingsRequests } from "./pages/SettingsRequests";
 import { SettingsUI } from "./pages/SettingsUI";
+import { MoveOver } from "./pages/MoveOver";
 import { Setup } from "./pages/Setup";
 import { SystemBackup } from "./pages/SystemBackup";
 import { SystemLogs } from "./pages/SystemLogs";
@@ -81,6 +82,7 @@ export function App({ queryClient = new QueryClient() }: { queryClient?: QueryCl
                   return <Route key={page.path} path={page.path} element={Built ? <Built /> : <Placeholder page={page} />} />;
                 })}
                 <Route path="/setup" element={<Setup />} />
+                <Route path="/setup/move-over" element={<MoveOver />} />
                 <Route path="/activity/queue/:id" element={<RunDetail />} />
                 <Route path="/libraries/:name" element={<LibraryDetail />} />
                 <Route path="/libraries/:name/collections/:key" element={<CollectionDetail />} />

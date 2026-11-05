@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { BuiltinTask } from "../api";
+import type { SwitchOver } from "../importApi";
 import { mockApi, renderAt } from "../test-utils";
 
 const backupTask: BuiltinTask = {
@@ -21,11 +22,22 @@ const checkTask: BuiltinTask = { ...backupTask, name: "full_check", label: "Full
 
 const done = { ...backupTask, last: { started_at: "2026-10-30T10:00:00Z", finished_at: "2026-10-30T10:00:09Z", status: "succeeded" as const, message: "starr-studio-20261030-100000.zip: 120 files, 85.0 MB" } };
 
+const active: SwitchOver = {
+  id: 1,
+  created_at: "2026-11-05T12:00:00Z",
+  backup: "b-switch",
+  imported: 2,
+  ready_made: 1,
+  kept: 0,
+  libraries: ["Movies"],
+};
+
 describe("Full backups", () => {
   it("backs up now, and lists the new zip with a download link", async () => {
     let state: BuiltinTask = backupTask;
     let backups: { name: string; size: number; created: string }[] = [];
     const calls = mockApi({
+      "GET /import/switch-over": () => ({ active: null }),
       "GET /backups": () => ({ backups: [], keep: 30 }),
       "GET /tasks": () => ({ tasks: [state, checkTask] }),
       "POST /tasks/full_backup/run": () => {
@@ -78,5 +90,59 @@ describe("Studio's tasks", () => {
       timezone: null,
       options: {},
     });
+  });
+});
+
+describe("Move over from Kometa on Backup", () => {
+  it("links to the wizard when there is no active switch-over", async () => {
+    mockApi({
+      "GET /import/switch-over": () => ({ active: null }),
+      "GET /backups": () => ({ backups: [], keep: 30 }),
+      "GET /tasks": () => ({ tasks: [backupTask, checkTask] }),
+      "GET /backups/full": () => ({ backups: [] }),
+    });
+    renderAt("/system/backup");
+
+    const card = (await screen.findByRole("heading", { name: "Move over from Kometa" })).closest("section")!;
+    expect(within(card).getByRole("link", { name: "Move over from Kometa" })).toHaveAttribute("href", "/setup/move-over");
+  });
+
+  it("shows Undo and Export, lists losses, and posts delete_from_plex", async () => {
+    const calls = mockApi({
+      "GET /import/switch-over": () => ({ active }),
+      "GET /import/undo": () => ({
+        loses: {
+          added: [{ library: "Movies", title: "New Studio Pick" }],
+          changed: [{ library: "Movies", title: "Trending" }],
+        },
+        plex: [
+          { library: "Movies", title: "New Studio Pick" },
+          { library: "Movies", title: "Action" },
+        ],
+        files: ["studio/Movies/genre.yml", "config.yml"],
+      }),
+      "POST /import/undo": () => ({ restored_files: 2, deleted_from_plex: ["Movies: New Studio Pick", "Movies: Action"], backup: "b-switch" }),
+      "GET /backups": () => ({ backups: [], keep: 30 }),
+      "GET /tasks": () => ({ tasks: [backupTask, checkTask] }),
+      "GET /backups/full": () => ({ backups: [] }),
+    });
+    renderAt("/system/backup");
+
+    const card = (await screen.findByRole("heading", { name: "Move over from Kometa" })).closest("section")!;
+    expect(within(card).getByRole("link", { name: "Export" })).toHaveAttribute("href", "/api/v1/import/export");
+    fireEvent.click(within(card).getByRole("button", { name: "Undo" }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(await within(dialog).findByText("Collections added since")).toBeInTheDocument();
+    expect(within(dialog).getByText("Collections changed since")).toBeInTheDocument();
+    expect(within(dialog).getAllByText(/Movies: New Studio Pick/)).toHaveLength(2);
+    expect(within(dialog).getByText(/Movies: Trending/)).toBeInTheDocument();
+    expect(within(dialog).getByText("studio/Movies/genre.yml")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Also delete these collections from Plex/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Undo" }));
+
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /import/undo")).toBe(true));
+    expect(calls.find((c) => c.route === "POST /import/undo")!.body).toEqual({ confirm: true, delete_from_plex: true });
+    expect(await within(dialog).findByText(/Restored 2 files/)).toBeInTheDocument();
   });
 });

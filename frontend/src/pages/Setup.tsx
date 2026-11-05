@@ -110,6 +110,12 @@ function Ready() {
           </Link>
         </div>
         <p className="text-muted">
+          Already use Kometa?{" "}
+          <Link className="underline" to="/setup/move-over">
+            Move over
+          </Link>
+        </p>
+        <p className="text-muted">
           You can do these any time:{" "}
           <Link className="underline" to="/settings/connect">
             connect Radarr, Sonarr, MDBList and Tautulli
