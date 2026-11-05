@@ -30,6 +30,7 @@ import shutil
 import sqlite3
 import tempfile
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -286,7 +287,7 @@ def _key(row: sqlite3.Row) -> tuple:
 
 
 def preview(db: sqlite3.Connection, data_dir: Path, config_dir: Path, row: sqlite3.Row) -> dict:
-    """What Undo would throw away and put back."""
+    """What Undo would throw away, the files it would put back (only those that changed) and Studio's files it removes."""
     path = _backup_path(data_dir, row["backup"])
     created = set(json.loads(row["created_rows"]))
     with zipfile.ZipFile(path) as archive, tempfile.TemporaryDirectory() as scratch:
@@ -295,7 +296,11 @@ def preview(db: sqlite3.Connection, data_dir: Path, config_dir: Path, row: sqlit
             then = {_key(r): r["updated_at"] for r in then_db.execute("SELECT library, category, block, key, updated_at FROM collections")}
         finally:
             then_db.close()
-        files = sorted(name[len("config/"):] for name in archive.namelist() if name.startswith("config/") and not name.endswith("/"))
+        files = sorted(
+            info.filename[len("config/"):]
+            for info in archive.infolist()
+            if info.filename.startswith("config/") and not info.is_dir() and _differs(config_dir / info.filename[len("config/"):], info)
+        )
     added, changed, plex = [], [], []
     for current in db.execute("SELECT * FROM collections ORDER BY library, title"):
         key = _key(current)
@@ -312,6 +317,20 @@ def preview(db: sqlite3.Connection, data_dir: Path, config_dir: Path, row: sqlit
         rel for rel in _studio_files(config_dir) if rel not in set(files)
     ]
     return {"loses": {"added": added, "changed": changed}, "plex": plex, "files": files, "removes": removed}
+
+
+def _differs(path: Path, info: zipfile.ZipInfo) -> bool:
+    """Whether Undo would change ``path``: it's gone, or its bytes aren't the backup's (size, then CRC-32)."""
+    try:
+        if path.stat().st_size != info.file_size:
+            return True
+        crc = 0
+        with open(path, "rb") as handle:
+            while chunk := handle.read(1 << 20):
+                crc = zlib.crc32(chunk, crc)
+        return crc != info.CRC
+    except OSError:
+        return True
 
 
 def _studio_files(config_dir: Path) -> list[str]:
