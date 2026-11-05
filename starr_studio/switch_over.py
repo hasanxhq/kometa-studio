@@ -162,6 +162,22 @@ def _materialise_poster(definition: dict, config_dir: Path, copied: list[Path]) 
     return {**definition, "poster": {"kind": "file", "path": f"{POSTERS}/{name}"}}
 
 
+def insert_imported(
+    db: sqlite3.Connection,
+    config_dir: Path,
+    library: str,
+    imported: list[tuple[str, dict]],
+    copied: list[Path] | None = None,
+) -> list[int]:
+    """Builder rows for imported ``(title, definition)`` pairs; posters become Studio's. Returns new row ids."""
+    created: list[int] = []
+    paths = copied if copied is not None else []
+    for title, definition in imported:
+        definition = _materialise_poster(definition, config_dir, paths)
+        created.append(col.insert_built(db, library, secrets.token_hex(6), title, definition))
+    return created
+
+
 def _backup(config_dir: Path, data_dir: Path, db_path: Path) -> str:
     """A full backup, copied where pruning can't reach it. Returns the copy's name."""
     entry = full_backup.create(config_dir, data_dir, db_path, NO_PRUNE)
@@ -199,9 +215,7 @@ async def switch_over(
     try:
         with db:
             for library in libraries:
-                for title, definition in library.imported:
-                    definition = _materialise_poster(definition, writer.config_dir, copied)
-                    created.append(col.insert_built(db, library.name, secrets.token_hex(6), title, definition))
+                created += insert_imported(db, writer.config_dir, library.name, library.imported, copied)
                 if library.picks:
                     existing = {
                         (row["category"], row["block"], row["key"])

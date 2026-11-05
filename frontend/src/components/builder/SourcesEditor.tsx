@@ -10,10 +10,19 @@ import { TitlesSource } from "./TitlesSource";
 
 export const MAX_SOURCES = 20;
 
-export type DraftSource =
+// `uid` is only for the page: it keys each row, so a row's own state (the pasted ids) stays with its source when
+// another source is removed. It never reaches the API.
+export type DraftSource = { uid: string } & (
   | { kind: "list"; builder: string; value: string; label: string | null }
   | { kind: "titles"; builder: TitleBuilder; ids: string[]; label: string | null }
-  | { kind: "search"; filters: DraftFilters };
+  | { kind: "search"; filters: DraftFilters }
+);
+
+let nextUid = 0;
+function uid(): string {
+  nextUid += 1;
+  return `source-${nextUid}`;
+}
 
 type AddKind = "list" | "titles" | "search";
 
@@ -22,26 +31,27 @@ function defaultTitlesBuilder(libraryType: "movie" | "show"): TitleBuilder {
 }
 
 export function blankListSource(): DraftSource {
-  return { kind: "list", builder: "", value: "", label: null };
+  return { uid: uid(), kind: "list", builder: "", value: "", label: null };
 }
 
 export function blankTitlesSource(libraryType: "movie" | "show"): DraftSource {
   const builder = defaultTitlesBuilder(libraryType);
-  return { kind: "titles", builder, ids: [], label: builder === "tmdb_show" ? "TMDb show" : "TMDb movie" };
+  return { uid: uid(), kind: "titles", builder, ids: [], label: builder === "tmdb_show" ? "TMDb show" : "TMDb movie" };
 }
 
 export function blankSearchSource(fields: BuilderField[]): DraftSource {
-  return { kind: "search", filters: { match: "all", rules: [blankRule(fields)] } };
+  return { uid: uid(), kind: "search", filters: { match: "all", rules: [blankRule(fields)] } };
 }
 
 export function draftSourcesFrom(sources: Source[]): DraftSource[] {
   const out: DraftSource[] = [];
   for (const source of sources) {
-    if (source.kind === "list") out.push({ kind: "list", builder: source.builder, value: source.value, label: source.label });
+    if (source.kind === "list") out.push({ uid: uid(), kind: "list", builder: source.builder, value: source.value, label: source.label });
     else if (source.kind === "titles") {
-      out.push({ kind: "titles", builder: source.builder, ids: [...source.ids], label: source.label });
+      out.push({ uid: uid(), kind: "titles", builder: source.builder, ids: [...source.ids], label: source.label });
     } else if (source.kind === "search") {
       out.push({
+        uid: uid(),
         kind: "search",
         filters: {
           match: source.filters.match,
@@ -123,7 +133,7 @@ export function SourcesEditor({
       <ul className="flex flex-col gap-4">
         {sources.map((source, index) => (
           <li
-            key={index}
+            key={source.uid}
             className="flex flex-col gap-3 rounded-control border border-border bg-surface-2 p-3"
             aria-label={`Source: ${draftLabel(source)}`}
           >
@@ -138,7 +148,7 @@ export function SourcesEditor({
                 library={library}
                 value={source.builder && source.value ? { builder: source.builder, value: source.value, label: source.label } : null}
                 onChange={(next: ListSourceValue) => {
-                  setAt(index, { kind: "list", builder: next.builder, value: next.value, label: next.label });
+                  setAt(index, { uid: source.uid, kind: "list", builder: next.builder, value: next.value, label: next.label });
                   onListPicked?.(next.label);
                 }}
               />
@@ -148,7 +158,7 @@ export function SourcesEditor({
                 libraryType={libraryType}
                 builder={source.builder}
                 ids={source.ids}
-                onChange={(next) => setAt(index, { kind: "titles", ...next })}
+                onChange={(next) => setAt(index, { uid: source.uid, kind: "titles", ...next })}
               />
             )}
             {source.kind === "search" && (
@@ -157,7 +167,7 @@ export function SourcesEditor({
                 fields={fields}
                 value={source.filters}
                 matchName={`search-match-${index}`}
-                onChange={(filters) => setAt(index, { kind: "search", filters })}
+                onChange={(filters) => setAt(index, { uid: source.uid, kind: "search", filters })}
               />
             )}
           </li>

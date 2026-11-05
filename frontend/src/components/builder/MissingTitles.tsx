@@ -42,15 +42,16 @@ export function MissingTitles({
   const app = libraryType === "show" ? "sonarr" : "radarr";
   const appName = app === "sonarr" ? "Sonarr" : "Radarr";
   const via = settings.data?.settings.via;
-  // Seerr chooses the quality itself, so a profile only means something when Studio asks Radarr/Sonarr.
+  // Through Seerr, the profiles are those on Seerr's default Radarr/Sonarr server, and the default is Seerr's own.
   const viaSeerr = via === "seerr" || (via === "auto" && settings.data?.connected.seerr === true);
   const options = useQuery({
     queryKey: ["requests", "options"],
     queryFn: requestsApi.options,
-    enabled: downloadMissing && enabled && !viaSeerr,
+    enabled: downloadMissing && enabled,
   });
-  const profiles = options.data?.[app]?.quality_profiles ?? [];
-  const defaultProfile = settings.data?.settings[app].quality_profile ?? `${appName}'s first`;
+  const profiles = (viaSeerr ? options.data?.seerr?.[app] : options.data?.[app])?.quality_profiles ?? [];
+  const defaultProfile = viaSeerr ? "Seerr's" : (settings.data?.settings[app].quality_profile ?? `${appName}'s first`);
+  const notIn = viaSeerr ? `not on Seerr's ${appName} server` : `not in ${appName}`;
   const missing = preview.data?.missing_count;
   const capText = requestCap === null ? "" : String(requestCap);
 
@@ -91,8 +92,9 @@ export function MissingTitles({
           first.
         </p>
       )}
-      {downloadMissing && enabled && !viaSeerr && (
-        <Field label="Quality profile" hint="The default is set in Settings → Requests.">
+      {downloadMissing && enabled && viaSeerr && <p className="text-sm text-muted">Requests go through Seerr.</p>}
+      {downloadMissing && enabled && (
+        <Field label="Quality profile" hint={viaSeerr ? `From Seerr's default ${appName} server. The default is Seerr's own.` : "The default is set in Settings → Requests."}>
           <select
             className={`${inputClass} w-56`}
             value={requestProfile ?? ""}
@@ -106,14 +108,11 @@ export function MissingTitles({
               </option>
             ))}
             {requestProfile && options.isSuccess && !profiles.includes(requestProfile) && (
-              <option value={requestProfile}>{`${requestProfile} (not in ${appName}, uses the default)`}</option>
+              <option value={requestProfile}>{`${requestProfile} (${notIn}, uses the default)`}</option>
             )}
             {requestProfile && !options.isSuccess && <option value={requestProfile}>{requestProfile}</option>}
           </select>
         </Field>
-      )}
-      {downloadMissing && enabled && viaSeerr && (
-        <p className="text-sm text-muted">Requests go through Seerr, which picks the quality.</p>
       )}
       {downloadMissing && enabled && (
         <Field label="Most per day" hint="Empty uses the setting under Settings → Requests.">

@@ -870,8 +870,8 @@ describe("CollectionBuilder", () => {
     expect(sent.request_profile).toBe("Ultra-HD");
   });
 
-  it("Download missing through Seerr has no quality profile: Seerr picks it", async () => {
-    mockApi(
+  it("Download missing through Seerr offers the profiles on Seerr's default server, and Create sends the choice", async () => {
+    const calls = mockApi(
       baseRoutes({
         "GET /requests/settings": () => ({
           settings: {
@@ -885,7 +885,24 @@ describe("CollectionBuilder", () => {
           seerr: { url: "http://seerr:5055", api_key: "…ab12", username: null, has_password: false },
           connected: { radarr: true, sonarr: false, seerr: true },
         }),
+        "GET /requests/options": () => ({
+          radarr: { quality_profiles: ["Any", "HD-1080p"], root_folders: ["/movies"] },
+          sonarr: null,
+          seerr: { radarr: { server: "Radarr", quality_profiles: ["SD", "Remux-2160p"] }, sonarr: null },
+          errors: {},
+        }),
         "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+        "POST /collections": (body) => ({
+          ...(body as CollectionInput),
+          id: 22,
+          state: "queued",
+          plex_items: null,
+          thumb: null,
+          last_built_at: null,
+          last_error: null,
+          run_id: 11,
+          requests: { waiting: 0, requested: 1, downloading: 0, imported: 0, failed: 0 },
+        }),
       }),
     );
     renderBuilder("/collections/new?library=Movies");
@@ -894,8 +911,17 @@ describe("CollectionBuilder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Use link" }));
     await screen.findByLabelText("Chosen source");
     fireEvent.click(screen.getByRole("checkbox", { name: /Download missing/ }));
-    expect(await screen.findByText("Requests go through Seerr, which picks the quality.")).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Quality profile" })).toBeNull();
+    expect(await screen.findByText("Requests go through Seerr.")).toBeInTheDocument();
+    expect(screen.queryByText(/which picks the quality/)).toBeNull();
+    const profile = await screen.findByRole("combobox", { name: "Quality profile" });
+    expect(within(profile).getAllByRole("option")[0]).toHaveTextContent("Default (Seerr's)");
+    await within(profile).findByRole("option", { name: "Remux-2160p" });
+    expect(within(profile).queryByRole("option", { name: "Any" })).toBeNull(); // Radarr's own aren't offered through Seerr
+    fireEvent.change(profile, { target: { value: "Remux-2160p" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /collections")).toBe(true));
+    const sent = calls.find((c) => c.route === "POST /collections")?.body as CollectionInput;
+    expect(sent.request_profile).toBe("Remux-2160p");
   });
 
   it("edit opens a list collection in the list view with source and order", async () => {
@@ -971,6 +997,30 @@ describe("CollectionBuilder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove source 2" }));
     expect(screen.getAllByRole("listitem", { name: /^Source:/ })).toHaveLength(1);
     expect(screen.getByLabelText("Chosen source")).toHaveTextContent("Die Hard Collection");
+  });
+
+  it("removing a source keeps each remaining row's own ids", async () => {
+    mockApi(
+      baseRoutes({
+        "POST /builder/sources/link": () => ({ builder: "tmdb_collection", value: "1570", label: "Die Hard Collection" }),
+      }),
+    );
+    renderBuilder("/collections/new?library=Movies");
+    await pickList();
+    fireEvent.change(await screen.findByLabelText("Paste a link"), { target: { value: "https://www.themoviedb.org/collection/1570" } });
+    fireEvent.click(screen.getByRole("button", { name: "Use link" }));
+    await screen.findByLabelText("Chosen source");
+    for (const ids of ["550", "603\n604"]) {
+      fireEvent.click(screen.getByRole("button", { name: "Add another source" }));
+      fireEvent.click(screen.getByRole("button", { name: "Individual titles" }));
+      const boxes = await screen.findAllByLabelText("Title ids");
+      fireEvent.change(boxes[boxes.length - 1], { target: { value: ids } });
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove source 2" })); // the first titles source
+    const boxes = screen.getAllByLabelText("Title ids");
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]).toHaveValue("603\n604");
   });
 
   it("editing an old single-source collection still works", async () => {

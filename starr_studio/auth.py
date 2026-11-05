@@ -3,10 +3,10 @@
 Every /api path goes through ``AuthMiddleware``. A request is let in when it carries the API key
 (``X-Api-Key`` header or ``apikey`` query parameter), a valid session cookie, or comes from a local
 address while sign-in allows that. Until a username and password are set, only local addresses get
-in, so a fresh install is never open to the internet. A request relayed by a proxy (it carries
-``X-Forwarded-For`` or similar) never counts as local, the proxy itself being usually on the same host,
-unless it comes from a proxy trusted on Settings → General: then the visitor's own address decides
-(reverse_proxy.visitor).
+in, so a fresh install is never open to the internet. ``STUDIO_ALLOW_LOCAL=false`` (shared servers)
+makes no address count as local. A request relayed by a proxy (it carries ``X-Forwarded-For`` or
+similar) never counts as local, the proxy itself being usually on the same host, unless it comes from
+a proxy trusted on Settings → General: then the visitor's own address decides (reverse_proxy.visitor).
 
 Changes from another site are refused whatever the credentials: a browser always sends ``Origin``
 on a cross-site POST, and it must match the host Studio was reached at.
@@ -153,9 +153,10 @@ class Caller:
     query: dict[str, list[str]]
     scheme: str
     trusted: list[str]  # proxies whose X-Forwarded-For Studio believes
+    allow_local: bool = True  # STUDIO_ALLOW_LOCAL: when false, no address counts as local for sign-in
 
     @classmethod
-    def from_scope(cls, scope: dict, trusted: list[str] | None = None) -> "Caller":
+    def from_scope(cls, scope: dict, trusted: list[str] | None = None, *, allow_local: bool = True) -> "Caller":
         client = scope.get("client")
         return cls(
             method=scope["method"],
@@ -165,6 +166,7 @@ class Caller:
             query=parse_qs(scope.get("query_string", b"").decode("latin-1")),
             scheme=scope.get("scheme", "http"),
             trusted=trusted or [],
+            allow_local=allow_local,
         )
 
     def header(self, name: bytes) -> str | None:
@@ -178,7 +180,8 @@ class Caller:
 
     @property
     def local(self) -> bool:
-        return is_local(*reverse_proxy.visitor(self.client_host, self.headers, self.trusted))
+        """Local for sign-in: network-local, and only when STUDIO_ALLOW_LOCAL is on."""
+        return self.allow_local and is_local(*reverse_proxy.visitor(self.client_host, self.headers, self.trusted))
 
     @property
     def cookie(self) -> str | None:
@@ -231,6 +234,15 @@ def decide(db: sqlite3.Connection, caller: Caller, *, open_paths: bool = True) -
     if settings is None:
         if caller.local:
             return Decision(True, via="local")
+        if not caller.allow_local:
+            return Decision(
+                False,
+                401,
+                "setup",
+                "Sign-in isn't set up yet, and local addresses aren't trusted (STUDIO_ALLOW_LOCAL=false). "
+                "Set STUDIO_ALLOW_LOCAL=true temporarily, open Studio from a trusted machine "
+                "(for example over an SSH tunnel), and set a username and password in Settings → General.",
+            )
         return Decision(
             False,
             401,
@@ -254,7 +266,8 @@ class AuthMiddleware:
             await self.app(scope, receive, send)
             return
         db = scope["app"].state.db
-        decision = decide(db, Caller.from_scope(scope, reverse_proxy.load(db).trusted))
+        allow_local = scope["app"].state.settings.allow_local
+        decision = decide(db, Caller.from_scope(scope, reverse_proxy.load(db).trusted, allow_local=allow_local))
         if decision.allowed:
             scope.setdefault("state", {})["auth_via"] = decision.via
             await self.app(scope, receive, send)

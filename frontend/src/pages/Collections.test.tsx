@@ -239,4 +239,98 @@ describe("Collections list", () => {
     fireEvent.change(screen.getByLabelText("Apply to"), { target: { value: "TV Shows" } });
     expect(await screen.findByRole("listitem", { name: "Shows One" })).toBeInTheDocument();
   });
+
+  it("uploads a collection file with X-Filename, shows the landing, and Adds with confirm", async () => {
+    const yaml = "collections:\n  Dramas:\n    smart_filter:\n      any:\n        genre: Drama\n";
+    const calls: { route: string; body: unknown; headers?: HeadersInit }[] = [];
+    const landing = {
+      kind: "file",
+      value: "dramas.yml",
+      path: null,
+      action: "replace",
+      reason: null,
+      ready_made: null,
+      collections: [
+        {
+          name: "Dramas",
+          result: "imported",
+          reason: null,
+          notes: [],
+          definition: { source: { kind: "filters" } },
+          kept_with_file: false,
+        },
+      ],
+    };
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input).replace(/^.*\/api\/v1/, "");
+      const route = `${init?.method ?? "GET"} ${path}`;
+      let body: unknown;
+      if (init?.body !== undefined) {
+        try {
+          body = JSON.parse(String(init.body));
+        } catch {
+          body = init.body;
+        }
+      }
+      calls.push({ route, body, headers: init?.headers });
+      if (route === "GET /auth") return new Response(JSON.stringify({ allowed: true, reason: null, message: null, configured: true, signed_in: true, local: true }));
+      if (route === "GET /config") return new Response(JSON.stringify(config["GET /config"]()));
+      if (route === "GET /collections?library=Movies") return new Response(JSON.stringify({ collections: [] }));
+      if (route.startsWith("POST /import/upload?")) {
+        return new Response(JSON.stringify({ token: "abcdabcdabcdabcd", library: "Movies", file: landing }));
+      }
+      if (route === "POST /import/upload/abcdabcdabcdabcd/add") {
+        return new Response(JSON.stringify({ action: "replace", imported: ["Dramas"], kept_file: null, run_id: 17, studio: [] }));
+      }
+      return new Response(JSON.stringify({ detail: `no mock for ${route}` }), { status: 404 });
+    });
+
+    renderCollections("/collections?library=Movies");
+    fireEvent.click(await screen.findByRole("button", { name: "Upload a collection file" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Upload a collection file" })).toBeInTheDocument();
+
+    const input = dialog.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File([yaml], "dramas.yml", { type: "application/x-yaml" });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(calls.some((c) => c.route.startsWith("POST /import/upload?"))).toBe(true));
+    const uploadCall = calls.find((c) => c.route.startsWith("POST /import/upload?"))!;
+    expect(uploadCall.route).toBe("POST /import/upload?library=Movies");
+    expect(uploadCall.body).toBe(yaml);
+    const headers = new Headers(uploadCall.headers);
+    expect(headers.get("X-Filename")).toBe("dramas.yml");
+    expect(headers.get("Content-Type")).toBe("application/x-yaml");
+
+    expect(await within(dialog).findByText("Dramas")).toBeInTheDocument();
+    expect(within(dialog).getByText("Imported")).toBeInTheDocument();
+    expect(within(dialog).getByText("Replaced by Studio")).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(calls.some((c) => c.route === "POST /import/upload/abcdabcdabcdabcd/add")).toBe(true));
+    expect(calls.find((c) => c.route === "POST /import/upload/abcdabcdabcdabcd/add")!.body).toEqual({ library: "Movies", confirm: true });
+    expect(await within(dialog).findByText(/Imported 1 collection/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: "Open the run" })).toHaveAttribute("href", "/activity/queue/17");
+  });
+
+  it("shows a 4xx message when upload is refused", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input).replace(/^.*\/api\/v1/, "");
+      const route = `${init?.method ?? "GET"} ${path}`;
+      if (route === "GET /auth") return new Response(JSON.stringify({ allowed: true, reason: null, message: null, configured: true, signed_in: true, local: true }));
+      if (route === "GET /config") return new Response(JSON.stringify(config["GET /config"]()));
+      if (route === "GET /collections?library=Movies") return new Response(JSON.stringify({ collections: [] }));
+      if (route.startsWith("POST /import/upload?")) {
+        return new Response(JSON.stringify({ detail: "File must hold a mapping at the top level (a Kometa collection file)" }), { status: 422 });
+      }
+      return new Response(JSON.stringify({ detail: `no mock for ${route}` }), { status: 404 });
+    });
+
+    renderCollections("/collections?library=Movies");
+    fireEvent.click(await screen.findByRole("button", { name: "Upload a collection file" }));
+    const dialog = await screen.findByRole("dialog");
+    const input = dialog.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["- just a list\n"], "bad.yml", { type: "application/x-yaml" })] } });
+    expect(await within(dialog).findByText(/File must hold a mapping/)).toBeInTheDocument();
+  });
 });

@@ -1,6 +1,6 @@
-// Move over from Kometa: report, switch-over, undo and export.
+// Move over from Kometa: report, switch-over, undo, export, and uploading a collection file.
 
-import { request } from "./api";
+import { ApiError, SIGNED_OUT_EVENT, request } from "./api";
 import { urlBase } from "./base";
 
 export type Landing = {
@@ -74,6 +74,34 @@ export type UndoResult = {
   backup: string;
 };
 
+export type UploadStaging = {
+  token: string;
+  library: string;
+  file: FileLanding;
+};
+
+export type UploadAddResult = {
+  action: "replace" | "keep";
+  imported: string[];
+  kept_file: string | null;
+  run_id: number;
+  studio?: string[];
+};
+
+async function errorFrom(response: Response): Promise<ApiError> {
+  let detail: unknown;
+  try {
+    detail = ((await response.json()) as { detail?: unknown }).detail;
+  } catch {
+    // not JSON
+  }
+  let message = `${response.status} ${response.statusText}`;
+  if (typeof detail === "string") message = detail;
+  else if (Array.isArray(detail)) message = detail.map((item: { msg?: string }) => item.msg ?? "").join("; ");
+  else if (detail && typeof detail === "object" && "message" in detail) message = String((detail as { message: unknown }).message);
+  return new ApiError(response.status, message, detail);
+}
+
 export const importApi = {
   report: () => request<ImportReport>("GET", "/import"),
   switchOver: () => request<{ active: SwitchOver | null }>("GET", "/import/switch-over"),
@@ -81,4 +109,23 @@ export const importApi = {
   undoPreview: () => request<UndoPreview>("GET", "/import/undo"),
   undo: (delete_from_plex: boolean) => request<UndoResult>("POST", "/import/undo", { confirm: true, delete_from_plex }),
   exportUrl: () => `${urlBase}/api/v1/import/export`,
+  /** Stage a collection YAML file (raw body, no multipart). */
+  upload: async (library: string, text: string, filename: string): Promise<UploadStaging> => {
+    const response = await fetch(`${urlBase}/api/v1/import/upload?library=${encodeURIComponent(library)}`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/x-yaml",
+        "X-Filename": filename,
+      },
+      body: text,
+    });
+    if (!response.ok) {
+      if (response.status === 401) window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+      throw await errorFrom(response);
+    }
+    return response.json();
+  },
+  addUpload: (token: string, library: string) =>
+    request<UploadAddResult>("POST", `/import/upload/${encodeURIComponent(token)}/add`, { library, confirm: true }),
 };
