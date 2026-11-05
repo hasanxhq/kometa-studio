@@ -9,8 +9,8 @@ LOCAL = ("192.168.1.20", 50000)
 REMOTE = ("8.8.8.8", 50000)
 
 
-def make_client(tmp_path, client=LOCAL):
-    app = create_app(Settings(data_dir=tmp_path / "data"), static_dir=tmp_path / "no-static")
+def make_client(tmp_path, client=LOCAL, **settings):
+    app = create_app(Settings(data_dir=tmp_path / "data", **settings), static_dir=tmp_path / "no-static")
     return TestClient(app, client=client)
 
 
@@ -96,6 +96,30 @@ def test_disabled_for_local_addresses(tmp_path):
         assert remote.get("/api/v1/status").json()["detail"]["reason"] == "login"
         remote.post("/api/v1/auth/login", json={"username": "hasan", "password": "correct horse"})
         assert remote.get("/api/v1/status").status_code == 200
+
+
+def test_allow_local_off_refuses_first_run(tmp_path):
+    # Shared server: no address counts as local, so the first-run path refuses everyone.
+    with make_client(tmp_path, allow_local=False) as local:
+        refused = local.get("/api/v1/status")
+        status = local.get("/api/v1/auth").json()
+    assert refused.status_code == 401
+    assert refused.json()["detail"]["reason"] == "setup"
+    assert "STUDIO_ALLOW_LOCAL=false" in refused.json()["detail"]["message"]
+    assert (status["allowed"], status["reason"], status["local"]) == (False, "setup", False)
+
+
+def test_allow_local_off_disabled_for_local_needs_sign_in(tmp_path):
+    # disabled_for_local behaves like enabled when STUDIO_ALLOW_LOCAL is off; API key and session still work.
+    with make_client(tmp_path) as local:
+        key = set_up_sign_in(local, required="disabled_for_local")["api_key"]
+        local.post("/api/v1/auth/logout")
+    with make_client(tmp_path, allow_local=False) as local:
+        assert local.get("/api/v1/status").json()["detail"]["reason"] == "login"
+        assert local.get("/api/v1/settings/general", headers={"X-Api-Key": key}).json()["auth"]["allow_local"] is False
+        assert local.get("/api/v1/status", headers={"X-Api-Key": key}).status_code == 200
+        assert local.post("/api/v1/auth/login", json={"username": "hasan", "password": "correct horse"}).status_code == 200
+        assert local.get("/api/v1/status").status_code == 200
 
 
 def test_the_api_key_opens_everything_and_can_be_replaced(tmp_path):
