@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { SIGNED_OUT_EVENT, api } from "../api";
+import { Wordmark } from "./Logo";
 import { Button, Field, inputClass } from "./ui";
 
 function Centered({ children }: { children: ReactNode }) {
@@ -11,7 +12,7 @@ function Centered({ children }: { children: ReactNode }) {
     <div className="flex min-h-full items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center font-display text-2xl font-semibold">
-          Starr <span className="text-accent">Studio</span>
+          <Wordmark />
         </div>
         <section className="rounded-card border border-border bg-surface p-6">{children}</section>
       </div>

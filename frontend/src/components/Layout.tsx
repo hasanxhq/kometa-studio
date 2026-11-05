@@ -6,7 +6,7 @@ import { useAdvanced } from "../advanced";
 import { api } from "../api";
 import { HeaderTitleProvider, useHeaderTitleValue } from "./HeaderTitle";
 import { JobsButton, JobsDrawer } from "./Jobs";
-import { StreakMark } from "./StreakMark";
+import { PosterMark, Wordmark } from "./Logo";
 import { pageTitle, sections } from "../nav";
 
 function navLinkClass({ isActive }: { isActive: boolean }) {
@@ -121,10 +121,8 @@ function LayoutFrame() {
         ].join(" ")}
       >
         <div className="flex h-14 items-center gap-2 px-6 font-display text-lg font-semibold">
-          <StreakMark />
-          <span>
-            Starr <span className="ml-1 text-accent">Studio</span>
-          </span>
+          <PosterMark />
+          <Wordmark />
         </div>
         <Sidebar onNavigate={() => setMenuOpen(false)} />
         {/* On phones the header has no room for it. */}

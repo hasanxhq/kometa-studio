@@ -22,11 +22,17 @@ PUBLIC = HERE.parent / "frontend" / "public"
 OVERSAMPLE = 16  # whole-pixel edges stay sharp when scaled down by a box filter
 NS = "{http://www.w3.org/2000/svg}"
 
-K = "M14.5 10H22.5A1.5 1.5 0 0 1 24 11.5V37.5L50 54H36L24 45V52.5A1.5 1.5 0 0 1 22.5 54H14.5A1.5 1.5 0 0 1 13 52.5V11.5A1.5 1.5 0 0 1 14.5 10Z"
-COMET = "M24 35L40.35 10.55A8 8 0 1 1 50.48 22.2Z"
+# The star in "St*arr", on a 64-unit grid: six round-ended arms. In the words it is 0.46 em tall, its foot 0.26 em above
+# the baseline (raised, like an asterisk), with 0.03 em on each side.
+WORD_STAR = "M26 11L26 53A6 6 0 0 0 38 53L38 11A6 6 0 0 0 26 11ZM47.19 16.3L10.81 37.3A6 6 0 0 0 16.81 47.7L53.19 26.7A6 6 0 0 0 47.19 16.3ZM53.19 37.3L16.81 16.3A6 6 0 0 0 10.81 26.7L47.19 47.7A6 6 0 0 0 53.19 37.3Z"
+STAR_SIZE, STAR_LIFT, STAR_SIDE = 0.46, 0.26, 0.03
 # The lockup's proportions, from the logo canvas: a 44 px mark, 30 px type, a 12 px gap.
 MARK, TYPE, GAP = 44, 30, 12
-LOCKUPS = {"lockup-on-dark.svg": ("#ecedee", "#f2b544", "#ecedee", "#f2b544"), "lockup-on-light.svg": ("#1a1406", "#b87a0a", "#1a1406", "#8a5a00")}
+# Lockup file: (the mark it uses, words, "Studio", the star)
+LOCKUPS = {
+    "lockup-on-dark.svg": ("mark-on-dark.svg", "#ecedee", "#f2b544", "#f2b544"),
+    "lockup-on-light.svg": ("mark-on-light.svg", "#1a1406", "#8a5a00", "#b87a0a"),
+}
 
 
 def flatten(d: str) -> list[list[tuple[float, float]]]:
@@ -61,7 +67,7 @@ def render(source: Path, size: int) -> Image.Image:
             for child in element:
                 draw(child, (shift[0] + x * zoom, shift[1] + y * zoom), zoom * factor)
             return
-        fill = ImageColor.getrgb(element.attrib["fill"]) + (255,)
+        fill = ImageColor.getrgb(element.attrib["fill"]) + (round(255 * float(element.attrib.get("opacity", 1))),)
         mask = Image.new("L", (canvas, canvas), 0)
         pencil = ImageDraw.Draw(mask)
         if element.tag == f"{NS}rect":
@@ -71,7 +77,9 @@ def render(source: Path, size: int) -> Image.Image:
         elif element.tag == f"{NS}path":
             for polygon in flatten(element.attrib["d"]):
                 pencil.polygon([(shift[0] + px * zoom, shift[1] + py * zoom) for px, py in polygon], fill=255)
-        image.paste(fill, (0, 0), mask)
+        layer = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
+        layer.paste(fill, (0, 0), mask)
+        image.alpha_composite(layer)
 
     for element in root:
         draw(element, (0.0, 0.0), scale)
@@ -93,6 +101,7 @@ def icons() -> None:
 
 
 def lockups(font_path: Path) -> None:
+    """The mark, then "St*arr Studio" as outlines: "St", the star, "arr", and "Studio" in the accent colour."""
     import uharfbuzz as hb
     from fontTools.pens.svgPathPen import SVGPathPen
     from fontTools.pens.transformPen import TransformPen
@@ -103,38 +112,51 @@ def lockups(font_path: Path) -> None:
     em = font["head"].unitsPerEm
     scale = TYPE / em
     face = hb.Font(hb.Face(font_path.read_bytes()))
-    text = "Starr Studio"
-    buffer = hb.Buffer()
-    buffer.add_str(text)
-    buffer.guess_segment_properties()
-    hb.shape(face, buffer, {"kern": True, "liga": True})
+
+    def shape(text: str) -> list[tuple[str, int, int, int]]:
+        """(glyph name, cluster, x offset, x advance) per glyph, kerned. Each run is shaped alone: no kerning across the star."""
+        buffer = hb.Buffer()
+        buffer.add_str(text)
+        buffer.guess_segment_properties()
+        hb.shape(face, buffer, {"kern": True, "liga": True})
+        return [(order[i.codepoint], i.cluster, p.x_offset, p.x_advance) for i, p in zip(buffer.glyph_infos, buffer.glyph_positions)]
 
     # The mark's own edges, not its 64-unit box, set the left edge and the height.
-    points = [point for d in (K, COMET) for polygon in flatten(d) for point in polygon]
+    marks = {name: [el for el in ET.parse(SVG / name).getroot() if el.tag == f"{NS}path"] for name, *_ in LOCKUPS.values()}
+    points = [point for el in next(iter(marks.values())) for polygon in flatten(el.attrib["d"]) for point in polygon]
     zoom = MARK / 64
-    left, right = min(x for x, _ in points) * zoom, max(x for x, _ in points) * zoom
+    left = min(x for x, _ in points) * zoom
     top, bottom = min(y for _, y in points) * zoom, max(y for _, y in points) * zoom
     cap = font["OS/2"].sCapHeight * scale
     baseline = (top + bottom) / 2 + cap / 2  # the words sit level with the mark's middle
     origin = 44 + GAP  # where the canvas's 44 px mark box ends, plus the gap
 
-    paths = {False: [], True: []}
-    pen_x = 0
-    for info, position in zip(buffer.glyph_infos, buffer.glyph_positions):
-        pen = SVGPathPen(glyphs, ntos=lambda n: f"{n:.2f}".rstrip("0").rstrip("."))
-        x = origin + (pen_x + position.x_offset) * scale
-        glyphs[order[info.codepoint]].draw(TransformPen(pen, (scale, 0, 0, -scale, x, baseline)))
-        if commands := pen.getCommands():
-            paths[info.cluster >= text.index("Studio")].append(commands)
-        pen_x += position.x_advance
-    end = origin + pen_x * scale
-    width, height = end - left, bottom - top
+    paths: dict[str, list[str]] = {"word": [], "studio": []}
+    x = origin
 
-    for name, (k, comet, word, accent) in LOCKUPS.items():
+    def set_run(text: str, studio_from: int | None = None) -> None:
+        nonlocal x
+        for name, cluster, offset, advance in shape(text):
+            pen = SVGPathPen(glyphs, ntos=lambda n: f"{n:.2f}".rstrip("0").rstrip("."))
+            glyphs[name].draw(TransformPen(pen, (scale, 0, 0, -scale, x + offset * scale, baseline)))
+            if commands := pen.getCommands():
+                paths["studio" if studio_from is not None and cluster >= studio_from else "word"].append(commands)
+            x += advance * scale
+
+    set_run("St")
+    star_size = STAR_SIZE * TYPE
+    star_x, star_y = x + STAR_SIDE * TYPE, baseline - (STAR_LIFT + STAR_SIZE) * TYPE
+    x += (STAR_SIZE + 2 * STAR_SIDE) * TYPE
+    set_run("arr Studio", studio_from="arr Studio".index("Studio"))
+    width, height = x - left, bottom - top
+    star = f'<path fill="{{}}" transform="translate({star_x:.2f} {star_y:.2f}) scale({star_size / 64:.4f})" d="{WORD_STAR}"/>'
+
+    for name, (mark, word, studio, star_fill) in LOCKUPS.items():
+        drawn = "".join("    <path " + " ".join(f'{key}="{value}"' for key, value in el.attrib.items()) + "/>\n" for el in marks[mark])
         (SVG / name).write_text(
             f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{left:.2f} {top:.2f} {width:.2f} {height:.2f}" width="{width * 2:.0f}" height="{height * 2:.0f}" role="img" aria-label="Starr Studio">\n'
-            f'  <g transform="scale({zoom})">\n    <path fill="{k}" d="{K}"/>\n    <path fill="{comet}" d="{COMET}"/>\n  </g>\n'
-            f'  <path fill="{word}" d="{"".join(paths[False])}"/>\n  <path fill="{accent}" d="{"".join(paths[True])}"/>\n</svg>\n',
+            f'  <g transform="scale({zoom})">\n{drawn}  </g>\n'
+            f'  <path fill="{word}" d="{"".join(paths["word"])}"/>\n  {star.format(star_fill)}\n  <path fill="{studio}" d="{"".join(paths["studio"])}"/>\n</svg>\n',
             encoding="utf-8",
         )
 
