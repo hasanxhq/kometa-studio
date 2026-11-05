@@ -1,11 +1,14 @@
 """The collection builder: collections from a library's own data (phase 2) or from a list (phase 3).
 
 A builder collection is a row in ``collections`` (category ``built``, origin ``built``) with the user's definition as
-JSON. Its ``source`` is ``{"kind": "filters"}`` (a Kometa ``smart_filter``) or ``{"kind": "list", "builder", "value",
-"label"}`` (one of Kometa's list builders, see ``list_sources``). Studio writes it into ``studio/<library>/built.yml``
+JSON. Its ``sources`` (rows from before hold one ``source``; ``list_sources.sources_of`` reads either) are one
+``{"kind": "filters"}`` (a Kometa ``smart_filter``, which Kometa takes only on its own), or up to twenty of: ``{"kind":
+"list", "builder", "value", "label"}`` (one of Kometa's list builders, see ``list_sources``), ``{"kind": "titles",
+"builder", "ids", "label"}`` (single titles by TMDb, TVDb or IMDb id) and one ``{"kind": "search", "filters"}`` (a Kometa
+``plex_search``). Kometa adds up what a collection's builders find. Studio writes it into ``studio/<library>/built.yml``
 labelled ``Studio``, checks the save with Kometa, and runs just that collection. The filter preview asks Plex directly
-with the query Kometa's smart collection would use (``smart_filters.plex_query``); the list preview reads the list and
-splits it into what the library has and what it's missing. Both show before anything is saved.
+with the query Kometa's smart collection would use (``smart_filters.plex_query``); the list preview reads the lists and
+titles and splits them into what the library has and what it's missing. Both show before anything is saved.
 """
 
 from __future__ import annotations
@@ -94,11 +97,14 @@ class PosterIn(BaseModel):
 
 
 class SourceIn(BaseModel):
-    """Where the titles come from: Plex filters (a smart collection), or one of Kometa's list builders."""
+    """Where titles come from: Plex filters (a smart collection, alone), one of Kometa's list builders, single titles by
+    id, or a Plex search (Kometa's ``plex_search``, which can sit beside lists)."""
 
-    kind: Literal["filters", "list"] = "filters"
+    kind: Literal["filters", "list", "titles", "search"] = "filters"
     builder: str | None = None
     value: str | int | None = None
+    ids: list[str | int] | str | None = None  # titles: TMDb/TVDb numbers or IMDb tt ids
+    filters: FiltersIn | None = None  # search: its rules
     label: str | None = None
 
 
@@ -106,6 +112,7 @@ class CollectionIn(BaseModel):
     library: str
     title: str = Field(min_length=1, max_length=200)
     source: SourceIn = Field(default_factory=SourceIn)
+    sources: list[SourceIn] | None = None  # when given, wins over source
     filters: FiltersIn = Field(default_factory=FiltersIn)
     sort_by: str | None = None
     limit: int | None = Field(default=None, ge=1)
@@ -137,7 +144,8 @@ class ListSourceIn(BaseModel):
 
 class ListPreviewIn(BaseModel):
     library: str
-    source: ListSourceIn
+    source: ListSourceIn | None = None
+    sources: list[SourceIn] | None = None  # when given, the preview is their union
 
 
 class LinkIn(BaseModel):
@@ -292,15 +300,27 @@ def _kometa_poster(category: str, key: str, attrs: dict) -> dict | None:
     return {"kind": "url", "url": f"{DEFAULT_IMAGES}/{path}.jpg"}
 
 
+def _sources(body: CollectionIn) -> list[SourceIn]:
+    return body.sources if body.sources is not None else [body.source]
+
+
 def _source_dict(source: SourceIn) -> dict:
+    label = (source.label or "").strip() or None
     if source.kind == "filters":
         return {"kind": "filters"}
-    return {"kind": "list", "builder": source.builder, "value": str(source.value), "label": (source.label or "").strip() or None}
+    if source.kind == "titles":
+        ids = source.ids if isinstance(source.ids, list) else [source.ids] if source.ids else []
+        return {"kind": "titles", "builder": source.builder, "ids": [str(i) for i in ids], "label": label}
+    if source.kind == "search":
+        return {"kind": "search", "filters": (source.filters or FiltersIn()).model_dump()}
+    return {"kind": "list", "builder": source.builder, "value": str(source.value), "label": label}
 
 
 def _definition(body: CollectionIn) -> dict:
+    sources = [_source_dict(source) for source in _sources(body)]
     return {
-        "source": _source_dict(body.source),
+        "source": sources[0],  # what Studio before several sources reads
+        "sources": sources,
         "filters": body.filters.model_dump(),
         "sort_by": body.sort_by,
         "limit": body.limit,
@@ -321,19 +341,23 @@ def _requests_service(request: Request):
 
 async def _missing_now(request: Request, settings, context: Context, body: CollectionIn, db: sqlite3.Connection) -> list:
     """The titles a list collection with Download missing would request right away: what its preview misses, never asked for before."""
-    if not body.download_missing or body.source.kind != "list":
+    sources = [_source_dict(source) for source in _sources(body)]
+    if not body.download_missing or not list_sources.has_missing(sources):
+        return []
+    # Sources Studio can't read now are left out: Kometa's missing report covers them after the build.
+    items, _skipped, _problems, _read = await _read_sources(_lists(request, settings), sources, context.library_type)
+    if not items:
         return []
     try:
-        items = await _lists(request, settings).items(str(body.source.builder), str(body.source.value), context.library_type)
         library = await context.server.all_items(context.section, context.library_type)
-    except (list_sources.NotPreviewable, list_sources.SourceError, PlexUnavailable):
-        return []  # Studio can't read it now: Kometa's missing report covers it after the build
+    except PlexUnavailable:
+        return []
     _have, missing = list_sources.split(items, library)
     asked = {r[0] for r in db.execute("SELECT item FROM requests")}
     out, seen = [], set()
     for m in missing:
         key = list_sources.missing_key(m, context.library_type)
-        if key.startswith("tmdb-") and key not in asked and key not in seen:
+        if key.startswith(("tmdb-", "tvdb:")) and key not in asked and key not in seen:
             seen.add(key)
             out.append(collection_requests.Item(item=key, title=m.title, year=m.year))
     return out
@@ -369,12 +393,14 @@ async def _request_now(request: Request, db: sqlite3.Connection, row_id: int, mi
 
 def _built_json(db: sqlite3.Connection, row: sqlite3.Row) -> dict:
     definition = json.loads(row["definition"] or "{}")
+    sources = list_sources.sources_of(definition)
     run_status = _run_status(db, row["last_run_id"])
     return {
         "id": int(row["id"]),
         "library": row["library"],
         "title": row["title"],
-        "source": definition.get("source") or {"kind": "filters"},
+        "source": sources[0],  # the first, for the builder before several sources
+        "sources": sources,
         "filters": definition.get("filters") or {"match": "all", "rules": []},
         "sort_by": definition.get("sort_by"),
         "limit": definition.get("limit"),
@@ -405,22 +431,48 @@ def _connected(settings) -> set[str]:
 
 
 def _body_problems(context: Context, body: CollectionIn, settings) -> list[str]:
-    """What's wrong with a collection as given. A list source's value is normalised in place (a pasted link becomes Kometa's value)."""
-    if body.source.kind == "filters":
+    """What's wrong with a collection as given. Sources are normalised in place (a pasted link becomes Kometa's value, ids are tidied)."""
+    sources = _sources(body)
+    if not sources:
+        return ["Give the collection at least one source"]
+    if any(source.kind == "filters" for source in sources):
+        if len(sources) > 1:
+            return ["A smart filter can't be combined with other sources (Kometa takes a smart_filter only on its own). Use a Plex search beside lists instead"]
         problems = _problems(context, body.filters, body.sort_by)
         if body.download_missing:
             problems.append("A smart collection only holds what you have, so it has no missing titles to download")
         return problems
-    source = body.source
     problems = []
-    try:
-        kind = list_sources.kind_for(source.builder or "", context.library_type)
-        source.value, label = list_sources.normalise(kind.builder, str(source.value or ""), context.library_type)
-        source.label = (source.label or "").strip() or label
-        if kind.needs and kind.needs not in _connected(settings):
-            problems.append(f"A {kind.label} needs {list_sources.SERVICE_NAMES[kind.needs]} connected in Settings → Connect")
-    except list_sources.SourceError as error:
-        problems.append(str(error))
+    if len(sources) > list_sources.MAX_SOURCES:
+        problems.append(f"A collection takes at most {list_sources.MAX_SOURCES} sources")
+    counted: set[str] = set()
+    searches = 0
+    for source in sources:
+        try:
+            if source.kind == "list":
+                kind = list_sources.kind_for(source.builder or "", context.library_type)
+                source.value, label = list_sources.normalise(kind.builder, str(source.value or ""), context.library_type)
+                source.label = (source.label or "").strip() or label
+                if kind.needs and kind.needs not in _connected(settings):
+                    problems.append(f"A {kind.label} needs {list_sources.SERVICE_NAMES[kind.needs]} connected in Settings → Connect")
+                if kind.input == "count":
+                    if kind.builder in counted:
+                        problems.append(f"{kind.label} can be a source only once")
+                    counted.add(kind.builder)
+            elif source.kind == "titles":
+                source.ids = list_sources.normalise_ids(source.builder or "", source.ids, context.library_type)
+            elif source.kind == "search":
+                searches += 1
+                if source.filters is None:
+                    problems.append("A Plex search needs rules")
+                else:
+                    problems += smart_filters.validate_search(context.library_type, source.filters.model_dump())
+        except list_sources.SourceError as error:
+            problems.append(str(error))
+    if searches > 1:
+        problems.append("A collection takes one Plex search; put all its rules in that one (match any adds them up)")
+    if body.download_missing and not list_sources.has_missing([{"kind": source.kind} for source in sources]):
+        problems.append("A Plex search only holds what you have, so it has no missing titles to download")
     if body.filters.rules:
         problems.append("A collection from a list can't have filter rules yet")
     if body.sort_by not in (None, *LIST_ORDERS):
@@ -595,17 +647,94 @@ async def builder_source_search(library: str, builder: str, q: str, request: Req
         raise HTTPException(503, str(error)) from None
 
 
+def _source_label(source: dict) -> str:
+    if source.get("label"):
+        return str(source["label"])
+    builder = str(source.get("builder") or "")
+    if source.get("kind") == "titles":
+        return list_sources.TITLE_BUILDERS.get(builder, (builder,))[0]
+    if source.get("kind") == "search":
+        return "Plex search"
+    kind = list_sources.BY_BUILDER.get(builder)
+    return kind.label if kind else builder
+
+
+async def _read_sources(lists: list_sources.Lists, sources: list[dict], library_type: str) -> tuple[list[list_sources.ListItem], list[dict], list[str], int]:
+    """The union of what a collection's list and titles sources name, in order, each title once; the sources Studio can't
+    read itself ({label, why}); the problems reading the rest; and how many were read. A Plex search is Plex-side: it never has missing
+    titles, and shows once built."""
+    readable = [source for source in sources if source.get("kind") in ("list", "titles")]
+    items: list[list_sources.ListItem] = []
+    skipped: list[dict] = []
+    problems: list[str] = []
+    seen: set[str] = set()
+    read = 0
+    for source in sources:
+        if source.get("kind") == "search":
+            skipped.append({"label": _source_label(source), "why": "Studio shows what a Plex search finds once it has been built."})
+            continue
+        if source not in readable:
+            continue
+        try:
+            if source["kind"] == "titles":
+                found = await lists.titles(str(source.get("builder")), [str(i) for i in source.get("ids") or []], library_type)
+            else:
+                found = await lists.items(str(source.get("builder")), str(source.get("value")), library_type)
+        except list_sources.NotPreviewable as why:
+            skipped.append({"label": _source_label(source), "why": str(why)})
+            continue
+        except list_sources.SourceError as error:
+            problems.append(str(error) if len(readable) == 1 else f"{_source_label(source)}: {error}")
+            continue
+        read += 1
+        for item in found:
+            key = list_sources.missing_key(item, library_type)
+            if key not in seen:
+                seen.add(key)
+                items.append(item)
+    return items, skipped, problems, read
+
+
+def _preview_sources(body: ListPreviewIn, library_type: str) -> tuple[list[dict], list[str]]:
+    """The preview's sources as definitions (normalised), and the problems with any that can't be used."""
+    if body.sources is None:
+        if body.source is None:
+            return [], ["Give a source to preview"]
+        try:
+            value, label = list_sources.normalise(body.source.builder, str(body.source.value), library_type)
+        except list_sources.SourceError as error:
+            return [], [str(error)]
+        return [{"kind": "list", "builder": body.source.builder, "value": value, "label": label}], []
+    out, problems = [], []
+    for source in body.sources:
+        try:
+            if source.kind == "list":
+                source.value, label = list_sources.normalise(source.builder or "", str(source.value or ""), library_type)
+                source.label = (source.label or "").strip() or label
+            elif source.kind == "titles":
+                source.ids = list_sources.normalise_ids(source.builder or "", source.ids, library_type)
+            elif source.kind != "search":
+                continue
+        except list_sources.SourceError as error:
+            problems.append(str(error))
+            continue
+        out.append(_source_dict(source))
+    return out, problems
+
+
 @router.post("/builder/sources/preview")
 async def builder_source_preview(body: ListPreviewIn, request: Request, settings: AppSettings) -> dict:
+    """What a collection's lists and titles hold: the union, split into what the library has and what it's missing.
+    ``skipped`` names the sources Studio can't read itself (IMDb, Letterboxd, a Plex search), which show once built."""
     context = await _context(request, settings, body.library)
     empty = {"total": None, "in_library": [], "in_library_count": 0, "missing": [], "missing_count": 0}
-    try:
-        value, _label = list_sources.normalise(body.source.builder, str(body.source.value), context.library_type)
-        items = await _lists(request, settings).items(body.source.builder, value, context.library_type)
-    except list_sources.NotPreviewable as why:
-        return {"previewable": False, "why": str(why), **empty, "problems": []}
-    except list_sources.SourceError as error:
-        return {"previewable": True, "why": None, **empty, "problems": [str(error)]}
+    sources, problems = _preview_sources(body, context.library_type)
+    items, skipped, read_problems, read = await _read_sources(_lists(request, settings), sources, context.library_type)
+    problems += read_problems
+    if not read:
+        if skipped and not problems:
+            return {"previewable": False, "why": skipped[0]["why"], **empty, "problems": [], "skipped": skipped}
+        return {"previewable": True, "why": None, **empty, "problems": problems, "skipped": skipped}
     try:
         library = await context.server.all_items(context.section, context.library_type)
     except PlexUnavailable as error:
@@ -614,6 +743,7 @@ async def builder_source_preview(body: ListPreviewIn, request: Request, settings
     return {
         "previewable": True,
         "why": None,
+        "skipped": skipped,
         "total": len(items),
         "in_library": [{"rating_key": i.rating_key, "title": i.title, "year": i.year, "thumb": i.thumb} for i in have[:LIST_PREVIEW_SIZE]],
         "in_library_count": len(have),
@@ -621,7 +751,7 @@ async def builder_source_preview(body: ListPreviewIn, request: Request, settings
             {"id": list_sources.missing_key(m, context.library_type), "title": m.title, "year": m.year, "poster": m.poster} for m in missing[:LIST_PREVIEW_SIZE]
         ],
         "missing_count": len(missing),
-        "problems": [],
+        "problems": problems,
     }
 
 
@@ -751,7 +881,7 @@ async def put_download_missing(row_id: int, body: DownloadMissingIn, request: Re
     if body.download_missing:
         if not collection_requests.load_settings(db).enabled:
             raise HTTPException(422, {"message": "Turn on requests in Settings → Requests first"})
-        if row["category"] == col.BUILT and (json.loads(row["definition"] or "{}").get("source") or {}).get("kind") != "list":
+        if row["category"] == col.BUILT and not list_sources.has_missing(list_sources.sources_of(json.loads(row["definition"] or "{}"))):
             raise HTTPException(422, {"message": "A smart collection only holds what you have, so it has no missing titles to download"})
     with db:
         collection_requests.set_download_missing(db, [row_id], body.download_missing, keep_cap=True)

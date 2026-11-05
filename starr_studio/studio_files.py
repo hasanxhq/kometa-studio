@@ -235,8 +235,9 @@ def render_built(
 ) -> str | None:
     """Kometa's file for the library's builder collections, each labelled Studio. None if there are none.
 
-    A filter collection is a ``smart_filter``. A list collection is that Kometa builder (``tmdb_collection: 1234``…)
-    with ``sync_mode: sync``, so titles leaving the list leave the collection, and with Kometa's own Radarr/Sonarr
+    A filter collection is a ``smart_filter``. Any other collection has each of its sources as its Kometa builder
+    (``tmdb_collection: 1234``, ``imdb_list: [a, b]``, ``tmdb_movie: [10196]``, ``plex_search: {any: …}``; Kometa adds
+    up what they find) with ``sync_mode: sync``, so titles leaving the list leave the collection, and with Kometa's own Radarr/Sonarr
     requests off: only Studio requests missing titles.
 
     ``file_ref`` turns a config-relative poster path (``studio/posters/…``) into the path Kometa's working directory
@@ -249,9 +250,9 @@ def render_built(
     collections = CommentedMap()
     for title, definition in sorted(definitions, key=lambda pair: pair[0].casefold()):
         body = CommentedMap()
-        source = definition.get("source") or {}
-        if source.get("kind") == "list" and source.get("builder"):
-            body[str(source["builder"])] = list_sources.kometa_value(str(source["builder"]), str(source.get("value") or ""))
+        sources = list_sources.sources_of(definition)
+        if any(source.get("kind") != "filters" for source in sources):
+            body.update(_builders(sources))
             body["sync_mode"] = "sync"
             if definition.get("sort_by") in ("custom", "release", "alpha"):
                 body["collection_order"] = str(definition["sort_by"])
@@ -282,6 +283,37 @@ def render_built(
     yaml.width = 4096
     yaml.dump(document, stream)
     return f"# {BUILT_HEADER}\n" + stream.getvalue()
+
+
+def _builders(sources: list[dict]) -> dict:
+    """Kometa builder keys for a collection's non-filter sources, in the order they first appear. Several sources of one
+    list builder become a YAML list; several titles sources of one builder become one list of ids."""
+    from . import list_sources, smart_filters
+
+    out: dict[str, list] = {}
+    search: dict | None = None
+    for source in sources:
+        kind, builder = source.get("kind"), str(source.get("builder") or "")
+        if kind == "list" and builder:
+            values = out.setdefault(builder, [])
+            value = list_sources.kometa_value(builder, str(source.get("value") or ""))
+            if value not in values:
+                values.append(value)
+        elif kind == "titles" and builder:
+            values = out.setdefault(builder, [])
+            values += [i for i in list_sources.titles_value(builder, [str(i) for i in source.get("ids") or []]) if i not in values]
+        elif kind == "search" and search is None:
+            search = smart_filters.to_plex_search(source.get("filters") or {})
+            out["plex_search"] = []  # keeps its place in the order
+    body: dict = {}
+    for key, values in out.items():
+        if key == "plex_search":
+            body[key] = search
+        elif key in list_sources.TITLE_BUILDERS:
+            body[key] = values
+        else:
+            body[key] = values[0] if len(values) == 1 else values
+    return body
 
 
 @dataclass

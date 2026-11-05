@@ -126,6 +126,14 @@ DUNE = {
 }
 
 
+# Single titles by id (TMDb's /movie/<id>, and /find for IMDb and TVDb ids). FakePlex's Heat is TMDb 949.
+TITLES = {
+    "/movie/949": {"id": 949, "title": "Heat", "release_date": "1995-12-15", "poster_path": "/heat.jpg"},
+    "/movie/10196": {"id": 10196, "title": "The Last Airbender", "release_date": "2010-06-30", "poster_path": "/la.jpg"},
+}
+FIND = {("tt0113277", "imdb_id"): {"id": 949, "title": "Heat", "release_date": "1995-12-15"}}
+
+
 def tmdb_client(root, tmdb_calls: list):
     plex = FakePlex()
     plex.TITLES = {"1": [{**m, "Guid": [{"id": f"tmdb://{tmdb}"}]} for m, tmdb in zip(FakePlex.TITLES["1"], ("438631", "1000", "949"), strict=True)]}
@@ -137,6 +145,11 @@ def tmdb_client(root, tmdb_calls: list):
             return httpx.Response(200, json=DUNE)
         if path == "/search/collection":
             return httpx.Response(200, json={"results": [{"id": 131296, "name": "Dune Collection", "poster_path": "/d.jpg"}, {"id": 1, "name": None}]})
+        if path in TITLES:
+            return httpx.Response(200, json=TITLES[path])
+        if path.startswith("/find/"):
+            found = FIND.get((path.removeprefix("/find/"), request.url.params.get("external_source")))
+            return httpx.Response(200, json={"movie_results": [found] if found else [], "tv_results": []})
         if path == "/movie/popular":
             page = int(request.url.params["page"])
             return httpx.Response(200, json={"total_pages": 9, "results": [{"id": 1726 + page * 100 + n, "title": f"P{page}-{n}"} for n in range(20)]})

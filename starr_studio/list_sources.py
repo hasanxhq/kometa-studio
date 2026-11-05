@@ -1,8 +1,11 @@
 """Collections from a list: which of Kometa's list builders Studio offers, links to them, and their preview.
 
-A list collection is a builder collection whose ``definition.source`` is ``{"kind": "list", "builder", "value",
-"label"}``. Studio writes it as that Kometa builder (``tmdb_collection: 1234``, ``imdb_chart: top_movies``, …) with
-``sync_mode: sync``, so the collection follows the list. Kometa's own ``radarr_add_missing``/``sonarr_add_missing``
+A builder collection's ``definition.sources`` lists where its titles come from (``sources_of``; rows from before hold
+one ``source``). A list source is ``{"kind": "list", "builder", "value", "label"}``; a titles source is ``{"kind":
+"titles", "builder", "ids", "label"}`` (``tmdb_movie``, ``tmdb_show``, ``tvdb_show`` or ``imdb_id``). Studio writes each
+as its Kometa builder (``tmdb_collection: 1234``, ``imdb_chart: top_movies``, ``tmdb_movie: [10196]``, …) with
+``sync_mode: sync``, so the collection follows its lists. Kometa adds up a collection's builders: a title any of them
+finds goes in. Kometa's own ``radarr_add_missing``/``sonarr_add_missing``
 stay off: only Studio requests missing titles.
 
 The preview splits a list into what the library has and what it's missing, before anything is saved. Studio reads
@@ -102,6 +105,68 @@ KINDS: list[Kind] = [
 ]
 BY_BUILDER = {kind.builder: kind for kind in KINDS}
 NOT_BUILT_YET = "Studio can show what's in this list once it has been built."
+
+
+# Individual titles, by id: Kometa's tmdb_movie / tmdb_show / tvdb_show / imdb_id builders, and the libraries they fit.
+TITLE_BUILDERS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "tmdb_movie": ("TMDb movie", ("movie",)),
+    "tmdb_show": ("TMDb show", ("show",)),
+    "tvdb_show": ("TVDb show", ("show",)),
+    "imdb_id": ("IMDb title", ("movie", "show")),
+}
+MAX_TITLES = 500  # ids in one titles source
+MAX_SOURCES = 20  # sources in one collection
+
+
+def sources_of(definition: dict) -> list[dict]:
+    """A builder definition's sources: ``sources`` when it has them, else its one ``source`` (rows from before)."""
+    sources = definition.get("sources")
+    if isinstance(sources, list) and sources:
+        return [source for source in sources if isinstance(source, dict)]
+    source = definition.get("source")
+    return [source if isinstance(source, dict) and source.get("kind") else {"kind": "filters"}]
+
+
+def has_missing(sources: list[dict]) -> bool:
+    """True when some source names titles the library may lack (a list or titles): Download missing can work."""
+    return any(source.get("kind") in ("list", "titles") for source in sources)
+
+
+def normalise_ids(builder: str, raw: Any, library_type: str) -> list[str]:
+    """The ids of a titles source, checked and de-duplicated in order: digits for TMDb/TVDb, ``tt…`` for IMDb."""
+    if builder not in TITLE_BUILDERS:
+        raise SourceError(f"Studio doesn't add titles from {builder!r}")
+    label, types = TITLE_BUILDERS[builder]
+    if library_type not in types:
+        raise SourceError(f"A {label} is a {'movie' if types == ('movie',) else 'show'}, so it can't be in a {'TV' if library_type == 'show' else 'movie'} library")
+    values = raw if isinstance(raw, (list, tuple)) else re.split(r"[\s,]+", str(raw or ""))
+    out: list[str] = []
+    for value in values:
+        if isinstance(value, bool):
+            raise SourceError(f"{value!r} isn't a {label} id")
+        text = str(value).strip()
+        if not text:
+            continue
+        if builder == "imdb_id":
+            if not re.fullmatch(r"tt\d+", text, re.IGNORECASE):
+                raise SourceError(f"{text!r} isn't an IMDb id (tt followed by digits)")
+            text = text.lower()
+        elif not text.isdigit() or int(text) < 1:
+            raise SourceError(f"{text!r} isn't a {label} id (a number)")
+        else:
+            text = str(int(text))
+        if text not in out:
+            out.append(text)
+    if not out:
+        raise SourceError(f"Give at least one {label} id")
+    if len(out) > MAX_TITLES:
+        raise SourceError(f"A titles source takes at most {MAX_TITLES} ids")
+    return out
+
+
+def titles_value(builder: str, ids: list[str]) -> list:
+    """The ids as Kometa's YAML wants them: TMDb and TVDb ids are numbers."""
+    return [i if builder == "imdb_id" else int(i) for i in ids]
 
 
 def kind_for(builder: str, library_type: str) -> Kind:
@@ -227,6 +292,7 @@ class ListItem:
     title: str
     year: int | None
     poster: str | None
+    tvdb: str | None = None
 
 
 @dataclass
@@ -265,7 +331,7 @@ class Lists:
         self.mdblist_key = mdblist_key
         self._cache: dict[str, tuple[float, Any]] = cache if cache is not None else {}  # the app keeps one across requests
 
-    async def _get(self, url: str, params: dict, service: str) -> Any:
+    async def _get(self, url: str, params: dict, service: str, missing_ok: bool = False) -> Any:
         key = url + "?" + "&".join(f"{k}={v}" for k, v in sorted(params.items()) if k not in ("api_key", "apikey"))
         hit = self._cache.get(key)
         if hit and time.monotonic() - hit[0] < CACHE_SECONDS:
@@ -275,6 +341,8 @@ class Lists:
         except httpx.HTTPError as error:
             raise SourceError(f"Can't reach {service}: {error}") from None
         if response.status_code == 404:
+            if missing_ok:
+                return None
             raise SourceError(f"{service} has no such list")
         if response.status_code in (401, 403):
             raise SourceError(f"{service} refused Studio's API key")
@@ -291,6 +359,31 @@ class Lists:
             raise SourceError("Studio needs Kometa's TMDb key, in Settings → Connect")
         data = await self._get(f"{TMDB_API}{path}", {"api_key": self.tmdb_key, **(params or {})}, "TMDb")
         return data if isinstance(data, dict) else {}
+
+    async def titles(self, builder: str, ids: list[str], library_type: str) -> list[ListItem]:
+        """A titles source's titles, looked up on TMDb (one cached call each). Ids TMDb doesn't know are left out for
+        TMDb ids (they can't match anything), and kept by their own id for TVDb and IMDb ids (Plex may still have them)."""
+        if not self.tmdb_key:
+            raise SourceError("Studio needs Kometa's TMDb key, in Settings → Connect")
+        media = "movie" if library_type == "movie" else "tv"
+        out: list[ListItem] = []
+        for value in ids:
+            if builder in ("tmdb_movie", "tmdb_show"):
+                data = await self._get(f"{TMDB_API}/{'movie' if builder == 'tmdb_movie' else 'tv'}/{value}", {"api_key": self.tmdb_key}, "TMDb", missing_ok=True)
+                item = _tmdb_item(data) if isinstance(data, dict) else None
+                if item is not None:
+                    out.append(item)
+                continue
+            source = "tvdb_id" if builder == "tvdb_show" else "imdb_id"
+            data = await self._get(f"{TMDB_API}/find/{value}", {"api_key": self.tmdb_key, "external_source": source}, "TMDb", missing_ok=True)
+            found = ((data or {}).get(f"{media}_results") or [None])[0] if isinstance(data, dict) else None
+            item = (_tmdb_item(found) if isinstance(found, dict) else None) or ListItem(None, None, f"{'TVDb' if builder == 'tvdb_show' else 'IMDb'} {value}", None, None)
+            if builder == "tvdb_show":
+                item.tvdb = value
+            else:
+                item.imdb = value
+            out.append(item)
+        return out
 
     async def label(self, builder: str, value: str) -> str | None:
         """The list's own name, where TMDb has one."""
@@ -367,11 +460,16 @@ def split(items: list[ListItem], library: list[PlexItem]) -> tuple[list[PlexItem
     """The list's titles the library has (as Plex items, in list order) and the ones it's missing."""
     by_tmdb = {i.ids["tmdb"]: i for i in library if i.ids.get("tmdb")}
     by_imdb = {i.ids["imdb"]: i for i in library if i.ids.get("imdb")}
+    by_tvdb = {i.ids["tvdb"]: i for i in library if i.ids.get("tvdb")}
     have: list[PlexItem] = []
     missing: list[ListItem] = []
     seen: set[str] = set()
     for item in items:
-        found = (by_tmdb.get(item.tmdb) if item.tmdb else None) or (by_imdb.get(item.imdb) if item.imdb else None)
+        found = (
+            (by_tmdb.get(item.tmdb) if item.tmdb else None)
+            or (by_imdb.get(item.imdb) if item.imdb else None)
+            or (by_tvdb.get(item.tvdb) if item.tvdb else None)
+        )
         if found is not None:
             if found.rating_key not in seen:
                 seen.add(found.rating_key)
@@ -382,7 +480,10 @@ def split(items: list[ListItem], library: list[PlexItem]) -> tuple[list[PlexItem
 
 
 def missing_key(item: ListItem, library_type: str) -> str:
-    """How ``wanted`` and requests name a missing title: ``tmdb-movie:603`` or ``tmdb-show:1399`` (``imdb:tt…`` without a TMDb id)."""
+    """How ``wanted`` and requests name a missing title: ``tmdb-movie:603`` or ``tmdb-show:1399`` (``tvdb:…`` for a show
+    TMDb can't find, ``imdb:tt…`` without either)."""
     if item.tmdb:
         return f"tmdb-{'movie' if library_type == 'movie' else 'show'}:{item.tmdb}"
+    if item.tvdb and library_type == "show":
+        return f"tvdb:{item.tvdb}"
     return f"imdb:{item.imdb}"
