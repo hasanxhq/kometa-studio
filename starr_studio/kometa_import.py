@@ -4,8 +4,8 @@ Read-only. Nothing here writes a file or a row: the setup wizard shows the repor
 
 Each collection lands one of three ways (the plan's "How each collection lands"):
 
-- **imported**: Studio can describe it fully as a builder collection (a ``smart_filter``, or one list source), with
-  the settings the builder has (summary, sort title, visibility, minimum items, a poster).
+- **imported**: Studio can describe it fully as a builder collection (a ``smart_filter`` alone, or any mix of list
+  builders, single titles by id and one ``plex_search``), with the settings the builder has (summary, sort title, visibility, minimum items, a poster).
 - **ready_made**: a ``- default:`` entry, which becomes the matching Ready-made category.
 - **kept**: anything else. The file stays listed in config.yml and runs exactly as before, read-only in Studio,
   with the reason it was kept.
@@ -168,16 +168,53 @@ def _filters(raw: Any, library_type: str) -> tuple[dict | None, str | None, int 
     return spec, sort_by, limit, None
 
 
-def _list_source(builder: str, raw: Any, library_type: str) -> tuple[dict | None, str | None]:
+def _list_sources(builder: str, raw: Any, library_type: str) -> tuple[list[dict], str | None]:
+    """One list source per value: ``imdb_list: [a, b]`` is two IMDb lists."""
     values = _list(raw)
     kind = list_sources.BY_BUILDER[builder]
-    if len(values) != 1:
-        return None, f"It reads {len(values)} {kind.label}s; the builder takes one" if values else f"Its `{builder}` is blank"
+    if not values:
+        return [], f"Its `{builder}` is blank"
+    if kind.input == "count" and len(values) != 1:
+        return [], f"It reads {len(values)} {kind.label} counts; the builder takes one"
+    out = []
+    for raw_value in values:
+        try:
+            value, label = list_sources.normalise(builder, str(raw_value), library_type)
+        except list_sources.SourceError as error:
+            return [], str(error)
+        source = {"kind": "list", "builder": builder, "value": value, "label": label}
+        if source not in out:
+            out.append(source)
+    return out, None
+
+
+def _titles_source(builder: str, raw: Any, library_type: str) -> tuple[dict | None, str | None]:
+    if raw is None or raw == []:
+        return None, f"Its `{builder}` is blank"
     try:
-        value, label = list_sources.normalise(builder, str(values[0]), library_type)
+        ids = list_sources.normalise_ids(builder, raw if isinstance(raw, (list, tuple)) else str(raw), library_type)
     except list_sources.SourceError as error:
         return None, str(error)
-    return {"kind": "list", "builder": builder, "value": value, "label": label}, None
+    return {"kind": "titles", "builder": builder, "ids": ids, "label": None}, None
+
+
+def _search_source(raw: Any, library_type: str) -> tuple[dict | None, str | None]:
+    """A ``plex_search`` as a search source: one ``all``/``any`` group of rules, no sort, limit or type."""
+    if isinstance(raw, dict):
+        extra = [str(key) for key in raw if key not in ("all", "any")]
+        if extra:
+            return None, f"Its `plex_search` uses {_names(extra)}, which the builder's Plex search doesn't have"
+    spec, _sort_by, _limit, problem = _filters(raw, library_type)
+    if problem:
+        return None, problem.replace("`smart_filter`", "`plex_search`")
+    problems = smart_filters.validate_search(library_type, spec)
+    if problems:
+        return None, "The builder can't show its `plex_search`: " + problems[0]
+    return {"kind": "search", "filters": spec}, None
+
+
+def _offered(key: str) -> bool:
+    return key in ("smart_filter", "plex_search") or key in list_sources.BY_BUILDER or key in list_sources.TITLE_BUILDERS
 
 
 def describe(name: str, body: Any, library_type: str, poster_path: Any = None) -> Landing:
@@ -191,21 +228,23 @@ def describe(name: str, body: Any, library_type: str, poster_path: Any = None) -
     keys = [str(key) for key in body]
     if "template" in body:
         return Landing(name, KEPT, "It uses a template, which the builder doesn't have yet")
-    builders = [key for key in keys if key == "smart_filter" or key in list_sources.BY_BUILDER or _is_other_builder(key)]
+    builders = [key for key in keys if _offered(key) or _is_other_builder(key)]
     if not builders:
         return Landing(name, KEPT, "It has no source the builder knows (" + (_names(keys) if keys else "it's empty") + ")")
-    if len(builders) > 1:
-        return Landing(name, KEPT, f"It combines {len(builders)} sources ({_names(builders)}); a builder collection takes one")
-    builder = builders[0]
-    if builder != "smart_filter" and builder not in list_sources.BY_BUILDER:
-        return Landing(name, KEPT, f"Its source `{builder}` isn't one the builder offers")
-    other = [key for key in keys if key != builder and key not in DESCRIBED]
+    if "smart_filter" in builders and len(builders) > 1:
+        return Landing(name, KEPT, f"It combines `smart_filter` with {_names([b for b in builders if b != 'smart_filter'])}, and Kometa takes a smart_filter only on its own")
+    unknown = [key for key in builders if not _offered(key)]
+    if unknown:
+        verb = "aren't ones" if len(unknown) > 1 else "isn't one"
+        return Landing(name, KEPT, f"Its source{'s' if len(unknown) > 1 else ''} {_names(unknown)} {verb} the builder offers")
+    other = [key for key in keys if key not in builders and key not in DESCRIBED]
     if other:
         return Landing(name, KEPT, f"It uses {_names(other)}, which the builder doesn't have")
 
     notes: list[str] = []
     definition: dict[str, Any] = {
         "source": {"kind": "filters"},
+        "sources": [{"kind": "filters"}],
         "filters": {"match": "all", "rules": []},
         "sort_by": None,
         "limit": None,
@@ -215,7 +254,8 @@ def describe(name: str, body: Any, library_type: str, poster_path: Any = None) -
         "sort_title": None,
         "poster": None,
     }
-    if builder == "smart_filter":
+    smart = builders == ["smart_filter"]
+    if smart:
         spec, sort_by, limit, problem = _filters(body["smart_filter"], library_type)
         if problem:
             return Landing(name, KEPT, problem)
@@ -225,10 +265,22 @@ def describe(name: str, body: Any, library_type: str, poster_path: Any = None) -
         if body.get("sync_mode") is not None:
             notes.append("`sync_mode` is dropped: a smart collection always matches its filter")
     else:
-        source, problem = _list_source(builder, body[builder], library_type)
-        if problem:
-            return Landing(name, KEPT, problem)
-        definition["source"] = source
+        sources: list[dict] = []
+        for builder in builders:
+            if builder == "plex_search":
+                source, problem = _search_source(body[builder], library_type)
+                found = [source] if source else []
+            elif builder in list_sources.TITLE_BUILDERS:
+                source, problem = _titles_source(builder, body[builder], library_type)
+                found = [source] if source else []
+            else:
+                found, problem = _list_sources(builder, body[builder], library_type)
+            if problem:
+                return Landing(name, KEPT, problem)
+            sources += found
+        if len(sources) > list_sources.MAX_SOURCES:
+            return Landing(name, KEPT, f"It reads {len(sources)} sources; a builder collection takes at most {list_sources.MAX_SOURCES}")
+        definition["source"], definition["sources"] = sources[0], sources
         order = body.get("collection_order")
         if order is not None:
             if str(order) not in LIST_ORDERS:
@@ -275,7 +327,8 @@ def describe(name: str, body: Any, library_type: str, poster_path: Any = None) -
     if wanted:
         notes.append(
             f"Kometa's `{wanted[0]}` is turned off: Studio requests missing titles itself. Tick Download missing on it to keep requesting"
-            if builder != "smart_filter" else f"`{wanted[0]}` is dropped: a smart collection has no missing titles"
+            if list_sources.has_missing(list_sources.sources_of(definition))
+            else f"`{wanted[0]}` is dropped: a {'smart collection' if smart else 'Plex search'} has no missing titles"
         )
     return Landing(name, IMPORTED, notes=notes, definition=definition)
 
