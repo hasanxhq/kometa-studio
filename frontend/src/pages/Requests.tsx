@@ -40,8 +40,7 @@ const STATUS_LABEL: Record<RequestStatus, string> = {
 const VIA_LABEL: Record<string, string> = {
   radarr: "Radarr",
   sonarr: "Sonarr",
-  overseerr: "Overseerr",
-  jellyseerr: "Jellyseerr",
+  seerr: "Seerr",
 };
 
 function viaLabel(via: string): string {
@@ -111,7 +110,7 @@ export function Requests() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h2 className="text-[32px] leading-tight font-semibold">Requests</h2>
-          <p className="mt-1 max-w-xl text-[13px] text-muted">Titles Studio asked Radarr, Sonarr or Overseerr/Jellyseerr to download for your collections.</p>
+          <p className="mt-1 max-w-xl text-[13px] text-muted">Titles Studio asked Radarr, Sonarr or Seerr to download for your collections.</p>
         </div>
         <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
           {refresh.isPending ? "Checking…" : "Check now"}
@@ -185,7 +184,7 @@ export function Requests() {
           onConfirm={() => cancel.mutate(pendingCancel.id)}
           onCancel={() => setPendingCancel(null)}
         >
-          Stop requesting {titleLine(pendingCancel)}? Studio unmonitors it in Radarr/Sonarr (or removes the Overseerr request). Nothing is deleted.
+          Stop requesting {titleLine(pendingCancel)}? Studio unmonitors it in Radarr/Sonarr (or removes the Seerr request). Nothing is deleted.
         </ConfirmDialog>
       )}
     </div>

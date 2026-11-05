@@ -78,7 +78,7 @@ describe("Requests page", () => {
       "GET /requests?limit=200": () =>
         list([
           row({ id: 1, title: "Die Hard", status: "requested" }),
-          row({ id: 2, title: "Heat", status: "downloading" }),
+          row({ id: 2, title: "Heat", status: "downloading", via: "seerr" }),
           row({ id: 3, title: "Broken", status: "failed", error: "no indexer" }),
         ]),
       "GET /requests?status=failed&limit=200": () => list([row({ id: 3, title: "Broken", status: "failed", error: "no indexer" })]),
@@ -89,6 +89,7 @@ describe("Requests page", () => {
 
     expect(await screen.findByText("Die Hard (1995)")).toBeInTheDocument();
     expect(screen.getByText("Heat (1995)")).toBeInTheDocument();
+    expect(screen.getByText("Movies · Seerr")).toBeInTheDocument();
     expect(screen.getByText(/no indexer/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Failed/ })).toHaveTextContent("1");
 
@@ -103,6 +104,7 @@ describe("Requests page", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Cancel" })[0]);
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent(/Stop requesting Die Hard/);
+    expect(dialog).toHaveTextContent(/removes the Seerr request/);
     fireEvent.click(within(dialog).getByRole("button", { name: "Stop requesting" }));
     await waitFor(() => expect(calls.some((c) => c.route === "POST /requests/1/cancel")).toBe(true));
   });

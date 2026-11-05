@@ -42,7 +42,7 @@ export function MissingTitles({
   const app = libraryType === "show" ? "sonarr" : "radarr";
   const appName = app === "sonarr" ? "Sonarr" : "Radarr";
   const via = settings.data?.settings.via;
-  // Overseerr/Jellyseerr choose the quality themselves, so a profile only means something when Studio asks Radarr/Sonarr.
+  // Seerr chooses the quality itself, so a profile only means something when Studio asks Radarr/Sonarr.
   const viaSeerr = via === "seerr" || (via === "auto" && settings.data?.connected.seerr === true);
   const options = useQuery({
     queryKey: ["requests", "options"],
@@ -111,7 +111,7 @@ export function MissingTitles({
         </Field>
       )}
       {downloadMissing && enabled && viaSeerr && (
-        <p className="text-sm text-muted">Requests go through Overseerr/Jellyseerr, which picks the quality.</p>
+        <p className="text-sm text-muted">Requests go through Seerr, which picks the quality.</p>
       )}
       {downloadMissing && enabled && (
         <Field label="Most per day" hint="Empty uses the setting under Settings → Requests.">

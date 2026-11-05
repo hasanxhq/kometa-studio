@@ -33,7 +33,7 @@ export const sections: Section[] = [
       {
         label: "Requests",
         path: "/requests",
-        summary: "Titles Studio asked Radarr, Sonarr or Overseerr/Jellyseerr to download for your collections.",
+        summary: "Titles Studio asked Radarr, Sonarr or Seerr to download for your collections.",
       },
       { label: "Overlays", path: "/overlays", summary: "Kometa's overlays per library: the designer, what draws them, when, and turning them off and on." },
       { label: "Playlists", path: "/playlists", summary: "Kometa's playlists, from config.yml's playlist_files." },
@@ -69,7 +69,7 @@ export const sections: Section[] = [
       {
         label: "Requests",
         path: "/settings/requests",
-        summary: "Ask Radarr, Sonarr or Overseerr/Jellyseerr for titles a collection is missing, and set daily limits.",
+        summary: "Ask Radarr, Sonarr or Seerr for titles a collection is missing, and set daily limits.",
       },
       { label: "Notifications", path: "/settings/notifications", summary: "Notifiarr, Gotify, ntfy and Apprise, and which Kometa events go where." },
       { label: "Network", path: "/settings/network", summary: "A proxy, DNS over HTTPS and IPv4 first, for Studio and Kometa, and a connection check." },
