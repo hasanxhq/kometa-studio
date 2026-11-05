@@ -46,10 +46,15 @@ Each [GitHub release](https://github.com/hasanxhq/starr-studio/releases) attache
 
 ```bash
 pip install path/to/starr_studio-*.whl
-starr-studio
+starr-studio serve
 ```
 
-You still need a Kometa install and its config folder; a fuller non-Docker guide is separate.
+You still need a Kometa install and its config folder: see [Install without Docker](docs/install-without-docker.md).
+
+Other setups:
+- [Install without Docker](docs/install-without-docker.md) (Python 3.12, systemd user service)
+- [Reverse proxy setup](docs/reverse-proxy.md) (nginx, Caddy, Traefik, SWAG)
+- [Ultra.cc seedbox](docs/seedboxes/ultra.md) (one script: `deploy/install-seedbox.sh`)
 
 ### Before you open it up
 
