@@ -1,6 +1,6 @@
 """Stands in for kometa.py in tests.
 
-``--help`` prints a flag list like Kometa 2.5.3's. Otherwise it reads ``fake.json`` next to
+``--help`` prints a flag list like Kometa 2.5.4's. Otherwise it reads ``fake.json`` next to
 the --config file and does what that says:
 
     lines        lines to print
@@ -22,7 +22,7 @@ from pathlib import Path
 FLAGS = (
     "--config --times --run --tests --debug --trace --log-requests --timings --source-integrity --no-source-integrity "
     "--timeout --no-verify-ssl --collections-only --metadata-only --playlists-only --operations-only --overlays-only "
-    "--run-collections --run-libraries --run-files --ignore-schedules --ignore-ghost --delete-collections "
+    "--run-collections --run-libraries --run-files --mode --ignore-schedules --ignore-ghost --delete-collections "
     "--delete-labels --resume --no-countdown --no-missing --no-report --read-only-config --divider --width "
     "--low-priority --validate --validate-level --validate-schema --validate-dir --schema-path"
 )

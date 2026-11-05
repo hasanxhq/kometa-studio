@@ -5,7 +5,7 @@ services:
     build:
       context: .
       args:
-        KOMETA_TAG: ${KOMETA_TAG:-v2.5.3}
+        KOMETA_TAG: ${KOMETA_TAG:-v2.5.4}
     image: starr-studio:local
     container_name: starr-studio
     user: "${PUID:-1000}:${PGID:-1000}"
