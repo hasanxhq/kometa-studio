@@ -8,7 +8,7 @@ import { api, type ReadyMadeBuildPlan, type ReadyMadeBuildResult } from "../api"
 import { requestsApi } from "../requestsApi";
 import { useReadyMadePicks } from "../readyMadePicks";
 import { SaveError } from "./ValidationReport";
-import { Button, Checkbox, StickyActions } from "./ui";
+import { ActionBar, Button, Checkbox } from "./ui";
 
 export function BuildBar({ library }: { library: string }) {
   const queryClient = useQueryClient();
@@ -71,38 +71,35 @@ export function BuildBar({ library }: { library: string }) {
   return (
     <>
       {(total > 0 || dryRun.isPending) && (
-        <StickyActions>
-          <span className="text-sm font-medium" aria-live="polite">
-            {label || "Ready-made"}
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <Checkbox
-              checked={downloadMissing}
-              onChange={setDownloadMissing}
-              disabled={!requestsOn}
+        <ActionBar
+          label="Ready-made changes"
+          summary={label || "Ready-made"}
+          note={
+            help &&
+            !requestsOn && (
+              <>
+                Turn on requests in{" "}
+                <Link className="underline hover:text-text" to="/settings/requests">
+                  Settings → Requests
+                </Link>{" "}
+                first.
+              </>
+            )
+          }
+        >
+          <Checkbox checked={downloadMissing} onChange={setDownloadMissing} disabled={!requestsOn}>
+            Download missing
+          </Checkbox>
+          {!requestsOn && (
+            <button
+              type="button"
+              className="inline-flex size-7 shrink-0 items-center justify-center rounded-control border border-border text-xs text-muted hover:text-text"
+              aria-label="Why Download missing is off"
+              aria-expanded={help}
+              onClick={() => setHelp((open) => !open)}
             >
-              Download missing
-            </Checkbox>
-            {!requestsOn && (
-              <button
-                type="button"
-                className="inline-flex size-7 shrink-0 items-center justify-center rounded-control border border-border text-xs text-muted hover:text-text"
-                aria-label="Why Download missing is off"
-                aria-expanded={help}
-                onClick={() => setHelp((open) => !open)}
-              >
-                ?
-              </button>
-            )}
-          </div>
-          {help && !requestsOn && (
-            <p className="basis-full text-sm text-muted">
-              Turn on requests in{" "}
-              <Link className="underline hover:text-text" to="/settings/requests">
-                Settings → Requests
-              </Link>{" "}
-              first.
-            </p>
+              ?
+            </button>
           )}
           <Button variant="primary" onClick={() => dryRun.mutate()} disabled={dryRun.isPending || total === 0}>
             {dryRun.isPending ? "Checking…" : "Build"}
@@ -110,7 +107,7 @@ export function BuildBar({ library }: { library: string }) {
           <Button onClick={discard} disabled={total === 0}>
             Discard
           </Button>
-        </StickyActions>
+        </ActionBar>
       )}
 
       {done?.run_id != null && (
