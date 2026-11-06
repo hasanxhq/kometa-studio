@@ -10,26 +10,29 @@ import { builderApi, sourceLabel, sourcesOf, type BuiltCollection } from "../bui
 import { FileBlock } from "../components/ImportLanding";
 import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
 import { PlexPoster } from "../components/PlexPoster";
+import { PosterTile, StatusBadge, type StatusBadgeState } from "../components/PosterTile";
 import { RetryButton } from "../components/RetryButton";
 import { Button } from "../components/ui";
 import { importApi, type UploadAddResult, type UploadStaging } from "../importApi";
 
-function statusLine(collection: BuiltCollection): { text: string; tone: "muted" | "err" } {
+function collectionBadgeState(collection: BuiltCollection): StatusBadgeState {
+  const req = collection.requests;
+  const coming = req ? req.requested + req.downloading : 0;
   switch (collection.state) {
     case "queued":
-      return { text: "Queued", tone: "muted" };
+      return { kind: "queued" };
     case "building":
-      return { text: "Building…", tone: "muted" };
-    case "in_plex":
-      return {
-        text: collection.plex_items != null ? `In Plex · ${collection.plex_items} titles` : "In Plex",
-        tone: "muted",
-      };
+      return { kind: "building" };
+    case "in_plex": {
+      if (coming > 0) return { kind: "in_plex", count: collection.plex_items ?? null, coming };
+      if (collection.plex_items != null) return { kind: "in_plex", count: collection.plex_items };
+      return { kind: "in_plex" };
+    }
     case "failed":
-      return { text: collection.last_error ? `Failed: ${collection.last_error}` : "Failed", tone: "err" };
+      return { kind: "failed" };
     case "missing":
     default:
-      return { text: "Not built yet", tone: "muted" };
+      return { kind: "missing" };
   }
 }
 
@@ -40,41 +43,47 @@ function sourceLine(collection: BuiltCollection): string {
 }
 
 function CollectionCard({ collection }: { collection: BuiltCollection }) {
-  const status = statusLine(collection);
   const queryClient = useQueryClient();
   const waiting = collection.requests?.waiting ?? 0;
+  const art = collection.thumb ? (
+    <PlexPoster thumb={collection.thumb} title={collection.title} />
+  ) : (
+    <span aria-hidden="true" className="flex aspect-[2/3] items-end overflow-hidden rounded-control border border-border bg-banner-studio p-3 font-display text-base leading-snug font-semibold">
+      {collection.title}
+    </span>
+  );
   return (
-    <li aria-label={collection.title} className="relative flex flex-col overflow-hidden rounded-card border border-border bg-surface">
-      <Link to={`/collections/${collection.id}`} className="flex min-h-11 grow flex-col text-left hover:bg-surface-2/40">
-        {collection.thumb ? (
-          <PlexPoster thumb={collection.thumb} title={collection.title} />
-        ) : (
-          <span aria-hidden="true" className="flex aspect-[2/3] items-end overflow-hidden bg-banner-studio p-3 font-display text-base leading-snug font-semibold">
-            {collection.title}
-          </span>
-        )}
-        <span className="px-3.5 pt-3 font-display text-base leading-snug font-semibold">{collection.title}</span>
-        <span className="px-3.5 pt-1 text-[13px] text-muted">{sourceLine(collection)}</span>
-        <span className={`px-3.5 pt-1 pb-3.5 text-[13px] ${status.tone === "err" ? "text-err" : "text-muted"}`}>{status.text}</span>
-      </Link>
-      {(collection.download_missing || collection.requests || collection.state === "failed" || waiting > 0) && (
-        <div className="flex flex-col gap-2 px-3.5 pb-3.5">
-          <DownloadMissingBadge id={collection.id} downloadMissing={collection.download_missing} library={collection.library} />
-          <RequestCountsLine summary={collection.requests} />
-          {collection.state === "failed" && (
-            <RetryButton
-              title={collection.title}
-              run={async () => {
-                await builderApi.retry(collection.id);
-                return null;
-              }}
-              onDone={() => queryClient.invalidateQueries({ queryKey: ["collections", collection.library] })}
-            />
-          )}
-          <RequestWaitingButton id={collection.id} waiting={waiting} library={collection.library} />
-        </div>
-      )}
-    </li>
+    <PosterTile
+      title={collection.title}
+      to={`/collections/${collection.id}`}
+      art={art}
+      badge={<StatusBadge state={collectionBadgeState(collection)} />}
+      liClassName="overflow-hidden rounded-card border border-border bg-surface"
+      controlClassName="hover:bg-surface-2/40"
+      footer={
+        (collection.download_missing || collection.requests || collection.state === "failed" || waiting > 0) ? (
+          <div className="flex flex-col gap-2 px-3.5 pb-3.5">
+            <DownloadMissingBadge id={collection.id} downloadMissing={collection.download_missing} library={collection.library} />
+            <RequestCountsLine summary={collection.requests} />
+            {collection.state === "failed" && (
+              <RetryButton
+                title={collection.title}
+                run={async () => {
+                  await builderApi.retry(collection.id);
+                  return null;
+                }}
+                onDone={() => queryClient.invalidateQueries({ queryKey: ["collections", collection.library] })}
+              />
+            )}
+            <RequestWaitingButton id={collection.id} waiting={waiting} library={collection.library} />
+          </div>
+        ) : undefined
+      }
+    >
+      <span className="px-3.5 pt-3 font-display text-base leading-snug font-semibold">{collection.title}</span>
+      <span className={`px-3.5 pt-1 text-[13px] text-muted ${collection.state === "failed" && collection.last_error ? "" : "pb-3.5"}`}>{sourceLine(collection)}</span>
+      {collection.state === "failed" && collection.last_error ? <span className="px-3.5 pt-1 pb-3.5 text-[13px] text-err">{collection.last_error}</span> : null}
+    </PosterTile>
   );
 }
 

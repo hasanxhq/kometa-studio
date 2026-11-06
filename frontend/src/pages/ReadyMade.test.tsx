@@ -231,11 +231,11 @@ describe("Ready-made category picks", () => {
     const topTile = screen.getByRole("listitem", { name: "IMDb Top 250" });
     expect(top).toHaveAttribute("aria-pressed", "true");
     expect(popular).toHaveAttribute("aria-pressed", "false");
-    expect(within(topTile).getByText("In Plex · 42 titles")).toBeInTheDocument();
+    expect(within(topTile).getByTitle("In Plex · 42 titles")).toBeInTheDocument();
 
     fireEvent.click(top);
     expect(top).toHaveAttribute("aria-pressed", "false");
-    expect(within(topTile).getByText("Will be removed")).toBeInTheDocument();
+    expect(within(topTile).getByTitle("Will be removed")).toBeInTheDocument();
     expect(screen.getByText("Remove 1")).toBeInTheDocument();
 
     fireEvent.click(top); // cancel removal
@@ -322,7 +322,7 @@ describe("Ready-made category picks", () => {
       }),
     });
     renderAt("/ready-made/imdb?library=Movies");
-    expect(await screen.findByText("Building…")).toBeInTheDocument();
+    expect(await screen.findByTitle("Building")).toBeInTheDocument();
     const before = calls.filter((c) => c.route.includes("/categories/imdb")).length;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3100);
@@ -335,7 +335,7 @@ describe("Ready-made category picks", () => {
       await vi.advanceTimersByTimeAsync(3100);
     });
     // One more fetch may land with in_plex; after that, no further polls.
-    await waitFor(() => expect(screen.queryByText("Building…")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByTitle("Building")).not.toBeInTheDocument());
     const settled = calls.filter((c) => c.route.includes("/categories/imdb")).length;
     expect(settled).toBeGreaterThanOrEqual(afterBuilding);
     await act(async () => {

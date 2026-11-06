@@ -78,13 +78,13 @@ describe("Collections list", () => {
 
     const action = await screen.findByRole("listitem", { name: "Action Picks" });
     expect(within(action).getByText("Smart filter")).toBeInTheDocument();
-    expect(within(action).getByText("In Plex · 12 titles")).toBeInTheDocument();
+    expect(within(action).getByTitle("In Plex · 12 titles")).toHaveTextContent("12");
     expect(within(action).getByRole("link")).toHaveAttribute("href", "/collections/1");
 
-    expect(within(screen.getByRole("listitem", { name: "Queued One" })).getByText("Queued")).toBeInTheDocument();
-    expect(within(screen.getByRole("listitem", { name: "Building One" })).getByText("Building…")).toBeInTheDocument();
-    expect(within(screen.getByRole("listitem", { name: "Broken" })).getByText("Failed: no titles")).toBeInTheDocument();
-    expect(within(screen.getByRole("listitem", { name: "Missing One" })).getByText("Not built yet")).toBeInTheDocument();
+    expect(within(screen.getByRole("listitem", { name: "Queued One" })).getByTitle("Queued")).toBeInTheDocument();
+    expect(within(screen.getByRole("listitem", { name: "Building One" })).getByTitle("Building")).toBeInTheDocument();
+    expect(within(screen.getByRole("listitem", { name: "Broken" })).getByText("no titles")).toBeInTheDocument();
+    expect(within(screen.getByRole("listitem", { name: "Missing One" })).getByTitle("Not built")).toBeInTheDocument();
 
     const newLinks = screen.getAllByRole("link", { name: "New collection" });
     expect(newLinks[0]).toHaveAttribute("href", "/collections/new?library=Movies");
@@ -184,7 +184,7 @@ describe("Collections list", () => {
     expect(within(screen.getByRole("listitem", { name: "Action Picks" })).queryByRole("button", { name: /Retry/ })).toBeNull();
     fireEvent.click(within(broken).getByRole("button", { name: "Retry Broken" }));
     await waitFor(() => expect(calls.some((c) => c.route === "POST /collections/4/retry")).toBe(true));
-    expect(await within(screen.getByRole("listitem", { name: "Broken" })).findByText("Queued")).toBeInTheDocument();
+    expect(await within(screen.getByRole("listitem", { name: "Broken" })).findByTitle("Queued")).toBeInTheDocument();
     expect(within(screen.getByRole("listitem", { name: "Broken" })).queryByRole("button", { name: /Retry/ })).toBeNull();
   });
 
@@ -212,14 +212,14 @@ describe("Collections list", () => {
       },
     });
     renderCollections("/collections?library=Movies");
-    expect(await screen.findByText("Building…")).toBeInTheDocument();
+    expect(await screen.findByTitle("Building")).toBeInTheDocument();
     expect(calls).toBe(1);
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
     });
     await waitFor(() => expect(calls).toBe(2));
-    expect(await screen.findByText("In Plex · 3 titles")).toBeInTheDocument();
+    expect(await screen.findByTitle("In Plex · 3 titles")).toBeInTheDocument();
 
     const after = calls;
     await act(async () => {
