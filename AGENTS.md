@@ -64,7 +64,7 @@ An unofficial, arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kom
 
 ## Tests
 
-CI runs one job, `test` (`.github/workflows/ci.yml`). Each part runs once it exists:
+CI runs one job, `test` (`.github/workflows/ci.yml`). A new push to a PR cancels that PR's older run; runs on `dev`, `release/**` and `hotfix/**` always finish. It runs:
 
 - Backend: `python -m pip install -e ".[dev]"` then `python -m pytest`
 - Frontend: `cd frontend && npm ci && npm run typecheck && npm test`
