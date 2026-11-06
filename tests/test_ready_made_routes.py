@@ -262,6 +262,8 @@ def test_run_hook_records_only_after_run_end(root):
 
     client, plex, _ = make_client(root)
     with client:
+        # The startup count writes through the same connection from the app's thread; this test uses it from its own.
+        wait_for_task(client, "ready_made_counts")
         db = client.app.state.db
         with db:
             ids = col.mark_present(
@@ -546,6 +548,7 @@ def test_a_collection_kometa_refused_says_why(root, tmp_path):
 
     client, _plex, _ = make_client(root)
     with client:
+        wait_for_task(client, "ready_made_counts")  # as above: one connection, two threads
         db = client.app.state.db
         with db:
             ids = col.mark_present(
