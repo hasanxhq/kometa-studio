@@ -185,6 +185,12 @@ export const builderApi = {
     ),
   previewSource: (body: { library: string; sources: Source[] } | { library: string; source: { builder: string; value: string } }) =>
     request<SourcePreview>("POST", "/builder/sources/preview", body),
+  /** What one Ready-made collection would hold before it's built (a Plex filter run, or its chart's list). */
+  readyMadePreview: (library: string, category: string, block: string, key: string) =>
+    request<SourcePreview>(
+      "GET",
+      `/ready-made/libraries/${encodeURIComponent(library)}/categories/${encodeURIComponent(category)}/preview?${new URLSearchParams({ block, key })}`,
+    ),
   list: (library: string) => request<{ collections: BuiltCollection[] }>("GET", `/collections?library=${encodeURIComponent(library)}`),
   get: (id: number) => request<BuiltCollection>("GET", `/collections/${id}`),
   create: (body: CollectionSaveBody) => request<BuiltCollection>("POST", "/collections", body),

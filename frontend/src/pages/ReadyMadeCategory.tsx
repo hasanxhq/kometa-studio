@@ -1,7 +1,8 @@
-// One Ready-made category: poster grid of its collections; tap to pick, Save keeps them in the bar.
+// One Ready-made category: poster grid of its collections. A tile's tick picks it (Save keeps picks in the bar);
+// the tile itself opens a preview of what it would hold.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { ApiError, api, type ReadyMadeBuildResult, type ReadyMadeEntry } from "../api";
@@ -9,6 +10,7 @@ import { BuildBar } from "../components/BuildBar";
 import { useHeaderTitle } from "../components/HeaderTitle";
 import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
 import { PlexPoster } from "../components/PlexPoster";
+import { ReadyMadePreview } from "../components/ReadyMadePreview";
 import { RetryButton } from "../components/RetryButton";
 import { Button } from "../components/ui";
 import { categoryOf } from "../defaults";
@@ -58,11 +60,34 @@ function TileArt({ entry, banner }: { entry: ReadyMadeEntry; banner: string }) {
   );
 }
 
+function PickTick({ title, selected, onToggle }: { title: string; selected: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      aria-label={`Pick ${title}`}
+      title={selected ? "Picked" : "Pick"}
+      onClick={onToggle}
+      className="pointer-events-auto absolute right-0 bottom-0 flex size-11 items-center justify-center"
+    >
+      <span
+        aria-hidden="true"
+        className={`flex size-7 items-center justify-center rounded-full border-2 text-sm font-bold shadow ${
+          selected ? "border-accent bg-accent text-black" : "border-white/80 bg-black/55 text-transparent hover:text-white/80"
+        }`}
+      >
+        ✓
+      </span>
+    </button>
+  );
+}
+
 function CollectionTile({
   entry,
   banner,
   selected,
   onToggle,
+  onOpen,
   customise,
   retry,
   library,
@@ -71,6 +96,7 @@ function CollectionTile({
   banner: string;
   selected: boolean;
   onToggle: () => void;
+  onOpen: () => void;
   customise?: string;
   retry?: { run: () => Promise<string | null>; onDone: () => void };
   library: string;
@@ -78,12 +104,16 @@ function CollectionTile({
   const status = statusLine(entry, selected, entry.state === "in_plex");
   const waiting = entry.requests?.waiting ?? 0;
   return (
-    <li>
+    <li aria-label={entry.title} className="relative">
+      {/* Over the poster's bottom corner (names sit at the top of Kometa's portraits), outside the open button. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 aspect-[2/3]">
+        <PickTick title={entry.title} selected={selected} onToggle={onToggle} />
+      </div>
       <button
         type="button"
-        aria-pressed={selected}
+        aria-haspopup="dialog"
         aria-label={entry.title}
-        onClick={onToggle}
+        onClick={onOpen}
         className={`flex min-h-11 w-full flex-col gap-2 rounded-control text-left transition ${selected ? "ring-2 ring-accent" : ""}`}
       >
         <TileArt entry={entry} banner={banner} />
@@ -127,6 +157,8 @@ export function ReadyMadeCategory() {
   const library = asked && names.includes(asked) ? asked : (names[0] ?? null);
   const picksApi = useReadyMadePicks();
   const queryClient = useQueryClient();
+  const [opened, setOpened] = useState<string | null>(null);
+  const closePreview = useCallback(() => setOpened(null), []);
 
   const data = useQuery({
     queryKey: ["ready-made", "category", library, category],
@@ -158,6 +190,11 @@ export function ReadyMadeCategory() {
   }
 
   const local = picksApi.picks(library);
+  const openedEntry = data.data?.collections.find((entry) => `${entry.block}:${entry.key}` === opened) ?? null;
+  const customiseLink = (entry: ReadyMadeEntry) =>
+    data.data?.customisable && entry.block
+      ? `/collections/new?${new URLSearchParams({ library, category, block: entry.block, key: entry.key })}`
+      : undefined;
   const banner = categoryOf("collection", { name: category, group: data.data?.group ?? "both" }).banner;
 
   return (
@@ -213,6 +250,7 @@ export function ReadyMadeCategory() {
               library={library}
               selected={isSelected(entry, category, local)}
               onToggle={() => picksApi.setPicked(library, category, entry, !isSelected(entry, category, local))}
+              onOpen={() => setOpened(`${entry.block}:${entry.key}`)}
               retry={{
                 // Building a pick again: the same Build the bar does, for just this one.
                 run: async () => {
@@ -227,14 +265,24 @@ export function ReadyMadeCategory() {
                 },
                 onDone: () => queryClient.invalidateQueries({ queryKey: ["ready-made"] }),
               }}
-              customise={
-                data.data.customisable && entry.block
-                  ? `/collections/new?${new URLSearchParams({ library, category, block: entry.block, key: entry.key })}`
-                  : undefined
-              }
+              customise={customiseLink(entry)}
             />
           ))}
         </ul>
+      )}
+
+      {openedEntry && data.data && (
+        <ReadyMadePreview
+          library={library}
+          category={category}
+          entry={openedEntry}
+          art={<TileArt entry={openedEntry} banner={banner} />}
+          status={statusLine(openedEntry, isSelected(openedEntry, category, local), openedEntry.state === "in_plex")}
+          selected={isSelected(openedEntry, category, local)}
+          onToggle={() => picksApi.setPicked(library, category, openedEntry, !isSelected(openedEntry, category, local))}
+          customise={customiseLink(openedEntry)}
+          onClose={closePreview}
+        />
       )}
 
       <BuildBar library={library} />

@@ -284,3 +284,37 @@ def test_retry_builds_a_failed_collection_again(root):
         busy = client.post(f"/api/v1/collections/{built['id']}/retry")
         assert busy.status_code == 409 and "already being built" in busy.json()["detail"]["message"]
         assert client.post("/api/v1/collections/9999/retry").status_code == 404
+
+
+def test_a_ready_made_previews_before_its_built(root):
+    """Opening a Ready-made tile: a Plex filter runs against Plex, a chart reads its list, anything else says why."""
+    imdb = root / "kometa" / "defaults" / "chart" / "imdb.yml"
+    imdb.write_text(
+        "templates:\n  imdb_chart:\n    imdb_chart: <<chart>>_<<library_type>>s\n"
+        "collections:\n  IMDb Top 250:\n    variables:\n      key: top\n    template:\n      - name: imdb_chart\n        chart: top\n      - name: shared\n"
+    )
+    client, plex, _ = make_client(root)
+    with client:
+        wait_for_task(client, "ready_made_counts")
+        url = "/api/v1/ready-made/libraries/Movies/categories/{}/preview"
+
+        genre = client.get(url.format("genre"), params={"block": "Genre", "key": "Action"}).json()
+        assert genre["previewable"] is True and genre["problems"] == []
+        assert genre["in_library_count"] >= 1 and genre["missing_count"] == 0
+        assert {"rating_key", "title", "year", "thumb"} <= set(genre["in_library"][0])
+        asked = [r for r in plex.requests if r.url.path == "/library/sections/1/all" and "genre" in str(r.url)]
+        assert asked, "the default's own smart filter goes to Plex"
+
+        # A person is a Plex filter too (FakePlex has no director tags, so Plex's answer is a problem, not a why).
+        person = client.get(url.format("director"), params={"block": "Directors", "key": "Denis Villeneuve"}).json()
+        assert person["previewable"] is True and person["why"] is None
+        assert person["problems"] == ["Tag value 'Denis Villeneuve' not found for field 'director'"]
+
+        # IMDb is a list only Kometa reads: the chart resolves to imdb_chart: top_movies, which says so.
+        chart = client.get(url.format("imdb"), params={"key": "IMDb Top 250"}).json()
+        assert chart["previewable"] is False
+        assert chart["skipped"] == [{"label": "IMDb Top 250", "why": chart["why"]}]
+
+        # Nothing Studio can read before the build: the fixture's basic chart names no list.
+        basic = client.get(url.format("basic"), params={"key": "Newly Released"}).json()
+        assert basic["previewable"] is False and "Build it to see" in basic["why"]

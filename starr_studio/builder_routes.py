@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from ruamel.yaml import YAML
 
 from . import collections as col
-from . import collection_requests, list_sources, ready_made_posters, smart_filters, studio_files
+from . import collection_requests, list_sources, ready_made, ready_made_lists, ready_made_posters, smart_filters, studio_files
 from .config_sections import read_section
 from .config_write import SaveRefused
 from .default_covers import DEFAULT_IMAGES
@@ -732,9 +732,14 @@ async def builder_source_preview(body: ListPreviewIn, request: Request, settings
     """What a collection's lists and titles hold: the union, split into what the library has and what it's missing.
     ``skipped`` names the sources Studio can't read itself (IMDb, Letterboxd, a Plex search), which show once built."""
     context = await _context(request, settings, body.library)
-    empty = {"total": None, "in_library": [], "in_library_count": 0, "missing": [], "missing_count": 0}
     sources, problems = _preview_sources(body, context.library_type)
-    items, skipped, read_problems, read = await _read_sources(_lists(request, settings), sources, context.library_type)
+    return await _list_preview(context, _lists(request, settings), sources, problems)
+
+
+async def _list_preview(context: Context, lists: list_sources.Lists, sources: list[dict], problems: list[str]) -> dict:
+    """What list and titles sources hold, split into what the library has and what it's missing (the source preview)."""
+    empty = {"total": None, "in_library": [], "in_library_count": 0, "missing": [], "missing_count": 0}
+    items, skipped, read_problems, read = await _read_sources(lists, sources, context.library_type)
     problems += read_problems
     if not read:
         if skipped and not problems:
@@ -971,14 +976,15 @@ async def get_poster(name: str, settings: AppSettings) -> FileResponse:
 # --- Ready-made templates open in the builder ----------------------------------------------------
 
 
-@router.get("/ready-made/libraries/{library}/categories/{category}/customise")
-async def customise_ready_made(library: str, category: str, block: str, key: str, request: Request, db: Db, settings: AppSettings) -> dict:
-    """A builder draft (not saved) for one ready-made collection that's a Plex filter, such as Action Movies."""
-    context = await _context(request, settings, library)
+NOT_A_FILTER = "This ready-made comes from a list, which the builder can't use yet"
+
+
+async def _ready_made_filter(context: Context, settings, db: sqlite3.Connection, library: str, category: str, block: str, key: str) -> tuple[str, dict, dict]:
+    """(title, filters, the block's attrs) for a ready-made collection that's a Plex filter. 422 when it isn't one."""
     root = _kometa_root(settings)
     source = studio_files.default_file(root, category, context.library_type) if root else None
     if source is None or not block:
-        raise HTTPException(422, {"message": "This ready-made comes from a list, which the builder can't use yet"})
+        raise HTTPException(422, {"message": NOT_A_FILTER})
     data = YAML(typ="safe", pure=True).load(source.read_text(encoding="utf-8")) or {}
     attrs = (data.get("dynamic_collections") or {}).get(block)
     if not isinstance(attrs, dict):
@@ -989,7 +995,7 @@ async def customise_ready_made(library: str, category: str, block: str, key: str
     field_key = str(term or attrs.get("type") or "")
     field = next((f for f in smart_filters.fields(context.library_type) if f.key == field_key), None)
     if field is None:
-        raise HTTPException(422, {"message": "This ready-made comes from a list, which the builder can't use yet"})
+        raise HTTPException(422, {"message": NOT_A_FILTER})
     addons = {str(k): [str(v) for v in (vs if isinstance(vs, list) else [vs])] for k, vs in (attrs.get("addons") or {}).items()}
     extra = [v for v in addons.get(key, []) if v != key]
     if extra and field.plex_tag:
@@ -1004,12 +1010,65 @@ async def customise_ready_made(library: str, category: str, block: str, key: str
     entry = next((e for e in (cached.get("data") or {}).get("entries", []) if str(e.get("block")) == block and str(e.get("key")) == key), None)
     title = str(entry.get("title")) if entry else key
     value: object = values if field.kind in ("tag", "string") else (int(key) if key.isdigit() else key)
+    # Kometa's smart_filter template puts the value in an `any:` block, so a key with addons (G with TV-G)
+    # matches either; in an `all:` block Kometa would AND them.
+    return title, {"match": "any", "rules": [{"field": field.key, "modifier": "", "value": value}]}, attrs
+
+
+# What the preview says for ready-mades Studio can't read before they're built.
+NOT_PREVIEWABLE = "Kometa works out what goes in this one when it builds it. Build it to see what it holds."
+NOT_PREVIEWABLE_TMDB = "Kometa looks these up on TMDb when it builds them. Build it to see what it holds."
+
+
+@router.get("/ready-made/libraries/{library}/categories/{category}/preview")
+async def preview_ready_made(library: str, category: str, key: str, request: Request, db: Db, settings: AppSettings, block: str = "") -> dict:
+    """What one ready-made collection would hold, before it's built: the same shape as the builder's source preview.
+
+    A Plex filter (genre, decade, a director …) is run against Plex; a chart that reads a list Studio knows (TMDb, IMDb,
+    Letterboxd, MDBList) is read like a builder list, with what's missing. Anything else says why it can't be shown yet.
+    """
+    context = await _context(request, settings, library)
+    empty = {"total": None, "in_library": [], "in_library_count": 0, "missing": [], "missing_count": 0, "skipped": []}
+    try:
+        _, filters, _ = await _ready_made_filter(context, settings, db, library, category, block, key)
+    except HTTPException as error:
+        if error.status_code != 422:
+            raise
+        filters = None
+    if filters is not None:
+        try:
+            params = await smart_filters.plex_query(context.server, context.section, context.library_type, filters, TEMPLATE_SORT)
+            items, total = await context.server.query(context.section, params, LIST_PREVIEW_SIZE)
+        except smart_filters.SmartFilterError as error:
+            return {"previewable": True, "why": None, **empty, "problems": [str(error)]}
+        except PlexUnavailable as error:
+            raise HTTPException(503, f"Plex can't be reached: {error}") from None
+        return {
+            "previewable": True,
+            "why": None,
+            **empty,
+            "total": total,
+            "in_library": [{"rating_key": i.rating_key, "title": i.title, "year": i.year, "thumb": i.thumb} for i in items],
+            "in_library_count": total,
+            "problems": [],
+        }
+    root = _kometa_root(settings)
+    sources = ready_made_lists.sources(root, context.library_type, category, key) if root and not block else []
+    if sources:
+        return await _list_preview(context, _lists(request, settings), sources, [])
+    tmdb = block and root and ready_made.dynamic_source(root, category, block, context.library_type) == "tmdb"
+    return {"previewable": False, "why": NOT_PREVIEWABLE_TMDB if tmdb else NOT_PREVIEWABLE, **empty, "problems": []}
+
+
+@router.get("/ready-made/libraries/{library}/categories/{category}/customise")
+async def customise_ready_made(library: str, category: str, block: str, key: str, request: Request, db: Db, settings: AppSettings) -> dict:
+    """A builder draft (not saved) for one ready-made collection that's a Plex filter, such as Action Movies."""
+    context = await _context(request, settings, library)
+    title, filters, attrs = await _ready_made_filter(context, settings, db, library, category, block, key)
     return {
         "library": library,
         "title": title,
-        # Kometa's smart_filter template puts the value in an `any:` block, so a key with addons (G with TV-G)
-        # matches either; in an `all:` block Kometa would AND them.
-        "filters": {"match": "any", "rules": [{"field": field.key, "modifier": "", "value": value}]},
+        "filters": filters,
         "sort_by": TEMPLATE_SORT,
         "limit": None,
         "visible": {"library": True, "home": False, "shared": False},
