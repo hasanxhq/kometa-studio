@@ -312,6 +312,33 @@ async def _seerr_get(http: httpx.AsyncClient, conn: SeerrConnection, path: str) 
         raise ArrProblem("Seerr's answer wasn't JSON") from None
 
 
+async def _seerr_post(http: httpx.AsyncClient, conn: SeerrConnection, path: str) -> Any:
+    try:
+        res = await http.post(
+            f"{conn.url.rstrip('/')}{path}",
+            headers={"X-Api-Key": conn.api_key, "Accept": "application/json"},
+            auth=conn.login or httpx.USE_CLIENT_DEFAULT,
+            timeout=TIMEOUT,
+        )
+    except httpx.TimeoutException:
+        raise ArrProblem(f"Seerr didn't answer within {TIMEOUT:g} s") from None
+    except httpx.HTTPError as error:
+        raise ArrProblem(f"Can't connect to Seerr: {error}") from None
+    if res.status_code in (401, 403):
+        raise ArrProblem("Seerr rejected the API key")
+    if res.status_code not in (200, 201):
+        raise ArrProblem(f"Seerr answered HTTP {res.status_code}")
+    try:
+        return res.json()
+    except ValueError:
+        return None
+
+
+# Seerr's MediaRequestStatus: 1 pending approval, 2 approved, 3 declined, 4 failed, 5 completed.
+SEERR_FAILED = 4
+SEERR_RETRIED = "Seerr couldn't hand it to {app} at first; Studio asked Seerr to try again"
+
+
 async def seerr_default_server(http: httpx.AsyncClient, conn: SeerrConnection, app: Kind) -> SeerrServer | None:
     """The Radarr or Sonarr server Seerr sends requests to by default (4K servers are ignored), or None if it has none."""
     servers = await _seerr_get(http, conn, f"/api/v1/service/{app}")
@@ -1031,6 +1058,8 @@ class RequestService:
                 try:
                     found = await arr._get(self.http, radarr_conn, "/api/v3/movie", {"tmdbId": tmdb_id})
                     movie_list = found if isinstance(found, list) else ([found] if isinstance(found, dict) and found.get("id") else [])
+                    if not movie_list and via == "seerr":
+                        await self._follow_seerr(row, now)
                     if movie_list:
                         movie = movie_list[0]
                         movie_id = movie["id"]
@@ -1066,6 +1095,8 @@ class RequestService:
                 try:
                     found = await arr._get(self.http, sonarr_conn, "/api/v3/series", {"tvdbId": tvdb_id})
                     series_list = found if isinstance(found, list) else ([found] if isinstance(found, dict) and found.get("id") else [])
+                    if not series_list and via == "seerr":
+                        await self._follow_seerr(row, now)
                     if series_list:
                         series = series_list[0]
                         series_id = series["id"]
@@ -1092,6 +1123,77 @@ class RequestService:
 
         self.db.commit()
         return self.counts()
+
+    async def _unmonitor_seerr_item(self, row: dict) -> None:
+        """Unmonitor what Seerr added to Radarr/Sonarr for a cancelled request, if it carries Studio's starr tag."""
+        item, media = row["item"], row["media"]
+        try:
+            if media == "movie":
+                conn = arr.connection(self.db, self.box, self.config, "radarr")
+                tmdb_id = item.split(":")[1] if ":" in item else None
+                if conn is None or not tmdb_id:
+                    return
+                found = await arr._get(self.http, conn, "/api/v3/movie", {"tmdbId": tmdb_id})
+                path = "/api/v3/movie"
+            else:
+                conn = arr.connection(self.db, self.box, self.config, "sonarr")
+                tvdb_id = item.removeprefix("tvdb:") if item.startswith("tvdb:") else None
+                if item.startswith("tmdb-show:"):
+                    tvdb_id = await self._tmdb_to_tvdb(item.removeprefix("tmdb-show:"))
+                if conn is None or not tvdb_id:
+                    return
+                found = await arr._get(self.http, conn, "/api/v3/series", {"tvdbId": tvdb_id})
+                path = "/api/v3/series"
+            entries = found if isinstance(found, list) else []
+            if not entries:
+                return
+            entry = entries[0]
+            starr = await self._ensure_tag(conn)
+            if starr not in (entry.get("tags") or []) or not entry.get("monitored"):
+                return  # not Studio's to change, or already unmonitored
+            entry["monitored"] = False
+            await arr._put(self.http, conn, f"{path}/{entry['id']}", json=entry)
+        except Exception as error:
+            log.warning("Could not unmonitor %s after cancelling its Seerr request: %s", item, error)
+
+    async def _follow_seerr(self, row: dict, now: datetime) -> None:
+        """A Seerr request that hasn't reached Radarr/Sonarr: if Seerr marked it failed, retry it once, then fail it.
+
+        Seerr approves a request, then hands it to Radarr/Sonarr on its own. When that's refused (on 2026-11-06 Radarr
+        answered 409 to two of eight requests Seerr sent within a second), Seerr marks the request failed and stops.
+        Its retry sends it again, which got both through.
+        """
+        conn = self.load_seerr_connection()
+        external_id = row.get("external_id")
+        if conn is None or not external_id:
+            return
+        try:
+            request = await _seerr_get(self.http, conn, f"/api/v1/request/{external_id}")
+        except ArrProblem as error:
+            log.warning("Could not check request %s in Seerr: %s", external_id, error)
+            return
+        if not isinstance(request, dict) or request.get("status") != SEERR_FAILED:
+            return
+        app = "Radarr" if row["media"] == "movie" else "Sonarr"
+        retried_note = SEERR_RETRIED.format(app=app)
+        note = row.get("error") or ""
+        if retried_note not in note:
+            try:
+                retried = await _seerr_post(self.http, conn, f"/api/v1/request/{external_id}/retry")
+            except ArrProblem as error:
+                log.warning("Could not retry request %s in Seerr: %s", external_id, error)
+                retried = None
+            if isinstance(retried, dict) and retried.get("status") != SEERR_FAILED:
+                self.db.execute(
+                    "UPDATE requests SET error = ?, updated_at = ? WHERE id = ?",
+                    ("\n".join(part for part in (note, retried_note) if part), utc_text(now), row["id"]),
+                )
+                log.info("Seerr request %s had failed; retried it", external_id)
+                return
+        self.db.execute(
+            "UPDATE requests SET status = 'failed', error = ?, updated_at = ? WHERE id = ?",
+            (f"Seerr couldn't hand it to {app}, even after a retry. See Seerr's and {app}'s logs, then retry it in Seerr", utc_text(now), row["id"]),
+        )
 
     def on_imports(self, kind: Kind, records: list[dict], now: datetime) -> int:
         updated_count = 0
@@ -1221,6 +1323,9 @@ class RequestService:
                     await self.http.delete(f"{url}/api/v1/request/{external_id}", headers=headers, auth=auth, timeout=TIMEOUT)
                 except Exception as e:
                     log.warning("Could not delete request %s in Seerr: %s", external_id, e)
+            # Deleting Seerr's request leaves what Seerr already added to Radarr/Sonarr monitored, so it would still
+            # download. Unmonitor it there, as a direct request's cancel does, when it carries Studio's starr tag.
+            await self._unmonitor_seerr_item(row_dict)
 
         self.db.execute(
             "UPDATE requests SET status = 'cancelled', updated_at = ? WHERE id = ?",

@@ -82,6 +82,8 @@ class FakeMockEnvironment:
         self.sonarr_queue: list[dict] = []
 
         self.seerr_requests: dict[int, dict] = {}
+        self.seerr_retries: list[int] = []
+        self.seerr_retry_fails = False  # Radarr refuses it again
         self.seerr_fail_409 = False
         self.seerr_answer_202 = False  # Seerr's NoSeasonsAvailableError
 
@@ -260,11 +262,22 @@ class FakeMockEnvironment:
                 req = {"id": self._next_id, **body}
                 self.seerr_requests[self._next_id] = req
                 return httpx.Response(201, json=req)
+            if path.startswith("/api/v1/request/") and path.endswith("/retry") and request.method == "POST":
+                req_id = int(path.split("/")[-2])
+                self.seerr_retries.append(req_id)
+                if req_id not in self.seerr_requests:
+                    return httpx.Response(404)
+                self.seerr_requests[req_id]["status"] = 4 if self.seerr_retry_fails else 2
+                return httpx.Response(200, json=self.seerr_requests[req_id])
             if path.startswith("/api/v1/request/"):
                 req_id = int(path.rsplit("/", 1)[-1])
                 if request.method == "DELETE":
                     self.seerr_requests.pop(req_id, None)
                     return httpx.Response(204)
+                if request.method == "GET":
+                    if req_id not in self.seerr_requests:
+                        return httpx.Response(404)
+                    return httpx.Response(200, json={"status": 2, **self.seerr_requests[req_id]})
             return httpx.Response(404)
 
         return httpx.Response(404)
@@ -1006,3 +1019,88 @@ async def test_carry_over_without_a_writer_keeps_the_old_setting(env):
     assert get_setting(db, "requests.seerr_carry")["error"] == "Studio doesn't know where Kometa's config.yml is."
     assert "seerr" not in config.read_text()
     assert service.load_seerr_connection().url == SEERR_URL
+
+
+async def _seerr_request(service, config, tmdb: int) -> dict:
+    settings = service.load_settings()
+    settings.enabled = True
+    settings.via = "seerr"
+    service.save_settings(settings)
+    connect_seerr(config)
+    await service.request([Item(item=f"tmdb-movie:{tmdb}", title=f"Movie {tmdb}")], library="Movies", collection_id=1, now=T0)
+
+
+@pytest.mark.anyio
+async def test_a_failed_seerr_request_is_retried_once(env):
+    """Seerr marks a request failed when Radarr refuses it (a 409 on 2026-11-06); Studio asks Seerr to retry it, once."""
+    service, mock, db, box, config, client = env
+    await _seerr_request(service, config, 673)
+    row = db.execute("SELECT * FROM requests WHERE item = 'tmdb-movie:673'").fetchone()
+    seerr_id = int(row["external_id"])
+    mock.seerr_requests[seerr_id]["status"] = 4  # failed
+
+    await service.refresh(T0 + timedelta(minutes=2))
+    assert mock.seerr_retries == [seerr_id]
+    row = db.execute("SELECT * FROM requests WHERE item = 'tmdb-movie:673'").fetchone()
+    assert row["status"] == "requested"
+    assert "Studio asked Seerr to try again" in row["error"]
+
+    # Approved now and still on its way: nothing more to do.
+    await service.refresh(T0 + timedelta(minutes=4))
+    assert mock.seerr_retries == [seerr_id]
+
+
+@pytest.mark.anyio
+async def test_a_seerr_request_that_fails_again_shows_as_failed(env):
+    service, mock, db, box, config, client = env
+    await _seerr_request(service, config, 674)
+    seerr_id = int(db.execute("SELECT external_id FROM requests").fetchone()[0])
+    mock.seerr_requests[seerr_id]["status"] = 4
+    mock.seerr_retry_fails = True
+
+    await service.refresh(T0 + timedelta(minutes=2))
+    row = db.execute("SELECT * FROM requests").fetchone()
+    assert row["status"] == "failed"
+    assert row["error"].startswith("Seerr couldn't hand it to Radarr, even after a retry")
+    assert mock.seerr_retries == [seerr_id]  # one retry, never a loop
+
+
+@pytest.mark.anyio
+async def test_a_seerr_request_already_in_radarr_isnt_asked_about(env):
+    service, mock, db, box, config, client = env
+    await _seerr_request(service, config, 675)
+    seerr_id = int(db.execute("SELECT external_id FROM requests").fetchone()[0])
+    mock.seerr_requests[seerr_id]["status"] = 4
+    mock.radarr_movies[301] = {"id": 301, "tmdbId": 675, "tags": [], "monitored": True}
+
+    await service.refresh(T0 + timedelta(minutes=2))
+    assert mock.seerr_retries == []  # it reached Radarr: Seerr's view of it doesn't matter
+
+
+@pytest.mark.anyio
+async def test_cancelling_a_seerr_request_unmonitors_what_seerr_added(env):
+    """Deleting Seerr's request leaves Radarr's movie monitored, so it would still download: cancel unmonitors it too."""
+    service, mock, db, box, config, client = env
+    await _seerr_request(service, config, 1003598)
+    row = db.execute("SELECT * FROM requests").fetchone()
+    mock.radarr_movies[195] = {"id": 195, "tmdbId": 1003598, "tags": [], "monitored": True}
+    await service.refresh(T0 + timedelta(minutes=2))  # tags it starr, as Studio does for Seerr's adds
+    mock.radarr_movies[196] = {"id": 196, "tmdbId": 42, "tags": [], "monitored": True}  # not Studio's
+
+    cancelled = await service.cancel(row["id"], T0 + timedelta(minutes=3))
+    assert cancelled["status"] == "cancelled"
+    assert int(row["external_id"]) not in mock.seerr_requests
+    assert mock.radarr_movies[195]["monitored"] is False
+    assert mock.radarr_movies[196]["monitored"] is True
+
+
+@pytest.mark.anyio
+async def test_cancelling_a_seerr_request_leaves_an_untagged_movie_alone(env):
+    """A movie in Radarr without Studio's starr tag was there for other reasons: cancel doesn't touch it."""
+    service, mock, db, box, config, client = env
+    await _seerr_request(service, config, 550)
+    row = db.execute("SELECT * FROM requests").fetchone()
+    mock.radarr_movies[77] = {"id": 77, "tmdbId": 550, "tags": [1], "monitored": True}
+
+    await service.cancel(row["id"], T0 + timedelta(minutes=1))
+    assert mock.radarr_movies[77]["monitored"] is True
