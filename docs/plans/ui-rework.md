@@ -13,7 +13,7 @@ These add to `AGENTS.md`; they don't replace it.
 2. **Decide, don't ask.** Where the plan leaves a choice open, take the sensible default and list each choice under "Choices made" in the PR description. Ask the maintainer only before anything that changes what Plex, Radarr, Sonarr or Seerr receive, or that deletes data.
 3. **Keep every URL working.** Old paths redirect to their new home (`<Navigate replace>`). Bookmarks and links in run logs must not break.
 4. **No new YAML in the UI.** Studio owns the config; YAML stays read-only behind a disclosure, as today.
-5. **Look and feel:** the tokens in `frontend/src/index.css` (`bg`, `surface`, `surface-2`, `border`, `accent` …), Space Grotesk headings, Inter body, `rounded-card` / `rounded-control`. Touch targets at least 44 px (`min-h-11`). Real `<button>`, `<a>` and `<label>` elements; `aria-label` on icon-only buttons. Icons are inline stroke SVGs in one new file, `frontend/src/components/icons.tsx`; no icon library, no emoji.
+5. **Look and feel:** the tokens in `frontend/src/index.css` (`bg`, `surface`, `surface-2`, `border`, `accent` …), Space Grotesk headings, Inter body (always through the `--font-*` variables, so F1's switch reaches them), `rounded-card` / `rounded-control`. Touch targets at least 44 px (`min-h-11`). Real `<button>`, `<a>` and `<label>` elements; `aria-label` on icon-only buttons. Icons are inline stroke SVGs in one new file, `frontend/src/components/icons.tsx`; no icon library, no emoji.
 6. **Copy:** plain words, sentence case, no jargon a Plex user wouldn't know. Say what happens ("Kometa redraws about 1,100 posters"), not what the code does. Plain text says "Starr Studio"; only the logo is styled St*arr.
 7. **Editors keep their guards:** anything with unsaved state uses `LeaveGuard` / `useLeaveEditor`.
 8. **Tests come with the change.** Frontend: Vitest + Testing Library next to the page (`*.test.tsx`). Backend: pytest with `tests/fakeplex.py`; never the network. Run both suites before each commit, exactly as CI does (see `AGENTS.md` → Tests).
@@ -32,6 +32,36 @@ P0 foundations ──┬── P1 navigation ── P2 Home
 - P0 comes first; everything uses it.
 - After P0, three tracks can run in parallel worktrees: **P1 → P2**, **P3 → P4**, and **P5**. They touch different pages. The shared files are `nav.ts`, `Layout.tsx` and `api.ts`: keep edits there small and merge `dev` in often.
 - Steps inside a phase are separate PRs, in the order given.
+- **F1 (font choice)** depends on nothing and nothing depends on it. Do it first, so the maintainer can try system fonts while the rest is built.
+
+---
+
+## F1 · Font choice in Settings → UI (`font-choice`)
+
+The maintainer wants to compare Studio's bundled fonts with the device's own before deciding the default. This step adds the switch only; the default stays as it is.
+
+- **Settings → UI** (`frontend/src/pages/SettingsUI.tsx`) gets a "Text" card under "Forms", with a radio group labelled **Fonts**:
+  - **Studio fonts** (the default): Space Grotesk headings, Inter text, JetBrains Mono code, as today.
+  - **System text, Studio headings:** the device's font for text and code; headings stay Space Grotesk.
+  - **System everywhere:** the device's font for headings, text and code.
+  - Help line: "Studio's fonts look the same on every device. System fonts match your computer or phone, and text wraps a little differently on each. Remembered in this browser."
+- **Stored in this browser**, like Show Advanced (`advanced.tsx`):
+  - a small `fonts.ts` module with `readFonts()` / `applyFonts()`
+  - localStorage key `studio.fonts`, holding `studio`, `system-text` or `system`
+  - every read and write in `try/catch`; a missing or unknown value reads as `studio`
+- **Applied as `data-fonts` on `<html>`.** `index.css` overrides the three variables under `:root[data-fonts="system-text"]` and `:root[data-fonts="system"]`:
+  - text: `system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`
+  - code: `ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace`
+  - headings (`system` only): the same as text
+  - Keep the three Fontsource imports in `main.tsx`. Browsers fetch a font file only when some text uses it, so the system modes download none.
+- **No flash on load:** a few lines of inline script in `frontend/index.html`'s `<head>` read `studio.fonts` (in `try/catch`) and set `data-fonts` before the page paints. A change in Settings applies at once, with no reload.
+- Every font in the app already goes through `--font-display`, `--font-sans` and `--font-mono` (including the YAML editor). Keep it that way: no font names in classes or components.
+- **Tests:** `SettingsUI.test.tsx`: each option sets `document.documentElement.dataset.fonts` and the stored value. `fonts.test.ts`: an unknown stored value, or storage that throws, gives `studio`.
+- **Acceptance:**
+  - Switching changes every page's text at once, and a reload keeps the choice.
+  - In "System everywhere", the browser's network tab shows no `.woff2` requests after a hard reload.
+  - Overview, Collections and the overlay designer at 390 px wide, in each mode: nothing overflows and no button label wraps out of its button.
+- **Not in this step:** changing the default or removing the bundled fonts. The maintainer decides after trying it, and that's a separate PR.
 
 ---
 
