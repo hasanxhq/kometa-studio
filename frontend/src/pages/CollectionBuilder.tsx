@@ -8,6 +8,7 @@ import { ApiError } from "../api";
 import {
   builderApi,
   canDownloadMissing,
+  customOrderProblem,
   isKometaPosterUrl,
   posterPreviewSrc,
   sourcesOf,
@@ -386,6 +387,11 @@ function BuilderForm({
     baselineSnap.poster?.kind === "url" && isKometaPosterUrl(baselineSnap.poster.url) ? baselineSnap.poster.url : null;
   const isList = mode === "list";
   const apiSources = isList ? toApiSources(draft.sources) : [];
+  const orderProblem = isList ? customOrderProblem(apiSources) : null;
+  // Kometa refuses "List order" for these sources when it builds: move to release date as soon as they change.
+  useEffect(() => {
+    if (orderProblem && draft.sort_by === "custom") setDraft((current) => ({ ...current, sort_by: "release" }));
+  }, [orderProblem, draft.sort_by]);
 
   const [previewArgs, setPreviewArgs] = useState<{ filters: FilterSpec; sort_by: string | null } | null>(null);
   useEffect(() => {
@@ -576,15 +582,15 @@ function BuilderForm({
                 {isList ? "Order and size" : "Sort and size"}
               </h3>
               {isList ? (
-                <Field label="Order">
+                <Field label="Order" hint={orderProblem ? `${orderProblem} List order isn't available.` : undefined}>
                   <select
                     className={inputClass}
-                    value={draft.sort_by ?? "custom"}
+                    value={draft.sort_by ?? (orderProblem ? "release" : "custom")}
                     onChange={(event) => setDraft({ ...draft, sort_by: event.target.value })}
                     aria-label="Order"
                   >
                     {LIST_SORTS.map((sort) => (
-                      <option key={sort.key} value={sort.key}>
+                      <option key={sort.key} value={sort.key} disabled={sort.key === "custom" && orderProblem !== null}>
                         {sort.label}
                       </option>
                     ))}

@@ -145,6 +145,39 @@ export function canDownloadMissing(sources: Source[]): boolean {
   );
 }
 
+// Kometa keeps a list's own order (collection_order: custom) only for these, and only as a collection's one source
+// (kometa/modules/builder.py custom_sort_builders). Mirrors list_sources.CUSTOM_ORDER_BUILDERS.
+const CUSTOM_ORDER_BUILDERS = new Set([
+  "plex_search",
+  "imdb_chart",
+  "imdb_list",
+  "letterboxd_list",
+  "mdblist_list",
+  "tmdb_list",
+  "tmdb_popular",
+  "tmdb_top_rated",
+  "tmdb_now_playing",
+  "tmdb_upcoming",
+  "tmdb_trending_daily",
+  "tmdb_trending_weekly",
+  "tmdb_airing_today",
+  "tmdb_on_the_air",
+]);
+
+/** Why "List order" can't be used with these sources, or null when it can (a source not picked yet counts as fine). */
+export function customOrderProblem(sources: Source[]): string | null {
+  if (sources.length > 1) return "Kometa keeps a list's own order only when the collection has one source.";
+  const source = sources[0];
+  if (!source) return null;
+  if (source.kind === "titles") return "Individual titles have no order of their own.";
+  if (source.kind === "search") return null;
+  if (source.kind === "list") {
+    if (!source.builder) return null;
+    if (!CUSTOM_ORDER_BUILDERS.has(source.builder)) return `Kometa can't keep the order of ${source.label?.trim() || "this list"}: it has none of its own.`;
+  }
+  return null;
+}
+
 export function isKometaPosterUrl(url: string): boolean {
   return url.includes("raw.githubusercontent.com/Kometa-Team/");
 }

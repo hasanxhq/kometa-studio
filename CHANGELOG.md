@@ -66,6 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A list collection Kometa won't order** no longer fails silently. Kometa keeps a list's own order ("List order") only when a collection has one source and that source is a ranked list (IMDb, TMDb charts and lists, Letterboxd, MDBList) or a Plex search; for a TMDb collection, individual titles or several sources it refuses the collection when it builds it, after Studio's check had passed. The builder now greys out List order for those, explains why and switches to release date, and saving refuses it.
+- **When Kometa refuses a collection, Studio says why**: Kometa still exits without an error and sends no webhook, so Studio used to say only that Plex had no such collection. It now shows Kometa's own reason from the run's summary (for example "collection_order: custom cannot be used with tmdb_collection").
+- **Seerr requests that Radarr or Sonarr refused**: Seerr marks such a request failed and stops, and Studio kept showing it as requested. Studio now asks Seerr to retry it once, and shows it as Failed with the reason if that fails too.
+- **Cancelling a Seerr request** now also unmonitors the title in Radarr/Sonarr (when it carries Studio's `starr` tag), as cancelling a direct request does. Deleting Seerr's request alone left it monitored, so it would still have downloaded.
+- **Webhook tokens no longer appear in Studio's access log**: Kometa's and Radarr/Sonarr's webhooks carry their token in the URL, which the log printed on every event. `token`, `apikey` and `X-Plex-Token` values now show as `<hidden>`.
 - A show Seerr already has every season of (requested or available) is recorded as **Already there** with that note, instead of failing with "HTTP 202". It doesn't count against the collection's daily limit.
 - Ready-made never builds a collection whose name is already used by a collection Studio didn't make, or by Maintainerr's. Kometa would have taken that collection over and given it Studio's label, so a later Remove could have deleted it. Build's confirmation lists these under "Won't build", with the reason.
 

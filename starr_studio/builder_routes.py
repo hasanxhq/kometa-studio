@@ -482,6 +482,8 @@ def _body_problems(context: Context, body: CollectionIn, settings) -> list[str]:
         problems.append("A collection from a list can't have filter rules yet")
     if body.sort_by not in (None, *LIST_ORDERS):
         problems.append("A list collection's order is list order, release date or title")
+    elif body.sort_by == "custom" and (why := list_sources.custom_order_problem([_source_dict(source) for source in sources])):
+        problems.append(why)
     if body.limit is not None:
         problems.append("A list collection takes the whole list; set how many titles in the source instead")
     return problems

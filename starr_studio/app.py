@@ -16,7 +16,7 @@ from . import __version__
 from .arr import Arr
 from .generated_sync import GeneratedFiles
 from .maintainerr import Maintainerr
-from . import network
+from . import log_redaction, network
 from .arr_routes import router as arr_router
 from .network import NetworkTransport
 from .network_routes import router as network_router
@@ -130,6 +130,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        log_redaction.install()  # no webhook token in the access log
         app.state.db = open_database(settings.db_path)
         app.state.timezone = get_setting(app.state.db, TIMEZONE) or app.state.timezone
         app.state.secrets = SecretBox.load_or_create(settings.data_dir)
