@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
-import { ApiError, api } from "../api";
+import { ApiError } from "../api";
+import { useLibrary } from "../library";
 import { builderApi, sourceLabel, sourcesOf, type BuiltCollection } from "../builderApi";
 import { FileBlock } from "../components/ImportLanding";
 import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
@@ -215,13 +216,10 @@ function UploadDialog({ libraries, initialLibrary, onClose }: { libraries: strin
 }
 
 export function Collections() {
-  const [params, setParams] = useSearchParams();
+  const [params] = useSearchParams();
   const kept = params.get("kept");
   const [uploadOpen, setUploadOpen] = useState(false);
-  const overview = useQuery({ queryKey: ["config"], queryFn: api.config.overview, retry: false });
-  const names = overview.data?.libraries.map((library) => library.name) ?? [];
-  const asked = params.get("library");
-  const library = asked && names.includes(asked) ? asked : (names[0] ?? null);
+  const { library, libraries: names, setLibrary, overview } = useLibrary();
 
   const data = useQuery({
     queryKey: ["collections", library],
@@ -268,7 +266,7 @@ export function Collections() {
             <select
               className="min-h-11 rounded-control border border-border-strong bg-surface-2 px-3 text-sm text-text focus:border-accent focus:outline-none"
               value={library}
-              onChange={(event) => setParams({ library: event.target.value }, { replace: true })}
+              onChange={(event) => setLibrary(event.target.value)}
             >
               {names.map((name) => (
                 <option key={name}>{name}</option>
