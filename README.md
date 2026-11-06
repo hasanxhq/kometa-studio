@@ -5,7 +5,9 @@
 
 # Starr Studio
 
-An arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kometa): it schedules Kometa runs, edits Kometa's config and YAML files with validation, and shows what each run changed in Plex.
+**A studio for organising your Plex library, with the \*arr suite.**
+
+Group titles into collections, give them posters and overlays, and let Radarr, Sonarr or Seerr fetch what's missing, all without writing YAML. Powered by [Kometa](https://github.com/Kometa-Team/Kometa): Studio writes Kometa's config, runs it and shows what each run changed in Plex.
 
 > **Unofficial.** Starr Studio is an independent project. It is not made by, endorsed by, or affiliated with the Kometa team. It runs an unmodified Kometa install and never changes Kometa's code.
 
@@ -13,11 +15,23 @@ An arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kometa): it sch
 
 ## What it does
 
-- **First-run setup** walks you through what Kometa needs: Plex, a TMDb key and at least one library.
-- **Libraries** shows your Plex collections, managed by Kometa or not, next to what Kometa's config does. Collections, overlays, playlists and Kometa's settings have forms, and every YAML file can be edited directly. Kometa checks each save.
-- **Activity** runs Kometa with a live log, and shows what each run changed in Plex.
+**Organise what you have**
+- **Collections:** build one from smart filters, lists (TMDb, IMDb, Letterboxd, MDBList and more), individual titles or a Plex search, or combine several. A preview shows what's already in your library and what's missing before you build.
+- **Ready-made:** Kometa's ready-made collections (genres, studios, decades, awards, people and more) as galleries. Pick the ones you want and build them in one go.
+- **Posters and overlays:** upload or link a poster for each collection, and place Kometa's overlays (resolution, audio, ratings and more) with the overlay designer.
+- **Playlists** and every library's settings have forms too. Anything Studio can't describe stays in Kometa's own files, which you can still edit, and Kometa checks every save.
+
+**Fill the gaps**
+- **Download missing:** a collection can ask Radarr and Sonarr, or Seerr, for the titles it lacks, with a cap and a quality profile per collection. Requests are off until you turn them on.
+- **Requests** lists what was asked for and where it is. When a title arrives in Plex, Studio rebuilds just the collection that asked for it.
+
+**Move over from Kometa**
+- Already run Kometa? **Move over** reads your setup and shows how each collection would land in Studio. **Switch over** takes a full backup first, and **Undo** puts everything back. You can also upload a single collection file.
+
+**Keep it running**
+- **Activity** runs Kometa with a live log and shows what each run changed in Plex.
 - **System** schedules runs, reports health, and makes full backups.
-- **Settings** connects Radarr, Sonarr, Tautulli, MDBList and Maintainerr, and sets up notifications.
+- **Settings** connects Radarr, Sonarr, Seerr, Tautulli, MDBList and Maintainerr, and sets up notifications.
 
 ## What you need
 
@@ -74,10 +88,10 @@ Some networks block TMDb. Settings → Network has a proxy and DNS over HTTPS, a
 
 ### Behind a reverse proxy
 
-Set a **URL base** (such as `/kometa`) in Settings → General. Studio answers with and without it, so the proxy can pass the path on or strip it. For nginx:
+Set a **URL base** (such as `/starr-studio`) in Settings → General, and have the proxy pass the path on **as it is, prefix included**: a proxy that strips the prefix sends page loads round in a redirect loop. For nginx:
 
 ```nginx
-location /kometa/ {
+location /starr-studio/ {
     proxy_pass http://starr-studio:8484;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -86,7 +100,7 @@ location /kometa/ {
 }
 ```
 
-Requests that come through a proxy never count as local for sign-in, unless the proxy is listed under **Trusted proxies** in the same card. List the proxy's own address rather than a whole network where you can.
+Requests that come through a proxy never count as local for sign-in, unless the proxy is listed under **Trusted proxies** in the same card. List the proxy's own address rather than a whole network where you can. [Reverse proxy setup](docs/reverse-proxy.md) covers Caddy, Traefik and SWAG too.
 
 ## Develop
 
