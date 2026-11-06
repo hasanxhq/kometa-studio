@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Collection and Ready-made tiles show their state as a badge on the poster (shared `PosterTile` / `StatusBadge`).
 - The library you pick on **Collections**, **Ready-made** or the **overlay designer** is remembered for the next of those pages in this browser (URL still wins when present).
 
 ### Added

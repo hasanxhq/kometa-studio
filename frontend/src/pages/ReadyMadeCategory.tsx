@@ -2,7 +2,7 @@
 // the tile itself opens a preview of what it would hold.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 
 import { ApiError, api, type ReadyMadeBuildResult, type ReadyMadeEntry } from "../api";
@@ -12,12 +12,14 @@ import { useHeaderTitle } from "../components/HeaderTitle";
 import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
 import { PlexPoster } from "../components/PlexPoster";
 import { ReadyMadePreview } from "../components/ReadyMadePreview";
+import { PosterTile, StatusBadge, badgeFor } from "../components/PosterTile";
 import { RetryButton } from "../components/RetryButton";
 import { Button } from "../components/ui";
 import { categoryOf } from "../defaults";
 import { isSelected, useReadyMadePicks } from "../readyMadePicks";
 
-function statusLine(entry: ReadyMadeEntry, selected: boolean, wasBuilt: boolean): string {
+/** Caption line for the preview panel only (not the tile badge). */
+function previewStatusCaption(entry: ReadyMadeEntry, selected: boolean, wasBuilt: boolean): string {
   if (wasBuilt && !selected) return "Will be removed";
   switch (entry.state) {
     case "queued":
@@ -35,6 +37,11 @@ function statusLine(entry: ReadyMadeEntry, selected: boolean, wasBuilt: boolean)
     default:
       return selected ? "Selected" : "Not picked";
   }
+}
+
+function readyMadeTileBadge(entry: ReadyMadeEntry, selected: boolean, wasBuilt: boolean): ReactNode {
+  const state = wasBuilt && !selected ? ({ kind: "will_remove" } as const) : badgeFor(entry);
+  return state && <StatusBadge state={state} />;
 }
 
 /** The tile's art: Plex's poster once built, else the one Kometa will apply, else the colour banner. */
@@ -61,28 +68,6 @@ function TileArt({ entry, banner }: { entry: ReadyMadeEntry; banner: string }) {
   );
 }
 
-function PickTick({ title, selected, onToggle }: { title: string; selected: boolean; onToggle: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      aria-label={`Pick ${title}`}
-      title={selected ? "Picked" : "Pick"}
-      onClick={onToggle}
-      className="pointer-events-auto absolute right-0 bottom-0 flex size-11 items-center justify-center"
-    >
-      <span
-        aria-hidden="true"
-        className={`flex size-7 items-center justify-center rounded-full border-2 text-sm font-bold shadow ${
-          selected ? "border-accent bg-accent text-black" : "border-white/80 bg-black/55 text-transparent hover:text-white/80"
-        }`}
-      >
-        ✓
-      </span>
-    </button>
-  );
-}
-
 function CollectionTile({
   entry,
   banner,
@@ -102,25 +87,39 @@ function CollectionTile({
   retry?: { run: () => Promise<string | null>; onDone: () => void };
   library: string;
 }) {
-  const status = statusLine(entry, selected, entry.state === "in_plex");
+  const wasBuilt = entry.state === "in_plex";
+  const badge = readyMadeTileBadge(entry, selected, wasBuilt);
   const waiting = entry.requests?.waiting ?? 0;
   return (
-    <li aria-label={entry.title} className="relative">
-      {/* Over the poster's bottom corner (names sit at the top of Kometa's portraits), outside the open button. */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 aspect-[2/3]">
-        <PickTick title={entry.title} selected={selected} onToggle={onToggle} />
-      </div>
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        aria-label={entry.title}
-        onClick={onOpen}
-        className={`flex min-h-11 w-full flex-col gap-2 rounded-control text-left transition ${selected ? "ring-2 ring-accent" : ""}`}
-      >
-        <TileArt entry={entry} banner={banner} />
+    <PosterTile
+      title={entry.title}
+      onOpen={onOpen}
+      art={<TileArt entry={entry} banner={banner} />}
+      badge={badge ?? undefined}
+      pick={{ selected, onToggle }}
+      selected={selected}
+      controlClassName="gap-2 rounded-control transition"
+      footer={
+        <>
+          {entry.id != null && (entry.download_missing || entry.requests) && (
+            <div className="mt-1 flex flex-col gap-1">
+              <DownloadMissingBadge id={entry.id} downloadMissing={entry.download_missing} library={library} />
+              <RequestCountsLine summary={entry.requests} />
+            </div>
+          )}
+          {entry.state === "failed" && retry && <RetryButton title={entry.title} run={retry.run} onDone={retry.onDone} />}
+          {entry.id != null && waiting > 0 && <RequestWaitingButton id={entry.id} waiting={waiting} library={library} />}
+          {customise && (
+            <Link className="inline-flex min-h-11 items-center text-xs text-muted underline hover:text-text" to={customise} aria-label={`Customise ${entry.title}`}>
+              Customise
+            </Link>
+          )}
+        </>
+      }
+    >
+      <div className="flex flex-col gap-2">
         <span className="line-clamp-2 text-sm font-medium">{entry.title}</span>
         {entry.items != null && <span className="text-xs text-muted">{entry.items} in your library</span>}
-        <span className={`text-xs ${status === "Will be removed" ? "text-warn" : status === "Failed" ? "text-err" : "text-muted"}`}>{status}</span>
         {entry.state === "failed" && entry.last_error && (
           <details className="text-xs text-err">
             <summary className="min-h-11 cursor-pointer content-center">Error</summary>
@@ -128,22 +127,8 @@ function CollectionTile({
           </details>
         )}
         {entry.build_seconds != null && <span className="text-xs text-muted">built in {entry.build_seconds} s</span>}
-      </button>
-      {entry.id != null && (entry.download_missing || entry.requests) && (
-        <div className="mt-1 flex flex-col gap-1">
-          <DownloadMissingBadge id={entry.id} downloadMissing={entry.download_missing} library={library} />
-          <RequestCountsLine summary={entry.requests} />
-        </div>
-      )}
-      {entry.state === "failed" && retry && <RetryButton title={entry.title} run={retry.run} onDone={retry.onDone} />}
-      {entry.id != null && waiting > 0 && <RequestWaitingButton id={entry.id} waiting={waiting} library={library} />}
-      {customise && (
-        // A template: the builder opens prefilled, and saving makes it the user's own collection.
-        <Link className="inline-flex min-h-11 items-center text-xs text-muted underline hover:text-text" to={customise} aria-label={`Customise ${entry.title}`}>
-          Customise
-        </Link>
-      )}
-    </li>
+      </div>
+    </PosterTile>
   );
 }
 
@@ -274,7 +259,7 @@ export function ReadyMadeCategory() {
           category={category}
           entry={openedEntry}
           art={<TileArt entry={openedEntry} banner={banner} />}
-          status={statusLine(openedEntry, isSelected(openedEntry, category, local), openedEntry.state === "in_plex")}
+          status={previewStatusCaption(openedEntry, isSelected(openedEntry, category, local), openedEntry.state === "in_plex")}
           selected={isSelected(openedEntry, category, local)}
           onToggle={() => picksApi.setPicked(library, category, openedEntry, !isSelected(openedEntry, category, local))}
           customise={customiseLink(openedEntry)}
