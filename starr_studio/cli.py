@@ -16,7 +16,7 @@ MIN_PASSWORD = 8  # as Settings → General asks
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="starr-studio", description="Arr-style web GUI for Kometa.")
+    parser = argparse.ArgumentParser(prog="starr-studio", description="Starr Studio: organise your Plex library, with the *arr suite.")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = parser.add_subparsers(dest="command", required=True)
 

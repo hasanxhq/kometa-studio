@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "starr-studio"
 dynamic = ["version"]
-description = "Unofficial arr-style web GUI for Kometa"
+description = "A studio for organising your Plex library, with the *arr suite. Unofficial; powered by Kometa."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

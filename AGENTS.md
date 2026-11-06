@@ -4,7 +4,7 @@ Instructions for anyone, human or agent, working on this repository. `CLAUDE.md`
 
 ## What this is
 
-An unofficial, arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kometa). Studio edits Kometa's YAML files, schedules runs, launches Kometa as a one-shot subprocess (`--run`), and records what changed. The current plan is `KOMETA_STUDIO_HANDOFF_v2.md`.
+A studio for organising your Plex library, with the *arr suite: collections, posters, overlays and playlists, with Radarr, Sonarr or Seerr fetching what's missing. It is unofficial and powered by [Kometa](https://github.com/Kometa-Team/Kometa): Studio owns the configuration (collections are rows in its database), writes Kometa's YAML files from it, schedules runs, launches Kometa as a one-shot subprocess (`--run`), and records what changed. The current plan is `KOMETA_STUDIO_HANDOFF_v2.md`.
 
 **Never modify Kometa.** No patches, no imports of Kometa internals. Studio only writes the user's own config and YAML files that Kometa reads.
 
@@ -66,7 +66,7 @@ An unofficial, arr-style web GUI for [Kometa](https://github.com/Kometa-Team/Kom
 
 ## Tests
 
-CI runs one job, `test` (`.github/workflows/ci.yml`). Each part runs once it exists:
+CI runs one job, `test` (`.github/workflows/ci.yml`). A new push to a PR cancels that PR's older run; runs on `dev`, `release/**` and `hotfix/**` always finish. It runs:
 
 - Backend: `python -m pip install -e ".[dev]"` then `python -m pytest`
 - Frontend: `cd frontend && npm ci && npm run typecheck && npm test`
