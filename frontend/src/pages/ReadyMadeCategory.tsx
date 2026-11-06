@@ -1,6 +1,7 @@
 // One Ready-made category: poster grid of its collections; tap to pick, Save keeps them in the bar.
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { ApiError, api, type ReadyMadeBuildResult, type ReadyMadeEntry } from "../api";
@@ -33,6 +34,30 @@ function statusLine(entry: ReadyMadeEntry, selected: boolean, wasBuilt: boolean)
   }
 }
 
+/** The tile's art: Plex's poster once built, else the one Kometa will apply, else the colour banner. */
+function TileArt({ entry, banner }: { entry: ReadyMadeEntry; banner: string }) {
+  const [failed, setFailed] = useState(false);
+  if (entry.thumb) return <PlexPoster thumb={entry.thumb} title={entry.title} />;
+  if (entry.poster && !failed) {
+    return (
+      <div className="aspect-[2/3] overflow-hidden rounded-control border border-border bg-surface-2">
+        <img
+          src={api.readyMade.posterUrl(entry.poster)}
+          alt=""
+          loading="lazy"
+          className="size-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      </div>
+    );
+  }
+  return (
+    <div className={`flex aspect-[2/3] items-end overflow-hidden rounded-control border border-border p-2 font-display text-sm font-semibold ${banner}`}>
+      {entry.title}
+    </div>
+  );
+}
+
 function CollectionTile({
   entry,
   banner,
@@ -61,13 +86,7 @@ function CollectionTile({
         onClick={onToggle}
         className={`flex min-h-11 w-full flex-col gap-2 rounded-control text-left transition ${selected ? "ring-2 ring-accent" : ""}`}
       >
-        {entry.thumb ? (
-          <PlexPoster thumb={entry.thumb} title={entry.title} />
-        ) : (
-          <div className={`flex aspect-[2/3] items-end overflow-hidden rounded-control border border-border p-2 font-display text-sm font-semibold ${banner}`}>
-            {entry.title}
-          </div>
-        )}
+        <TileArt entry={entry} banner={banner} />
         <span className="line-clamp-2 text-sm font-medium">{entry.title}</span>
         {entry.items != null && <span className="text-xs text-muted">{entry.items} in your library</span>}
         <span className={`text-xs ${status === "Will be removed" ? "text-warn" : status === "Failed" ? "text-err" : "text-muted"}`}>{status}</span>
