@@ -205,10 +205,17 @@ function UndoDialog({ onClose }: { onClose: () => void }) {
             ))}
           </ul>
         )}
+        {(result.unlabelled_in_plex ?? []).length > 0 && (
+          <ul className="mt-2 list-inside list-disc">
+            {result.unlabelled_in_plex!.map((title) => (
+              <li key={title}>Studio's label taken off in Plex: {title}</li>
+            ))}
+          </ul>
+        )}
         {result.problems.length > 0 && (
           <ul className="mt-2 list-inside list-disc text-warn">
             {result.problems.map((problem) => (
-              <li key={problem}>Not deleted from Plex: {problem}</li>
+              <li key={problem}>{problem}</li>
             ))}
           </ul>
         )}
@@ -248,6 +255,7 @@ function UndoDialog({ onClose }: { onClose: () => void }) {
         <p>Undo puts Kometa's files and Studio's collections back as they were before the switch-over. A full backup is taken first.</p>
         <LossList label="Collections added since" items={data.loses.added} />
         <LossList label="Collections changed since" items={data.loses.changed} />
+        <LossList label="Back to Kometa: Studio's label comes off in Plex" items={data.unlabels ?? []} />
         {data.removes.length > 0 && (
           <div>
             <p className="font-medium text-text">Studio's files removed</p>

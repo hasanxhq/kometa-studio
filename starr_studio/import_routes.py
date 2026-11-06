@@ -26,9 +26,9 @@ from .builder_routes import _context, _delete_from_plex
 from .config_sections import with_library_file
 from .config_write import Edit, SaveRefused
 from .kometa_command import RunRequest
-from .plex_library import PlexUnavailable
+from .plex_library import PlexNotFound, PlexUnavailable
 from .plex_routes import kometa_plex
-from .ready_made_routes import AppRunner, AppSettings, Db, Writer, _kometa_root, _library_types, _plex_title, _reader
+from .ready_made_routes import STUDIO_LABEL, AppRunner, AppSettings, Db, Writer, _kometa_root, _library_types, _plex_title, _reader
 
 router = APIRouter(prefix="/api/v1", tags=["import"])
 
@@ -177,20 +177,55 @@ async def do_undo(body: UndoIn, request: Request, settings: AppSettings, db: Db,
                 raise HTTPException(507, f"Not undone: the backup before Undo failed. {error}") from None
             result = switch_over.finish_undo(db, row, then_db, restored, safety)
     deleted: list[str] = []
+    unlabelled: list[str] = []
     problems: list[str] = []
+    contexts: dict[str, object] = {}
+
+    async def context_for(library: str):
+        if library not in contexts:
+            try:
+                contexts[library] = await _context(request, settings, library)
+            except HTTPException as error:
+                contexts[library] = str(error.detail)
+        return contexts[library]
+
     if body.delete_from_plex:
         for entry in before["plex"]:
-            try:
-                context = await _context(request, settings, entry["library"])
-            except HTTPException as error:
-                problems.append(f"{entry['title']}: {error.detail}")
+            context = await context_for(entry["library"])
+            if isinstance(context, str):
+                problems.append(f"Not deleted from Plex: {entry['title']}: {context}")
                 continue
             gone, why = await _delete_from_plex(context, entry["title"])
             if gone:
                 deleted.append(entry["title"])
             elif why:
-                problems.append(f"{entry['title']}: {why}")
-    return result | {"deleted_from_plex": deleted, "problems": problems}
+                problems.append(f"Not deleted from Plex: {entry['title']}: {why}")
+    # The collections Kometa built or adopted for the switch-over are Kometa's again: take Studio's label off, so
+    # nothing reads them as Studio's. Their other labels, titles and posters stay as they are.
+    for entry in before["unlabels"]:
+        context = await context_for(entry["library"])
+        if isinstance(context, str):
+            problems.append(f"Studio's label is still on {entry['title']} in Plex: {context}")
+            continue
+        done, why = await _unlabel_in_plex(context, entry["title"])
+        if done:
+            unlabelled.append(entry["title"])
+        elif why:
+            problems.append(f"Studio's label is still on {entry['title']} in Plex: {why}")
+    return result | {"deleted_from_plex": deleted, "unlabelled_in_plex": unlabelled, "problems": problems}
+
+
+async def _unlabel_in_plex(context, title: str) -> tuple[bool, str | None]:
+    """Take the Studio label off the collection called ``title``; (done, why not). Nothing to do is (False, None)."""
+    try:
+        labelled = await context.server.labelled_collections(context.section, STUDIO_LABEL)
+        match = next((c for c in labelled if c.title.casefold() == title.casefold()), None)
+        if match is None:
+            return False, None  # never built, or already unlabelled
+        await context.server.remove_collection_label(match.rating_key, STUDIO_LABEL, context.section)
+        return True, None
+    except (PlexUnavailable, PlexNotFound) as error:
+        return False, f"Plex can't be reached ({error})"
 
 
 @router.get("/import/export")

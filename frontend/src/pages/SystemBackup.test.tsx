@@ -120,10 +120,17 @@ describe("Move over from Kometa on Backup", () => {
           { library: "Movies", title: "New Studio Pick" },
           { library: "Movies", title: "Action" },
         ],
+        unlabels: [{ library: "Movies", title: "Marvel" }],
         files: ["config.yml"],
         removes: ["studio/Movies/genre.yml"],
       }),
-      "POST /import/undo": () => ({ restored_files: 2, deleted_from_plex: ["New Studio Pick"], problems: ["Action: the collection in Plex has no Studio label, so Studio didn't make it"], backup: "b-switch" }),
+      "POST /import/undo": () => ({
+        restored_files: 2,
+        deleted_from_plex: ["New Studio Pick"],
+        unlabelled_in_plex: ["Marvel"],
+        problems: ["Not deleted from Plex: Action: the collection in Plex has no Studio label, so Studio didn't make it"],
+        backup: "b-switch",
+      }),
       "GET /backups": () => ({ backups: [], keep: 30 }),
       "GET /tasks": () => ({ tasks: [backupTask, checkTask] }),
       "GET /backups/full": () => ({ backups: [] }),
@@ -139,6 +146,8 @@ describe("Move over from Kometa on Backup", () => {
     expect(within(dialog).getByText("Collections changed since")).toBeInTheDocument();
     expect(within(dialog).getAllByText(/Movies: New Studio Pick/)).toHaveLength(2);
     expect(within(dialog).getByText(/Movies: Trending/)).toBeInTheDocument();
+    expect(within(dialog).getByText("Back to Kometa: Studio's label comes off in Plex")).toBeInTheDocument();
+    expect(within(dialog).getByText(/Movies: Marvel/)).toBeInTheDocument();
     expect(within(dialog).getByText("Studio's files removed")).toBeInTheDocument();
     expect(within(dialog).getByText("studio/Movies/genre.yml")).toBeInTheDocument();
     expect(within(dialog).getByText("config.yml")).toBeInTheDocument();
@@ -149,6 +158,7 @@ describe("Move over from Kometa on Backup", () => {
     expect(calls.find((c) => c.route === "POST /import/undo")!.body).toEqual({ confirm: true, delete_from_plex: true });
     expect(await within(dialog).findByText(/Put back 2 files/)).toBeInTheDocument();
     expect(within(dialog).getByText("Deleted from Plex: New Studio Pick")).toBeInTheDocument();
+    expect(within(dialog).getByText("Studio's label taken off in Plex: Marvel")).toBeInTheDocument();
     expect(within(dialog).getByText(/Not deleted from Plex: Action/)).toBeInTheDocument();
   });
 });

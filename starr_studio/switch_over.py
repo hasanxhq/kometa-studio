@@ -300,6 +300,27 @@ def _key(row: sqlite3.Row) -> tuple:
     return (row["library"], row["category"], row["block"], row["key"])
 
 
+# What someone sets on a collection. The rest (plex_*, last_*, updated_at …) is Studio's own bookkeeping, which moves
+# every time a run finishes or Plex is checked: a change there isn't something Undo would lose.
+USER_COLUMNS = ("kometa_name", "title", "origin", "desired", "run_scope", "definition", "download_missing", "request_cap", "request_profile")
+
+
+def _settings(row: sqlite3.Row, columns: list[str]) -> tuple:
+    return tuple(row[name] for name in columns)
+
+
+def adopted(db: sqlite3.Connection, row: sqlite3.Row) -> list[dict]:
+    """The collections the switch-over moved into Studio ({library, title}): its run labelled them Studio in Plex."""
+    created = json.loads(row["created_rows"])
+    if not created:
+        return []
+    marks = ",".join("?" * len(created))
+    return [
+        {"library": r["library"], "title": r["kometa_name"]}
+        for r in db.execute(f"SELECT library, kometa_name FROM collections WHERE id IN ({marks}) ORDER BY library, kometa_name", created)
+    ]
+
+
 def preview(db: sqlite3.Connection, data_dir: Path, config_dir: Path, row: sqlite3.Row) -> dict:
     """What Undo would throw away, the files it would put back (only those that changed) and Studio's files it removes."""
     path = _backup_path(data_dir, row["backup"])
@@ -307,7 +328,9 @@ def preview(db: sqlite3.Connection, data_dir: Path, config_dir: Path, row: sqlit
     with zipfile.ZipFile(path) as archive, tempfile.TemporaryDirectory() as scratch:
         then_db = _backup_rows(archive, Path(scratch))
         try:
-            then = {_key(r): r["updated_at"] for r in then_db.execute("SELECT library, category, block, key, updated_at FROM collections")}
+            had = {r[1] for r in then_db.execute("PRAGMA table_info(collections)")}
+            columns = [name for name in USER_COLUMNS if name in had]  # a backup from before a column existed
+            then = {_key(r): _settings(r, columns) for r in then_db.execute("SELECT * FROM collections")}
         finally:
             then_db.close()
         files = sorted(
@@ -325,12 +348,12 @@ def preview(db: sqlite3.Connection, data_dir: Path, config_dir: Path, row: sqlit
             added.append(entry)
             if current["plex_exists"]:
                 plex.append(entry)
-        elif current["updated_at"] != then[key] and current["updated_at"] > row["created_at"]:
+        elif _settings(current, columns) != then[key]:
             changed.append(entry)
     removed = [
         rel for rel in _studio_files(config_dir) if rel not in set(files)
     ]
-    return {"loses": {"added": added, "changed": changed}, "plex": plex, "files": files, "removes": removed}
+    return {"loses": {"added": added, "changed": changed}, "plex": plex, "unlabels": adopted(db, row), "files": files, "removes": removed}
 
 
 def _differs(path: Path, info: zipfile.ZipInfo) -> bool:
