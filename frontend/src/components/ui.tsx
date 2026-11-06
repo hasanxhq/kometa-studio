@@ -32,8 +32,23 @@ export function Button({ variant = "secondary", className = "", type = "button",
 
 /** A form's Save and the like: they stay at the bottom of the page while a long form scrolls. */
 export function StickyActions({ children }: { children: ReactNode }) {
-  // The negative offsets are main's padding (Layout): without them, the form shows through the gap below the bar.
-  return <div className="sticky -bottom-4 z-10 flex flex-wrap items-center gap-3 border-t border-border bg-bg py-3 md:-bottom-6">{children}</div>;
+  return <div className={`${sticky} gap-3`}>{children}</div>;
+}
+
+// The negative offsets are main's padding (Layout): without them, the page shows through the gap below the bar.
+const sticky = "sticky -bottom-4 z-10 flex flex-wrap items-center border-t border-border bg-bg py-3 md:-bottom-6";
+
+/** What's waiting on a page and what to do with it: a summary on the left, actions on the right, wrapping on phones. */
+export function ActionBar({ label, summary, note, children }: { label: string; summary: ReactNode; note?: ReactNode; children: ReactNode }) {
+  return (
+    <div role="region" aria-label={label} className={`${sticky} justify-between gap-x-4 gap-y-2`}>
+      <div className="text-sm font-medium" aria-live="polite">
+        {summary}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">{children}</div>
+      {note && <div className="basis-full text-sm text-muted">{note}</div>}
+    </div>
+  );
 }
 
 export type Tone = "muted" | "ok" | "warn" | "err" | "info";
