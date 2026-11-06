@@ -473,3 +473,58 @@ def test_a_studio_collection_with_the_name_is_built_again(root):
         add = {"library": "Movies", "add": [{"category": "basic", "block": "", "key": "Newly Released"}], "remove": []}
         plan = client.post("/api/v1/ready-made/build", json=add | {"dry_run": True}).json()
         assert plan["blocked"] == [] and plan["run"]["collections"] == ["Newly Released"]
+
+
+class PosterPlex(FakePlex):
+    """FakePlex that also answers for Kometa's image repos, the way GitHub would: nothing called Nope is there."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.posters: list[str] = []
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        if request.url.host == "raw.githubusercontent.com":
+            self.posters.append(str(request.url))
+            if "Nope" in str(request.url):
+                return httpx.Response(404)
+            import io
+
+            from PIL import Image
+
+            out = io.BytesIO()
+            Image.new("RGB", (600, 900), (10, 10, 10)).save(out, "JPEG")
+            return httpx.Response(200, content=out.getvalue())
+        return super().handle(request)
+
+
+def test_unbuilt_tiles_get_the_poster_kometa_will_apply(root):
+    basic = root / "kometa" / "defaults" / "chart" / "basic.yml"
+    basic.write_text(
+        "external_templates:\n  default: templates\n  template_variables:\n    image: chart/<<style>>/<<mapping_name_encoded>>\n"
+        + basic.read_text().replace("  Newly Released:\n", "  Newly Released:\n    variables:\n      style: color\n")
+    )
+    plex = PosterPlex()
+    with make_client(root, plex)[0] as client:
+        wait_for_task(client, "ready_made_counts")
+        entry = client.get("/api/v1/ready-made/libraries/Movies/categories/basic").json()["collections"][0]
+        assert entry["thumb"] is None and entry["state"] == "none"
+        assert entry["poster"] == "ready-made/posters/movie/basic?block=&key=Newly+Released"
+
+        image = client.get(f"/api/v1/{entry['poster']}")
+        assert image.status_code == 200 and image.headers["content-type"] == "image/webp"
+        assert plex.posters == ["https://raw.githubusercontent.com/Kometa-Team/Default-Images/master/chart/color/Newly%20Released.jpg"]
+        assert client.get(f"/api/v1/{entry['poster']}").status_code == 200
+        assert len(plex.posters) == 1  # kept in the data folder
+
+        # People: the director default's People-Images poster, worked out from the default file alone.
+        person = client.get("/api/v1/ready-made/posters/movie/director", params={"block": "Directors", "key": "Denis Villeneuve"})
+        assert person.status_code == 200
+        assert plex.posters[-1] == "https://raw.githubusercontent.com/Kometa-Team/People-Images-bw/master/D/Images/Denis%20Villeneuve.jpg"
+
+        # Only a default, block and key come in. One Kometa names no image for is a 404 without fetching anything.
+        fetched = len(plex.posters)
+        assert client.get("/api/v1/ready-made/posters/movie/genre", params={"block": "Genre", "key": "Action"}).status_code == 404
+        assert client.get("/api/v1/ready-made/posters/music/director", params={"block": "Directors", "key": "x"}).status_code == 422
+        assert len(plex.posters) == fetched
+        # A poster the image repo doesn't have is a 404 too.
+        assert client.get("/api/v1/ready-made/posters/movie/director", params={"block": "Directors", "key": "Nope"}).status_code == 404
