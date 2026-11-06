@@ -528,3 +528,52 @@ def test_unbuilt_tiles_get_the_poster_kometa_will_apply(root):
         assert len(plex.posters) == fetched
         # A poster the image repo doesn't have is a 404 too.
         assert client.get("/api/v1/ready-made/posters/movie/director", params={"block": "Directors", "key": "Nope"}).status_code == 404
+
+
+SUMMARY = """|========================================== Movies Summary ==========================================|
+|                                                                                                    |
+|          Title          |   +   |   =   |   -   | Run Time | Status                                |
+|=========================|=======|=======|=======|==========|=======================================|
+| Harry Potter Collection |     0 |     0 |     0 |  0:00:00 | Builder Validation Error              |
+| Collection Error: collection_order: custom cannot be used with tmdb_collection                     |
+|                                                                                                    |
+"""
+
+
+def test_a_collection_kometa_refused_says_why(root, tmp_path):
+    """Kometa exits 0 and sends no webhook for a collection it won't build; its summary says why, and so does Studio."""
+    import asyncio
+
+    client, _plex, _ = make_client(root)
+    with client:
+        db = client.app.state.db
+        with db:
+            ids = col.mark_present(
+                db, "Movies", [col.Pick(col.Ref("basic", "", "Harry Potter Collection"), "Harry Potter Collection", "Harry Potter Collection")]
+            )
+            col.set_run(db, ids, 1)
+            db.execute(
+                "INSERT INTO runs (id, request, status, trigger, queued_at, started_at) VALUES (1, ?, 'running', 'builder', '2026-11-06T00:00:00Z', '2026-11-06T00:00:01Z')",
+                (RunRequest(mode="collections", libraries=["Movies"], collections=["Harry Potter Collection"]).model_dump_json(),),
+            )
+            db.execute("INSERT INTO run_events (run_id, event, payload) VALUES (1, 'run_end', '{}')")
+        output = tmp_path / "1.log"
+        output.write_text(SUMMARY)
+
+        class Runner:
+            current_run_id = 1
+
+            def log_path(self, run_id: int):
+                return output
+
+        recorder = ReadyMadeRecorder(db, Runner(), client.app.state.settings, client.app.state.http, client.app.state.tasks)
+        request = RunRequest(mode="collections", libraries=["Movies"], collections=["Harry Potter Collection"])
+
+        async def run():
+            after = await recorder.before_run(request, lambda line: None)
+            await after()
+
+        asyncio.run(run())
+        row = col.rows(db, "Movies")[0]
+        assert row["plex_exists"] == 0
+        assert row["last_error"] == "Kometa didn't build it: Collection Error: collection_order: custom cannot be used with tmdb_collection"

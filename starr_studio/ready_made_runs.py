@@ -9,6 +9,7 @@ from pathlib import Path
 import httpx
 
 from . import collections as col
+from . import kometa_summary
 from .kometa_command import RunRequest
 from .kometa_config import read_plex
 from .kometa_files import ConfigReader
@@ -147,6 +148,8 @@ class ReadyMadeRecorder:
             return
 
         tracked_ids = {int(r["id"]) for r in tracked}
+        log_path = getattr(self.runner, "log_path", None)
+        refused = kometa_summary.read_errors(log_path(run_id)) if log_path else {}  # what Kometa didn't build, and why
         for name in libraries:
             lib = config_libs.get(name)
             if lib is None:
@@ -165,7 +168,14 @@ class ReadyMadeRecorder:
                     match = by_title.get(row["title"].casefold())
                     exists = match is not None
                     if int(row["id"]) in tracked_ids:
-                        error = None if exists else f"Kometa finished, but Plex has no collection called {row['title']}"
+                        # Kometa heads its summary with the library's name; with a library_name it may be Plex's.
+                        why = refused.get((name, row["title"].casefold())) or refused.get((_plex_title(lib), row["title"].casefold()))
+                        if exists:
+                            error = None
+                        elif why:
+                            error = f"Kometa didn't build it: {why}"
+                        else:
+                            error = f"Kometa finished, but Plex has no collection called {row['title']}"
                         col.record_plex_state(
                             self.db,
                             int(row["id"]),

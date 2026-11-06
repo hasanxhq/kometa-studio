@@ -257,3 +257,27 @@ def test_the_maintainers_imported_collections_save_and_run(root):
             written = YAML(typ="safe").load((root / "config" / "studio" / library / "built.yml").read_text())["collections"][name]
             assert written["sort_title"] == body["sort_title"] and written["collection_order"] == "release"
             assert {key for key in body if key not in ("collection_order", "sort_title", "summary")} <= set(written)
+
+
+def test_list_order_only_where_kometa_keeps_it(root):
+    """Kometa refuses collection_order: custom when it builds (not when it checks the config) unless the collection has
+    one source from its custom_sort_builders. That's how a Harry Potter TMDb collection never got built (2026-11-06)."""
+    with tmdb_client(root, []) as client:
+        wait_for_flags(client)
+
+        def save(title: str, sources: list) -> tuple[int, list[str]]:
+            response = client.post("/api/v1/collections", json=several(title, sources, sort_by="custom"))
+            return response.status_code, (response.json().get("detail") or {}).get("problems", []) if response.status_code == 422 else []
+
+        status, problems = save("Harry Potter Collection", [{"kind": "list", "builder": "tmdb_collection", "value": "1241", "label": None}])
+        assert status == 422 and "Kometa can't keep the order of a TMDb collection" in problems[0]
+        status, problems = save("Picked", [TITLES])
+        assert status == 422 and "Individual titles have no order of their own" in problems[0]
+        status, problems = save("Two lists", [IMDB, {**IMDB, "value": "https://www.imdb.com/list/ls567618635/"}])
+        assert status == 422 and "one source" in problems[0]
+        assert col.built_rows(client.app.state.db, "Movies") == []
+
+        assert save("IMDb ranked", [IMDB])[0] == 201  # one ranked list: Kometa keeps its order
+        assert save("Searched", [SEARCH])[0] == 201  # plex_search is one of Kometa's too
+        release = client.post("/api/v1/collections", json=several("Harry Potter", [{"kind": "list", "builder": "tmdb_collection", "value": "1241", "label": None}]))
+        assert release.status_code == 201, release.text  # release date always works

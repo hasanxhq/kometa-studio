@@ -939,6 +939,31 @@ describe("CollectionBuilder", () => {
     expect(screen.queryByLabelText("Limit")).not.toBeInTheDocument();
   });
 
+  it("moves a TMDb collection off List order, which Kometa refuses for it, and says why", async () => {
+    // How the Harry Potter collection never got built (2026-11-06): Kometa only refuses this when it builds.
+    mockApi(baseRoutes({ "GET /collections/8": () => listSample }));
+    renderBuilder("/collections/8");
+    const order = await screen.findByLabelText("Order");
+    await waitFor(() => expect(order).toHaveValue("release"));
+    expect(within(order).getByRole("option", { name: "List order" })).toBeDisabled();
+    expect(screen.getByText(/Kometa can't keep the order of Die Hard Collection: it has none of its own\. List order isn't available\./)).toBeInTheDocument();
+  });
+
+  it("keeps List order for one ranked list", async () => {
+    mockApi(
+      baseRoutes({
+        "GET /collections/8": () => ({
+          ...listSample,
+          source: { kind: "list", builder: "imdb_list", value: "https://www.imdb.com/list/ls539646485/", label: "MCU" },
+        }),
+      }),
+    );
+    renderBuilder("/collections/8");
+    const order = await screen.findByLabelText("Order");
+    expect(order).toHaveValue("custom");
+    expect(within(order).getByRole("option", { name: "List order" })).toBeEnabled();
+  });
+
   it("adds a second list source and a titles source; Create sends both in sources", async () => {
     const calls = mockApi(
       baseRoutes({

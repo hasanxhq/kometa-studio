@@ -228,3 +228,13 @@ def test_a_list_collection_is_written_as_its_kometa_builder(root):
         # Filter collections still come back with their source.
         smart = client.post("/api/v1/collections", json=filter_body("Smart")).json()
         assert smart["source"] == {"kind": "filters"}
+
+
+def test_every_builder_studio_offers_is_classified_for_list_order():
+    """A new list builder must be checked against Kometa's custom_sort_builders (modules/builder.py) before it's offered:
+    it's either one Kometa keeps the order of, or it's named here as one it doesn't."""
+    kometa_has_no_order = {"tmdb_collection"}
+    assert set(ls.BY_BUILDER) - ls.CUSTOM_ORDER_BUILDERS == kometa_has_no_order
+    assert ls.custom_order_problem([{"kind": "list", "builder": "imdb_chart", "value": "top_movies"}]) is None
+    assert ls.custom_order_problem([{"kind": "search", "filters": {}}]) is None
+    assert "TMDb collection" in ls.custom_order_problem([{"kind": "list", "builder": "tmdb_collection", "value": "1"}])

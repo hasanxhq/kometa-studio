@@ -127,6 +127,46 @@ def sources_of(definition: dict) -> list[dict]:
     return [source if isinstance(source, dict) and source.get("kind") else {"kind": "filters"}]
 
 
+# Kometa keeps a list's own order (``collection_order: custom``) only for these builders, and only when the collection
+# has that one builder: kometa/modules/builder.py's ``custom_sort_builders`` and its "can only be used with a single
+# builder" check (Kometa 2.5.4). Anything else is refused when Kometa builds it, not when the config is checked, so the
+# builder checks it on save. Review this on a Kometa update, with test_list_sources' list of every builder.
+CUSTOM_ORDER_BUILDERS = frozenset(
+    {
+        "plex_search",
+        "imdb_chart",
+        "imdb_list",
+        "letterboxd_list",
+        "mdblist_list",
+        "tmdb_list",
+        "tmdb_popular",
+        "tmdb_top_rated",
+        "tmdb_now_playing",
+        "tmdb_upcoming",
+        "tmdb_trending_daily",
+        "tmdb_trending_weekly",
+        "tmdb_airing_today",
+        "tmdb_on_the_air",
+    }
+)
+NO_ORDER = "Pick release date or title."
+
+
+def custom_order_problem(sources: list[dict]) -> str | None:
+    """Why Kometa won't keep these sources' own order (``collection_order: custom``), or None when it will."""
+    if len(sources) != 1:
+        return f"Kometa keeps a list's own order only when the collection has one source. {NO_ORDER}"
+    source = sources[0]
+    if source.get("kind") == "titles":
+        return f"Individual titles have no order of their own. {NO_ORDER}"
+    builder = "plex_search" if source.get("kind") == "search" else str(source.get("builder") or "")
+    if builder not in CUSTOM_ORDER_BUILDERS:
+        kind = BY_BUILDER.get(builder)
+        name = kind.label if kind else builder
+        return f"Kometa can't keep the order of a {name}: it has none of its own. {NO_ORDER}"
+    return None
+
+
 def has_missing(sources: list[dict]) -> bool:
     """True when some source names titles the library may lack (a list or titles): Download missing can work."""
     return any(source.get("kind") in ("list", "titles") for source in sources)
