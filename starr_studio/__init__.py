@@ -1,4 +1,4 @@
-"""Starr Studio: an arr-style web GUI that drives an unmodified Kometa install."""
+"""Starr Studio: a studio for organising your Plex library, with the *arr suite, powered by an unmodified Kometa install."""
 
 from importlib.metadata import PackageNotFoundError, version
 
