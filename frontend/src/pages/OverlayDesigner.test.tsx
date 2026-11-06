@@ -109,7 +109,7 @@ describe("The overlay designer", () => {
 
   it("moves a layer with the anchor grid and offsets, live on the preview, and saves its template variables", async () => {
     const calls = mockApi({ ...routes, "PUT /config/libraries/Movies/defaults/overlay/resolution": () => saved });
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     await layers();
     const poster = await screen.findByRole("group", { name: "Overlays on Dune" });
     const badge = await within(poster).findByRole("button", { name: "Select 4K" });
@@ -131,7 +131,7 @@ describe("The overlay designer", () => {
 
   it("takes a variable out when the anchor goes back to where the default starts", async () => {
     mockApi(routes);
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     await layers();
     fireEvent.click(await screen.findByRole("button", { name: "Top left" }));
     expect(within(settings()).getByLabelText("What this writes to config.yml").textContent).toBe("- default: resolution");
@@ -139,7 +139,7 @@ describe("The overlay designer", () => {
 
   it("moves ratings with their own position variables, and has no offsets for them", async () => {
     mockApi(routes);
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     fireEvent.click(await within(await layers()).findByRole("button", { name: /^Ratings/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Bottom right" }));
     expect(within(settings()).getByLabelText("What this writes to config.yml")).toHaveTextContent("horizontal_position: right vertical_position: bottom");
@@ -151,7 +151,7 @@ describe("The overlay designer", () => {
 
   it("offers what a default can choose under Show when, and says so when it has nothing", async () => {
     mockApi(routes);
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     await layers();
     expect(await within(settings()).findByText(/own resolution and edition/)).toBeInTheDocument();
     fireEvent.click(pressed("Ratings"));
@@ -164,7 +164,7 @@ describe("The overlay designer", () => {
 
   it("selects a layer from the poster", async () => {
     mockApi(routes);
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     await layers();
     fireEvent.click(await screen.findByRole("button", { name: "Select Status" }));
     expect(await screen.findByRole("form", { name: "Variables for Status" })).toBeInTheDocument();
@@ -172,7 +172,7 @@ describe("The overlay designer", () => {
 
   it("previews on a chosen title, and the same layers on others", async () => {
     mockApi(routes);
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     await layers();
     const small = await screen.findByRole("group", { name: "Overlays on Heat" });
     expect(within(small).getByText("1080P")).toBeInTheDocument();
@@ -183,7 +183,7 @@ describe("The overlay designer", () => {
 
   it("still places overlays when Plex can't be reached", async () => {
     mockApi({ ...routes, "GET /plex/libraries/1/items": () => new Response(JSON.stringify({ detail: "Plex answered HTTP 503" }), { status: 503 }) });
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     await layers();
     expect(await screen.findByText(/Can't get posters from Plex/)).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Select 4K" })).toBeInTheDocument();
@@ -191,7 +191,7 @@ describe("The overlay designer", () => {
 
   it("adds a layer that suits the library, and turns one off after asking", async () => {
     const calls = mockApi({ ...routes, "PUT /config/libraries/Movies/defaults/overlay/ribbon": () => saved, "DELETE /config/libraries/Movies/defaults/overlay/resolution": () => saved });
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     await layers();
     const add = await screen.findByLabelText("Add a layer");
     await waitFor(() => expect(within(add).getByRole("option", { name: "Ribbon" })).toBeInTheDocument());
@@ -208,7 +208,7 @@ describe("The overlay designer", () => {
   it("shows Kometa's refusal beside the button", async () => {
     const refusal = { message: "Kometa found problems, so nothing was saved.", validation: { ...saved.validation, ok: false, errors: ["config.yml: back_color doesn't match the pattern"] } };
     mockApi({ ...routes, "PUT /config/libraries/Movies/defaults/overlay/resolution": () => new Response(JSON.stringify({ detail: refusal }), { status: 422 }) });
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     await layers();
     fireEvent.click(await screen.findByRole("button", { name: "Bottom left" }));
     fireEvent.click(screen.getByRole("button", { name: "Apply on next run" }));
@@ -217,7 +217,7 @@ describe("The overlay designer", () => {
 
   it("changes the order Kometa draws them in", async () => {
     const calls = mockApi({ ...routes, "PUT /config/libraries/Movies/overlay-order": () => saved });
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     const list = await layers();
     expect(await within(list).findByRole("button", { name: "Draw Resolution earlier" })).toBeDisabled();
     fireEvent.click(within(list).getByRole("button", { name: "Draw Resolution later" }));
@@ -226,7 +226,7 @@ describe("The overlay designer", () => {
 
   it("asks before unsaved changes are lost, by picking a layer or a library", async () => {
     mockApi(routes);
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     await layers();
     fireEvent.click(await screen.findByRole("button", { name: "Bottom left" }));
 
@@ -253,7 +253,7 @@ describe("The overlay designer", () => {
 
   it("starts empty with a way in", async () => {
     mockApi({ ...routes, "GET /config/libraries/Movies": () => ({ ...movies, overlay_files: [] }) });
-    renderAt("/overlays/designer?library=Movies");
+    renderAt("/overlays/designer");
     expect(await screen.findByText("No overlay defaults yet. Add a layer to start.")).toBeInTheDocument();
     expect(screen.getByText("Pick a layer to move and style it.")).toBeInTheDocument();
   });

@@ -19,4 +19,5 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  localStorage.clear(); // a remembered library (or any other choice) mustn't leak into the next test
 });

@@ -57,19 +57,6 @@ export function useLibrary() {
   );
 
   useEffect(() => {
-    if (!overview.isSuccess || names.length === 0 || library === null) return;
-    if (askedParam === library) return;
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.set("library", library);
-        return next;
-      },
-      { replace: true },
-    );
-  }, [overview.isSuccess, names.length, library, askedParam, setSearchParams]);
-
-  useEffect(() => {
     if (!overview.isSuccess || names.length === 0 || !askedParam || !names.includes(askedParam)) return;
     writeStored(askedParam);
   }, [overview.isSuccess, names, askedParam]);

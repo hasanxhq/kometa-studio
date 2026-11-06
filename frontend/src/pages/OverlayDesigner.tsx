@@ -318,10 +318,9 @@ function Designer({ config, libraryType, status }: { config: ConfigLibrary; libr
 }
 
 export function OverlayDesigner() {
-  const { library, libraries: names, setLibrary, libraryType: resolvedType, overview } = useLibrary();
+  const { library, libraries: names, setLibrary, libraryType, overview } = useLibrary();
   const overlays = useQuery({ queryKey: ["overlays"], queryFn: api.overlays.list });
   const config = useQuery({ queryKey: ["config", "library", library], queryFn: () => api.config.library(library!), enabled: library !== null });
-  const libraryType = resolvedType;
 
   if (overview.isPending) return <p className="text-muted">Loading…</p>;
   if (overview.isError) {
