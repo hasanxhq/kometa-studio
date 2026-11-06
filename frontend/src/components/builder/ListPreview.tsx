@@ -17,7 +17,8 @@ function MissingPoster({ poster, title }: { poster: string | null; title: string
   );
 }
 
-function PreviewBody({ preview, updating }: { preview: SourcePreview; updating: boolean }) {
+/** In-library / missing grids for a source preview (also Ready-made's preview panel). */
+export function PreviewBody({ preview, updating }: { preview: SourcePreview; updating: boolean }) {
   const skipped = preview.skipped ?? [];
 
   if (preview.problems.length > 0) {

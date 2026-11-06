@@ -568,6 +568,8 @@ export type ReadyMadeEntry = {
   state: ReadyMadeEntryState;
   plex_items: number | null;
   thumb: string | null;
+  /** Plex's rating key once it's in Plex, for its collection page. */
+  rating_key?: string | null;
   /** The poster Kometa will apply, through Studio (a path under /api/v1); null when its default doesn't name one. */
   poster?: string | null;
   last_built_at: string | null;

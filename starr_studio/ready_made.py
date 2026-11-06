@@ -779,3 +779,22 @@ def customisable(kometa_root: Path, name: str, library_type: str) -> bool:
             types = [DYNAMIC_TYPE_SOURCES.get(str(b.get("type", "")).lower()) for b in blocks.values() if isinstance(b, dict)]
             return bool(types) and all(t is not None and t.source in ("plex", "people") for t in types)
     return False
+
+
+def dynamic_source(kometa_root: Path, name: str, block: str, library_type: str) -> str | None:
+    """Where one dynamic block's collections come from ("plex", "people", "tmdb", "file", "external"), or None."""
+    defaults_folder = kometa_root / "defaults" if (kometa_root / "defaults").is_dir() else kometa_root
+    for folder in (library_type, "both", "chart", "award"):
+        path = defaults_folder / folder / f"{name}.yml"
+        if path.is_file():
+            try:
+                data = _yaml().load(_read(path)) or {}
+            except YAMLError:
+                return None
+            blocks = data.get("dynamic_collections") if isinstance(data, dict) else None
+            attrs = blocks.get(block) if isinstance(blocks, dict) else None
+            if not isinstance(attrs, dict):
+                return None
+            info = DYNAMIC_TYPE_SOURCES.get(str(attrs.get("type", "")).lower())
+            return info.source if info else None
+    return None

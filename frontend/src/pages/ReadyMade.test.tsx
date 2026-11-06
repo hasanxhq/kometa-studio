@@ -154,20 +154,88 @@ describe("Ready-made tile art", () => {
   });
 });
 
+describe("Ready-made preview", () => {
+  it("opens a tile's preview: what it would hold, what's missing, and Pick from the panel", async () => {
+    const asked: string[] = [];
+    mockApi({
+      ...routes(),
+      "GET /ready-made/libraries/Movies/categories/imdb/preview?block=collections&key=popular": () => {
+        asked.push("popular");
+        return {
+          previewable: true,
+          why: null,
+          total: 3,
+          in_library: [{ rating_key: "7", title: "Dune", year: 2021, thumb: "/library/metadata/7/thumb" }],
+          in_library_count: 1,
+          missing: [{ id: "tmdb:1", title: "Sinners", year: 2025, poster: null }],
+          missing_count: 2,
+          problems: [],
+          skipped: [],
+        };
+      },
+    });
+    renderAt("/ready-made/imdb?library=Movies");
+    fireEvent.click(await screen.findByRole("button", { name: "IMDb Popular" }));
+
+    const panel = await screen.findByRole("dialog", { name: "IMDb Popular" });
+    expect(await within(panel).findByText("In your library (1)")).toBeInTheDocument();
+    expect(within(panel).getByText("Dune")).toBeInTheDocument();
+    expect(within(panel).getByText(/Missing \(2\)/)).toBeInTheDocument();
+    expect(within(panel).getByText("Not picked")).toBeInTheDocument();
+
+    fireEvent.click(within(panel).getByRole("button", { name: "Pick" }));
+    expect(within(panel).getByRole("button", { name: "Unpick" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Pick IMDb Popular" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Build 1")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "IMDb Popular" })).not.toBeInTheDocument();
+    expect(asked).toEqual(["popular"]);
+  });
+
+  it("says why when Studio can't preview one, and links a built one to its page", async () => {
+    mockApi({
+      ...routes({
+        ...imdbCategory(),
+        collections: [entry({ block: "collections", key: "top", title: "IMDb Top 250", state: "in_plex", desired: true, id: 1, rating_key: "4321" })],
+      }),
+      "GET /ready-made/libraries/Movies/categories/imdb/preview?block=collections&key=top": () => ({
+        previewable: false,
+        why: "Studio can show what's in this list once it has been built.",
+        total: null,
+        in_library: [],
+        in_library_count: 0,
+        missing: [],
+        missing_count: 0,
+        problems: [],
+        skipped: [],
+      }),
+    });
+    renderAt("/ready-made/imdb?library=Movies");
+    fireEvent.click(await screen.findByRole("button", { name: "IMDb Top 250" }));
+    const panel = await screen.findByRole("dialog", { name: "IMDb Top 250" });
+    expect(await within(panel).findByText("Studio can show what's in this list once it has been built.")).toBeInTheDocument();
+    expect(within(panel).getByRole("link", { name: "Open its page" })).toHaveAttribute("href", "/libraries/Movies/collections/4321");
+    fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
 describe("Ready-made category picks", () => {
   it("selects by the desired/local rule, Select all / Clear, and shows Will be removed", async () => {
     mockApi(routes({ ...imdbCategory(), collections: imdbCategory().collections.filter((c) => c.key !== "building") }));
     renderAt("/ready-made/imdb?library=Movies");
 
-    const top = await screen.findByRole("button", { name: "IMDb Top 250" });
-    const popular = await screen.findByRole("button", { name: "IMDb Popular" });
+    const top = await screen.findByRole("button", { name: "Pick IMDb Top 250" });
+    const popular = await screen.findByRole("button", { name: "Pick IMDb Popular" });
+    const topTile = screen.getByRole("listitem", { name: "IMDb Top 250" });
     expect(top).toHaveAttribute("aria-pressed", "true");
     expect(popular).toHaveAttribute("aria-pressed", "false");
-    expect(within(top).getByText("In Plex · 42 titles")).toBeInTheDocument();
+    expect(within(topTile).getByText("In Plex · 42 titles")).toBeInTheDocument();
 
     fireEvent.click(top);
     expect(top).toHaveAttribute("aria-pressed", "false");
-    expect(within(top).getByText("Will be removed")).toBeInTheDocument();
+    expect(within(topTile).getByText("Will be removed")).toBeInTheDocument();
     expect(screen.getByText("Remove 1")).toBeInTheDocument();
 
     fireEvent.click(top); // cancel removal
@@ -179,7 +247,7 @@ describe("Ready-made category picks", () => {
     expect(screen.getByText("Build 1")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Select all" }));
-    expect(await screen.findByRole("button", { name: "IMDb Lowest Rated" })).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByRole("button", { name: "Pick IMDb Lowest Rated" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText(/Build 2/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
@@ -285,7 +353,7 @@ describe("Ready-made category picks", () => {
     });
     mockApi(routes({ ...imdbCategory(), collections: [entry({ block: "collections", key: "popular", title: "IMDb Popular" })] }));
     renderAt("/ready-made/imdb?library=Movies");
-    const popular = await screen.findByRole("button", { name: "IMDb Popular" });
+    const popular = await screen.findByRole("button", { name: "Pick IMDb Popular" });
     fireEvent.click(popular);
     expect(popular).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Build 1")).toBeInTheDocument();
@@ -333,10 +401,8 @@ describe("Ready-made Build bar", () => {
     });
 
     renderAt("/ready-made/imdb?library=Movies");
-    const top = await screen.findByRole("button", { name: "IMDb Top 250" });
-    const popular = await screen.findByRole("button", { name: "IMDb Popular" });
-    fireEvent.click(top);
-    fireEvent.click(popular);
+    fireEvent.click(await screen.findByRole("button", { name: "Pick IMDb Top 250" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pick IMDb Popular" }));
     expect(screen.getByText("Build 1 · Remove 1")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Build" }));
@@ -388,7 +454,7 @@ describe("Ready-made Build bar", () => {
       },
     });
     renderAt("/ready-made/imdb?library=Movies");
-    fireEvent.click(await screen.findByRole("button", { name: "IMDb Popular" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pick IMDb Popular" }));
     fireEvent.click(await screen.findByRole("checkbox", { name: /Download missing/ }));
     fireEvent.click(screen.getByRole("button", { name: "Build" }));
     await screen.findByRole("dialog");

@@ -17,7 +17,7 @@ Group titles into collections, give them posters and overlays, and let Radarr, S
 
 **Organise what you have**
 - **Collections:** build one from smart filters, lists (TMDb, IMDb, Letterboxd, MDBList and more), individual titles or a Plex search, or combine several. A preview shows what's already in your library and what's missing before you build.
-- **Ready-made:** Kometa's ready-made collections (genres, studios, decades, awards, people and more) as galleries. Pick the ones you want and build them in one go.
+- **Ready-made:** Kometa's ready-made collections (genres, studios, decades, awards, people and more) as galleries. Open one to see what it would hold, pick the ones you want, and build them in one go.
 - **Posters and overlays:** upload or link a poster for each collection, and place Kometa's overlays (resolution, audio, ratings and more) with the overlay designer.
 - **Playlists** and every library's settings have forms too. Anything Studio can't describe stays in Kometa's own files, which you can still edit, and Kometa checks every save.
 
