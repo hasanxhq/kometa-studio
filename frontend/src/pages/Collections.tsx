@@ -10,31 +10,10 @@ import { builderApi, sourceLabel, sourcesOf, type BuiltCollection } from "../bui
 import { FileBlock } from "../components/ImportLanding";
 import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
 import { PlexPoster } from "../components/PlexPoster";
-import { PosterTile, StatusBadge, type StatusBadgeState } from "../components/PosterTile";
+import { PosterTile, StatusBadge, badgeFor } from "../components/PosterTile";
 import { RetryButton } from "../components/RetryButton";
 import { Button } from "../components/ui";
 import { importApi, type UploadAddResult, type UploadStaging } from "../importApi";
-
-function collectionBadgeState(collection: BuiltCollection): StatusBadgeState {
-  const req = collection.requests;
-  const coming = req ? req.requested + req.downloading : 0;
-  switch (collection.state) {
-    case "queued":
-      return { kind: "queued" };
-    case "building":
-      return { kind: "building" };
-    case "in_plex": {
-      if (coming > 0) return { kind: "in_plex", count: collection.plex_items ?? null, coming };
-      if (collection.plex_items != null) return { kind: "in_plex", count: collection.plex_items };
-      return { kind: "in_plex" };
-    }
-    case "failed":
-      return { kind: "failed" };
-    case "missing":
-    default:
-      return { kind: "missing" };
-  }
-}
 
 function sourceLine(collection: BuiltCollection): string {
   const sources = sourcesOf(collection);
@@ -57,7 +36,7 @@ function CollectionCard({ collection }: { collection: BuiltCollection }) {
       title={collection.title}
       to={`/collections/${collection.id}`}
       art={art}
-      badge={<StatusBadge state={collectionBadgeState(collection)} />}
+      badge={<StatusBadge state={badgeFor(collection) ?? { kind: "missing" }} />}
       liClassName="overflow-hidden rounded-card border border-border bg-surface"
       controlClassName="hover:bg-surface-2/40"
       footer={

@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
-import { PickTick, PosterTile, StatusBadge, type StatusBadgeState } from "./PosterTile";
+import { PickTick, PosterTile, StatusBadge, badgeFor, type StatusBadgeState } from "./PosterTile";
 
 function renderBadge(state: StatusBadgeState) {
   return render(<StatusBadge state={state} />);
@@ -62,15 +62,16 @@ describe("StatusBadge", () => {
 });
 
 describe("PosterTile", () => {
-  it("to renders a link to the given path", () => {
+  it("to renders a link to the given path, named by its content so the status is read out", () => {
     render(
       <MemoryRouter>
-        <PosterTile title="Test" to="/collections/1" art={<div>art</div>}>
+        <PosterTile title="Test" to="/collections/1" art={<div>art</div>} badge={<StatusBadge state={{ kind: "missing" }} />}>
           <span>Caption</span>
         </PosterTile>
       </MemoryRouter>,
     );
-    expect(screen.getByRole("link", { name: "Test" })).toHaveAttribute("href", "/collections/1");
+    const link = screen.getByRole("link", { name: /Not built.*Caption/ });
+    expect(link).toHaveAttribute("href", "/collections/1");
   });
 
   it("onOpen renders a dialog button", () => {
@@ -106,5 +107,17 @@ describe("PickTick", () => {
     expect(screen.getByRole("button", { name: "Pick X" })).toHaveAttribute("aria-pressed", "false");
     rerender(<PickTick title="X" selected onToggle={() => {}} />);
     expect(screen.getByRole("button", { name: "Pick X" })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+describe("badgeFor", () => {
+  const requests = { waiting: 0, requested: 2, downloading: 1, imported: 0, failed: 0 };
+  it("counts what's coming for a built collection, and passes other states through", () => {
+    expect(badgeFor({ state: "in_plex", plex_items: 9, requests })).toEqual({ kind: "in_plex", count: 9, coming: 3 });
+    expect(badgeFor({ state: "failed" })).toEqual({ kind: "failed" });
+  });
+  it("shows nothing for a state without a badge", () => {
+    expect(badgeFor({ state: null })).toBeNull();
+    expect(badgeFor({ state: "something-new" })).toBeNull();
   });
 });

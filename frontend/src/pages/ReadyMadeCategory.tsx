@@ -12,7 +12,7 @@ import { useHeaderTitle } from "../components/HeaderTitle";
 import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
 import { PlexPoster } from "../components/PlexPoster";
 import { ReadyMadePreview } from "../components/ReadyMadePreview";
-import { PosterTile, StatusBadge } from "../components/PosterTile";
+import { PosterTile, StatusBadge, badgeFor } from "../components/PosterTile";
 import { RetryButton } from "../components/RetryButton";
 import { Button } from "../components/ui";
 import { categoryOf } from "../defaults";
@@ -40,28 +40,8 @@ function previewStatusCaption(entry: ReadyMadeEntry, selected: boolean, wasBuilt
 }
 
 function readyMadeTileBadge(entry: ReadyMadeEntry, selected: boolean, wasBuilt: boolean): ReactNode {
-  if (wasBuilt && !selected) return <StatusBadge state={{ kind: "will_remove" }} />;
-  const req = entry.requests;
-  const coming = req ? req.requested + req.downloading : 0;
-  switch (entry.state) {
-    case "queued":
-      return <StatusBadge state={{ kind: "queued" }} />;
-    case "building":
-      return <StatusBadge state={{ kind: "building" }} />;
-    case "in_plex": {
-      if (coming > 0) return <StatusBadge state={{ kind: "in_plex", count: entry.plex_items ?? null, coming }} />;
-      if (entry.plex_items != null) return <StatusBadge state={{ kind: "in_plex", count: entry.plex_items }} />;
-      return <StatusBadge state={{ kind: "in_plex" }} />;
-    }
-    case "missing":
-      return <StatusBadge state={{ kind: "missing" }} />;
-    case "failed":
-      return <StatusBadge state={{ kind: "failed" }} />;
-    case "removing":
-      return <StatusBadge state={{ kind: "removing" }} />;
-    default:
-      return null;
-  }
+  const state = wasBuilt && !selected ? ({ kind: "will_remove" } as const) : badgeFor(entry);
+  return state && <StatusBadge state={state} />;
 }
 
 /** The tile's art: Plex's poster once built, else the one Kometa will apply, else the colour banner. */

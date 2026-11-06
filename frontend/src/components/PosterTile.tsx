@@ -3,6 +3,8 @@
 import { type ReactNode } from "react";
 import { Link } from "react-router";
 
+import type { RequestSummary } from "../requestsApi";
+
 /** Visual state for the pill on the poster's top-right; always paired with text (never colour-only). */
 export type StatusBadgeState =
   | { kind: "in_plex"; count?: number | null; coming?: number }
@@ -14,96 +16,39 @@ export type StatusBadgeState =
   | { kind: "will_remove" }
   | { kind: "changed" };
 
-function Dot({ className }: { className: string }) {
-  return <span className={`inline-block size-2 shrink-0 rounded-full ${className}`} aria-hidden="true" />;
+const looks: Record<Exclude<StatusBadgeState["kind"], "in_plex">, { dot: string; text: string }> = {
+  queued: { dot: "bg-info", text: "Queued" },
+  building: { dot: "bg-info", text: "Building" },
+  removing: { dot: "bg-info", text: "Removing" },
+  missing: { dot: "border border-dashed border-muted", text: "Not built" },
+  failed: { dot: "bg-err", text: "Failed" },
+  will_remove: { dot: "bg-warn", text: "Will be removed" },
+  changed: { dot: "bg-accent", text: "Changed" },
+};
+
+function inPlex(count: number | null | undefined, coming: number): { dot: string; text: string; title: string } {
+  const titles = count != null ? `In Plex · ${count} titles` : "In Plex";
+  if (coming > 0) return { dot: "bg-info", text: count ? `${count} · ${coming} coming` : `${coming} coming`, title: `${titles} · ${coming} coming` };
+  return { dot: "bg-ok", text: count != null ? String(count) : "In Plex", title: titles };
+}
+
+/** A collection's own state as a badge, or null when there's nothing to show (e.g. a Ready-made tile not picked). */
+export function badgeFor(entry: { state: string | null; plex_items?: number | null; requests?: RequestSummary | null }): StatusBadgeState | null {
+  if (entry.state === "in_plex") return { kind: "in_plex", count: entry.plex_items, coming: (entry.requests?.requested ?? 0) + (entry.requests?.downloading ?? 0) };
+  return entry.state && entry.state in looks ? ({ kind: entry.state } as StatusBadgeState) : null;
 }
 
 export function StatusBadge({ state }: { state: StatusBadgeState }) {
-  const shell =
-    "inline-flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-black/55 px-2 py-0.5 text-[11px] font-medium leading-tight text-text backdrop-blur-sm";
-  switch (state.kind) {
-    case "in_plex": {
-      const coming = state.coming ?? 0;
-      const count = state.count;
-      if (coming > 0) {
-        const label =
-          count != null && count !== 0 ? `${count} · ${coming} coming` : `${coming} coming`;
-        const title =
-          count != null ? `In Plex · ${count} titles · ${coming} coming` : `In Plex · ${coming} titles coming`;
-        return (
-          <span className={shell} title={title}>
-            <Dot className="bg-info" />
-            <span className="min-w-0 truncate">{label}</span>
-          </span>
-        );
-      }
-      if (count != null) {
-        return (
-          <span className={shell} title={`In Plex · ${count} titles`}>
-            <Dot className="bg-ok" />
-            <span className="min-w-0 truncate">{String(count)}</span>
-          </span>
-        );
-      }
-      return (
-        <span className={shell} title="In Plex">
-          <Dot className="bg-ok" />
-          <span>In Plex</span>
-        </span>
-      );
-    }
-    case "queued":
-      return (
-        <span className={shell} title="Queued">
-          <Dot className="bg-info" />
-          <span>Queued</span>
-        </span>
-      );
-    case "building":
-      return (
-        <span className={shell} title="Building">
-          <Dot className="bg-info" />
-          <span>Building</span>
-        </span>
-      );
-    case "removing":
-      return (
-        <span className={shell} title="Removing">
-          <Dot className="bg-info" />
-          <span>Removing</span>
-        </span>
-      );
-    case "missing":
-      return (
-        <span className={shell} title="Not built">
-          <span className="inline-block size-2 shrink-0 rounded-full border border-dashed border-muted bg-transparent" aria-hidden="true" />
-          <span>Not built</span>
-        </span>
-      );
-    case "failed":
-      return (
-        <span className={shell} title="Failed">
-          <Dot className="bg-err" />
-          <span>Failed</span>
-        </span>
-      );
-    case "will_remove":
-      return (
-        <span className={shell} title="Will be removed">
-          <Dot className="bg-warn" />
-          <span className="min-w-0 truncate">Will be removed</span>
-        </span>
-      );
-    case "changed":
-      return (
-        <span className={shell} title="Changed">
-          <Dot className="bg-accent" />
-          <span>Changed</span>
-        </span>
-      );
-    default:
-      return null;
-  }
+  const look = state.kind === "in_plex" ? inPlex(state.count, state.coming ?? 0) : { ...looks[state.kind], title: looks[state.kind].text };
+  return (
+    <span
+      className="inline-flex max-w-full items-center gap-1 rounded-full border border-white/10 bg-black/55 px-2 py-0.5 text-[11px] leading-tight font-medium text-text backdrop-blur-sm"
+      title={look.title}
+    >
+      <span aria-hidden="true" className={`inline-block size-2 shrink-0 rounded-full ${look.dot}`} />
+      <span className="min-w-0 truncate">{look.text}</span>
+    </span>
+  );
 }
 
 export function PickTick({ title, selected, onToggle }: { title: string; selected: boolean; onToggle: () => void }) {
@@ -156,7 +101,7 @@ export function PosterTile(props: PosterTileProps) {
   );
   const main =
     props.to !== undefined ? (
-      <Link to={props.to} aria-label={title} className={openClasses}>
+      <Link to={props.to} className={openClasses}>
         {posterBlock}
         {children}
       </Link>
