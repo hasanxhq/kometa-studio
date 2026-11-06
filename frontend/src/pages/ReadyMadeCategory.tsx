@@ -3,9 +3,10 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { ApiError, api, type ReadyMadeBuildResult, type ReadyMadeEntry } from "../api";
+import { useLibrary } from "../library";
 import { BuildBar } from "../components/BuildBar";
 import { useHeaderTitle } from "../components/HeaderTitle";
 import { DownloadMissingBadge, RequestCountsLine, RequestWaitingButton } from "../components/RequestCounts";
@@ -149,12 +150,8 @@ function CollectionTile({
 export function ReadyMadeCategory() {
   const { category: raw } = useParams();
   const category = raw ? decodeURIComponent(raw) : "";
-  const [params] = useSearchParams();
   const navigate = useNavigate();
-  const overview = useQuery({ queryKey: ["config"], queryFn: api.config.overview, retry: false });
-  const names = overview.data?.libraries.map((library) => library.name) ?? [];
-  const asked = params.get("library");
-  const library = asked && names.includes(asked) ? asked : (names[0] ?? null);
+  const { library, overview } = useLibrary();
   const picksApi = useReadyMadePicks();
   const queryClient = useQueryClient();
   const [opened, setOpened] = useState<string | null>(null);

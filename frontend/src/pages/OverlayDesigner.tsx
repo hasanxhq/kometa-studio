@@ -4,7 +4,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { Link } from "react-router";
 import { stringify } from "yaml";
 
 import { ApiError, api, type ConfigLibrary, type DefaultEntry, type FileReference, type OverlayLibrary, type PlexItem } from "../api";
@@ -13,7 +13,7 @@ import { AnchorGrid, OffsetInput, OverlayPoster, SamplePicker, useSamples } from
 import { ConfirmButton, Field, inputClass } from "../components/ui";
 import { SaveError } from "../components/ValidationReport";
 import { shortTitle } from "../defaults";
-import { useLibraryType } from "../libraries";
+import { useLibrary } from "../library";
 import { layerBoxes, layerText, resolveLayout, whereItIs, type Box } from "../overlayLayout";
 import { defaultVariablesSchema, loadSchema, type JsonSchema } from "../yaml/schema";
 import { VariablesEditor, useSave, type Featured, type Values } from "../components/DefaultVariables";
@@ -318,14 +318,10 @@ function Designer({ config, libraryType, status }: { config: ConfigLibrary; libr
 }
 
 export function OverlayDesigner() {
-  const [params, setParams] = useSearchParams();
-  const overview = useQuery({ queryKey: ["config"], queryFn: api.config.overview, retry: false });
+  const { library, libraries: names, setLibrary, libraryType: resolvedType, overview } = useLibrary();
   const overlays = useQuery({ queryKey: ["overlays"], queryFn: api.overlays.list });
-  const names = overview.data?.libraries.map((library) => library.name) ?? [];
-  const asked = params.get("library");
-  const library = asked && names.includes(asked) ? asked : (names[0] ?? null);
   const config = useQuery({ queryKey: ["config", "library", library], queryFn: () => api.config.library(library!), enabled: library !== null });
-  const libraryType = useLibraryType(library);
+  const libraryType = resolvedType;
 
   if (overview.isPending) return <p className="text-muted">Loading…</p>;
   if (overview.isError) {
@@ -359,7 +355,7 @@ export function OverlayDesigner() {
           <select
             className="min-h-11 rounded-control border border-border-strong bg-surface-2 px-3 text-sm text-text focus:border-accent focus:outline-none"
             value={library}
-            onChange={(event) => setParams({ library: event.target.value }, { replace: true })}
+            onChange={(event) => setLibrary(event.target.value)}
           >
             {names.map((name) => (
               <option key={name}>{name}</option>

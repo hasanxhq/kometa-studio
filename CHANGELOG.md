@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The library you pick on **Collections**, **Ready-made** or the **overlay designer** is remembered for the next of those pages in this browser (URL still wins when present).
+
 ### Added
 
 - **Open a Ready-made collection to see what it would hold** before you build it: click its tile for a panel with its poster, the titles from your library it would hold, and what's missing for charts that read a TMDb or MDBList list. Pick it, Customise it, or open its page once it's built, from the same panel. Picking from the grid moves to the round tick in each poster's corner. IMDb and Letterboxd charts, awards and TMDb-valued categories (franchises, countries of origin, languages) say they show once built.
