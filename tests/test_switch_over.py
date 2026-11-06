@@ -6,6 +6,7 @@ import io
 import json
 import zipfile
 
+import httpx
 from ruamel.yaml import YAML
 
 from starr_studio import collections as col
@@ -152,3 +153,87 @@ def test_report_and_switch_over_without_config(root):
         response = client.post("/api/v1/import/switch-over", json={"confirm": True})
     assert response.status_code == 409
     assert json.dumps(response.json())  # a plain message
+
+
+def labels(plex, key: str) -> list[str]:
+    return sorted(lab["tag"] for lab in plex.COLLECTION_META[key]["Label"])
+
+
+def test_undo_takes_studios_label_off_what_the_switch_over_adopted(root):
+    """Kometa adopts the existing Plex collections by title and labels them Studio; after Undo they're Kometa's again."""
+    setup_kometa(root)
+    client, plex, _m = make_client(root)
+    with client:
+        wait_for_flags(client)
+        result = client.post("/api/v1/import/switch-over", json={"confirm": True}).json()
+        wait_for_run(client, result["run_id"])
+        # What the real run leaves in Plex: the adopted collections with Kometa's own label and now Studio's.
+        dune = plex.add_collection("1", "Dune", labels=["Kometa", "Studio"], items=2)
+        dramas = plex.add_collection("1", "Dramas", labels=["Studio"], items=1)
+        mine = plex.add_collection("1", "Action Picks", labels=["Studio"], items=3)  # Studio's, not the switch-over's
+
+        preview = client.get("/api/v1/import/undo").json()
+        assert preview["unlabels"] == [
+            {"library": "Movies", "title": "Dramas"},
+            {"library": "Movies", "title": "Dune"},
+            {"library": "Movies", "title": "Newly Released"},
+        ]
+        undone = client.post("/api/v1/import/undo", json={"confirm": True}).json()
+
+    assert undone["unlabelled_in_plex"] == ["Dramas", "Dune"]  # Newly Released was never built: nothing to do
+    assert undone["problems"] == [] and undone["deleted_from_plex"] == []
+    assert labels(plex, dune) == ["Kometa"] and labels(plex, dramas) == []
+    assert labels(plex, mine) == ["Studio"]
+    assert sorted(key for key, _ in plex.label_removals) == sorted([dune, dramas])
+    assert dune in plex.COLLECTION_META and dramas in plex.COLLECTION_META  # unlabelled, never deleted
+
+
+def test_undo_says_when_plex_cant_take_the_label_off(root):
+    setup_kometa(root)
+    client, plex, _m = make_client(root)
+    with client:
+        wait_for_flags(client)
+        result = client.post("/api/v1/import/switch-over", json={"confirm": True}).json()
+        wait_for_run(client, result["run_id"])
+        plex.add_collection("1", "Dune", labels=["Studio"], items=2)
+        handle = plex.handle
+
+        def no_edits(request: httpx.Request) -> httpx.Response:
+            if request.method == "PUT":
+                return httpx.Response(500)
+            return handle(request)
+
+        plex.handle = no_edits
+        undone = client.post("/api/v1/import/undo", json={"confirm": True}).json()
+
+    assert undone["restored_files"] >= 1  # Undo itself still happened
+    assert undone["unlabelled_in_plex"] == []
+    assert len(undone["problems"]) == 1
+    assert undone["problems"][0].startswith("Studio's label is still on Dune in Plex: Plex can't be reached (Plex answered HTTP 500")
+
+
+def test_undo_preview_ignores_studios_bookkeeping(root):
+    """A run or a Plex check moves updated_at on every Studio row; only a change to what someone set counts as lost."""
+    setup_kometa(root)
+    client, _plex, _m = make_client(root)
+    with client:
+        wait_for_flags(client)
+        db = connect(root / "data" / "studio.db")
+        mine = col.insert_built(db, "Movies", "mine", "Mine", {"source": {"kind": "filters"}})
+        db.commit()
+        db.close()
+        result = client.post("/api/v1/import/switch-over", json={"confirm": True}).json()
+        wait_for_run(client, result["run_id"])
+        db = connect(root / "data" / "studio.db")
+        with db:
+            db.execute(
+                "UPDATE collections SET plex_checked_at = '2099-01-01T00:00:00Z', updated_at = '2099-01-01T00:00:00Z', "
+                "plex_exists = 1, plex_items = 7 WHERE id = ?",
+                (mine,),
+            )
+        assert client.get("/api/v1/import/undo").json()["loses"]["changed"] == []
+
+        with db:
+            db.execute("UPDATE collections SET definition = ? WHERE id = ?", (json.dumps({"source": {"kind": "filters"}, "limit": 5}), mine))
+        db.close()
+        assert client.get("/api/v1/import/undo").json()["loses"]["changed"] == [{"library": "Movies", "title": "Mine"}]

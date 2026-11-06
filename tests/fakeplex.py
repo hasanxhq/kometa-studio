@@ -45,6 +45,7 @@ class FakePlex:
         self.COLLECTION_META = {k: {**v, "Label": [dict(lab) for lab in v.get("Label", [])]} for k, v in self.DEFAULT_COLLECTION_META.items()}
         self.ITEMS = {k: [dict(i) for i in v] for k, v in self.DEFAULT_ITEMS.items()}
         self.item_labels: dict[str, list[str]] = {}
+        self.label_removals: list[tuple[str, list[str]]] = []
 
     def transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self.handle)
@@ -291,6 +292,16 @@ class FakePlex:
         if request.method == "PUT" and len(parts) == 4 and parts[1] == "sections" and parts[3] == "all":
             # Like Plex: label[0..n].tag.tag sets the item's whole label list (python-plexapi re-sends the old ones to add one).
             rating_key = request.url.params.get("id")
+            if "label[].tag.tag-" in request.url.params and rating_key in self.COLLECTION_META:
+                # Like Plex: label[].tag.tag- takes those labels off and keeps the rest (python-plexapi's removeLabel).
+                gone = {tag for tag in request.url.params["label[].tag.tag-"].split(",") if tag}
+                self.label_removals.append((rating_key, sorted(gone)))
+                meta = self.COLLECTION_META[rating_key]
+                meta["Label"] = [lab for lab in meta["Label"] if lab["tag"] not in gone]
+                for lab in self.LABELS.get(parts[2], []):
+                    if lab["title"] in gone and rating_key in self.LABELLED.get(str(lab["key"]), []):
+                        self.LABELLED[str(lab["key"])].remove(rating_key)
+                return httpx.Response(200)
             given = [v for k, v in sorted(request.url.params.items()) if k.startswith("label[") and k.endswith("].tag.tag")]
             if rating_key and given:
                 self.item_labels[rating_key] = list(given)

@@ -63,6 +63,8 @@ export type UndoPreview = {
     changed: { library: string; title: string }[];
   };
   plex: { library: string; title: string }[];
+  /** What the switch-over moved into Studio: Undo takes Studio's label off them in Plex (they're Kometa's again). */
+  unlabels?: { library: string; title: string }[];
   files: string[]; // put back
   removes: string[]; // Studio's files that weren't there before
 };
@@ -70,7 +72,8 @@ export type UndoPreview = {
 export type UndoResult = {
   restored_files: number;
   deleted_from_plex: string[];
-  problems: string[]; // collections Undo couldn't delete from Plex, and why
+  unlabelled_in_plex?: string[];
+  problems: string[]; // what Undo couldn't do in Plex (delete, take the label off), and why
   backup: string;
 };
 

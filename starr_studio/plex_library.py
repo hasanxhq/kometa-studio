@@ -256,6 +256,28 @@ class PlexServer:
             raise PlexUnavailable(f"Plex answered HTTP {response.status_code} labelling {rating_key}")
         return True
 
+    async def remove_collection_label(self, rating_key: str, label: str, library_key: str) -> None:
+        """Take one label off a collection, keeping its others: Plex's ``label[].tag.tag-`` edit, as python-plexapi's
+        ``removeLabel`` sends it (``type=18`` is a collection)."""
+        params = {"type": "18", "id": rating_key, "label[].tag.tag-": label, "label.locked": "1"}
+        try:
+            response = await self.client.put(
+                f"{self.url}/library/sections/{library_key}/all",
+                params=params,
+                headers={"Accept": "application/json", "X-Plex-Token": self.token},
+                timeout=TIMEOUT,
+            )
+        except httpx.TimeoutException:
+            raise PlexUnavailable(f"Plex didn't answer within {TIMEOUT:g} s") from None
+        except httpx.HTTPError as error:
+            raise PlexUnavailable(f"Can't reach Plex: {error}") from None
+        if response.status_code == 401:
+            raise PlexUnavailable("Plex rejected the token in config.yml. Connect again in Settings → Plex.")
+        if response.status_code == 404:
+            raise PlexNotFound(f"Plex has no section {library_key}")
+        if response.status_code not in (200, 204):
+            raise PlexUnavailable(f"Plex answered HTTP {response.status_code} unlabelling {rating_key}")
+
     async def collection(self, rating_key: str) -> tuple[str, PlexCollection]:
         """One collection and the key of the library it's in. Managed by Kometa if it carries Kometa's label."""
         found = (await self._get(f"/library/metadata/{rating_key}")).get("Metadata") or []
