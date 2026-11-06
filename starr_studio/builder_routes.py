@@ -30,7 +30,7 @@ from pydantic import BaseModel, Field
 from ruamel.yaml import YAML
 
 from . import collections as col
-from . import collection_requests, list_sources, smart_filters, studio_files
+from . import collection_requests, list_sources, ready_made_posters, smart_filters, studio_files
 from .config_sections import read_section
 from .config_write import SaveRefused
 from .default_covers import DEFAULT_IMAGES
@@ -283,8 +283,11 @@ def _fill_image_path(template: str, key: str, tvs: dict) -> str | None:
 
 
 def _kometa_poster(category: str, key: str, attrs: dict) -> dict | None:
-    """Kometa's Default-Images URL for this ready-made key, or None when the path isn't reliable."""
+    """Kometa's poster URL for this ready-made key, or None when the path isn't reliable."""
     tvs = attrs.get("template_variables") if isinstance(attrs.get("template_variables"), dict) else {}
+    if str(attrs.get("type", "")).lower() in ready_made_posters.PEOPLE_TYPES:
+        url = ready_made_posters.people_url(key, tvs)  # the tmdb_person template's People-Images poster
+        return {"kind": "url", "url": url} if url else None
     image = tvs.get("image")
     path: str | None = None
     if isinstance(image, dict):

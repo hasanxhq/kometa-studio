@@ -568,6 +568,8 @@ export type ReadyMadeEntry = {
   state: ReadyMadeEntryState;
   plex_items: number | null;
   thumb: string | null;
+  /** The poster Kometa will apply, through Studio (a path under /api/v1); null when its default doesn't name one. */
+  poster?: string | null;
   last_built_at: string | null;
   last_error: string | null;
   build_seconds: number | null;
@@ -826,6 +828,7 @@ export const api = {
     category: (library: string, name: string) =>
       request<ReadyMadeCategory>("GET", `/ready-made/libraries/${encodeURIComponent(library)}/categories/${encodeURIComponent(name)}`),
     build: (body: ReadyMadeBuildBody) => request<ReadyMadeBuildPlan | ReadyMadeBuildResult>("POST", "/ready-made/build", body),
+    posterUrl: (path: string) => `${urlBase}/api/v1/${path}`,
   },
   tasks: {
     list: () => request<{ tasks: BuiltinTask[] }>("GET", "/tasks"),

@@ -126,6 +126,34 @@ describe("Ready-made gallery", () => {
   });
 });
 
+describe("Ready-made tile art", () => {
+  it("shows Plex's poster once built, else the one Kometa will apply, else the banner", async () => {
+    const category = {
+      ...imdbCategory(),
+      collections: [
+        entry({ block: "", key: "top", title: "IMDb Top 250", state: "in_plex", thumb: "/library/metadata/1/thumb", id: 1, poster: "ready-made/posters/movie/imdb?block=&key=IMDb+Top+250" }),
+        entry({ block: "", key: "popular", title: "IMDb Popular", poster: "ready-made/posters/movie/imdb?block=&key=IMDb+Popular" }),
+        entry({ block: "", key: "lowest", title: "IMDb Lowest Rated", poster: null }),
+      ],
+    };
+    mockApi(routes(category));
+    renderAt("/ready-made/imdb?library=Movies");
+
+    const top = await screen.findByRole("button", { name: "IMDb Top 250" });
+    expect(top.querySelector("img")).toHaveAttribute("src", expect.stringContaining("/api/v1/plex/image?path=%2Flibrary%2Fmetadata%2F1%2Fthumb"));
+
+    const popular = screen.getByRole("button", { name: "IMDb Popular" });
+    const kometa = popular.querySelector("img")!;
+    expect(kometa).toHaveAttribute("src", expect.stringContaining("/api/v1/ready-made/posters/movie/imdb?block=&key=IMDb+Popular"));
+    fireEvent.error(kometa); // a 404: Kometa's image repo doesn't have it
+    expect(popular.querySelector("img")).toBeNull();
+    expect(within(popular).getAllByText("IMDb Popular").length).toBe(2); // the banner and the caption
+
+    const lowest = screen.getByRole("button", { name: "IMDb Lowest Rated" });
+    expect(lowest.querySelector("img")).toBeNull();
+  });
+});
+
 describe("Ready-made category picks", () => {
   it("selects by the desired/local rule, Select all / Clear, and shows Will be removed", async () => {
     mockApi(routes({ ...imdbCategory(), collections: imdbCategory().collections.filter((c) => c.key !== "building") }));

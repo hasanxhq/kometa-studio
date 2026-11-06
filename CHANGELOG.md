@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ready-made tiles show their poster before they're built:** each collection shows the poster Kometa will give it (a director's portrait, a genre's or decade's artwork, a chart's logo), worked out from Kometa's own default and fetched through Studio. Once built, the tile shows Plex's poster. Where Kometa's image repo has none, the tile keeps its colour banner. Customising a people collection (actor, director, producer, writer) now brings its portrait into the builder too.
 - **`STUDIO_ALLOW_LOCAL`:** on a shared server (seedbox), set it to `false` so loopback and private addresses no longer count as local for sign-in. The first-run open-to-local path is refused, and "Disabled for local addresses" behaves like requiring everyone to sign in. Settings → General notes when the switch is off.
 - **Wheel on each GitHub release:** publishing a release (or pre-release) builds the frontend into a Python wheel and sdist and attaches them. Install with `pip install` on the `.whl`, then run `starr-studio`.
 - **Seedbox install script** (`deploy/install-seedbox.sh`): installs Kometa and Studio without root or Docker, creates your user and sets the URL base and trusted proxy **before Studio first starts** (so it never answers without a password), sets `STUDIO_ALLOW_LOCAL=false`, and starts a `systemd --user` service; on Ultra.cc it also adds the nginx location. Run it again to update. New commands for it: `starr-studio create-user` and `starr-studio set-proxy`.

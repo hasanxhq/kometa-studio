@@ -153,6 +153,14 @@ def test_a_ready_made_plex_collection_opens_in_the_builder(root):
         assert rating.status_code == 200, rating.text
         assert rating.json()["filters"] == {"match": "any", "rules": [{"field": "content_rating", "modifier": "", "value": ["G", "TV-G"]}]}
         assert rating.json()["poster"] is None  # fixture has no image map we can resolve
+        # People get the tmdb_person template's People-Images poster.
+        person = client.get(
+            "/api/v1/ready-made/libraries/Movies/categories/director/customise", params={"block": "Directors", "key": "Denis Villeneuve"}
+        ).json()
+        assert person["poster"] == {
+            "kind": "url",
+            "url": "https://raw.githubusercontent.com/Kometa-Team/People-Images-bw/master/D/Images/Denis%20Villeneuve.jpg",
+        }
         # An add-on the library doesn't have is left out, as Kometa does.
         plex.TAGS["1"]["contentRating"] = [t for t in plex.TAGS["1"]["contentRating"] if t["key"] != "TV-G"]
         alone = client.get("/api/v1/ready-made/libraries/Movies/categories/content_rating/customise", params={"block": "Ratings", "key": "G"}).json()

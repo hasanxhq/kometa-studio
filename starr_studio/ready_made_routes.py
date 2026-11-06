@@ -9,11 +9,14 @@ from datetime import datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from urllib.parse import quote, urlencode
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from . import collections as col
-from . import collection_requests, ready_made, studio_files
+from . import collection_requests, ready_made, ready_made_posters, studio_files
 from .requesting import load_settings as load_request_settings
 from .config_write import ConfigWriter, SaveRefused
 from .health import PLEX_CHECK_TTL
@@ -223,6 +226,36 @@ def _row_key(row: sqlite3.Row) -> tuple[str, str]:
     return (row["block"], row["key"])
 
 
+def _poster(root: Path | None, library_type: str | None, category: str, block: str, key: str) -> str | None:
+    """Where the tile finds the poster Kometa will apply (a path under /api/v1), or None when its default doesn't say."""
+    kind = library_type if library_type in ("movie", "show") else "movie"
+    if root is None or ready_made_posters.poster_url(root, kind, category, block, key) is None:
+        return None
+    return f"ready-made/posters/{kind}/{quote(category, safe='')}?{urlencode({'block': block, 'key': key})}"
+
+
+@router.get("/posters/{library_type}/{name}")
+async def ready_made_poster(
+    library_type: Literal["movie", "show"],
+    name: str,
+    request: Request,
+    settings: AppSettings,
+    key: Annotated[str, Query(max_length=500)],
+    block: Annotated[str, Query(max_length=500)] = "",
+) -> FileResponse:
+    """The poster Kometa will give one ready-made collection, fetched from Kometa's image repos and kept small.
+
+    Only a default, block and key come in: the image's URL is worked out here from the installed Kometa's default file.
+    A 404 means there's none to show right now, and the tile keeps its colour banner.
+    """
+    root = _kometa_root(settings)
+    url = ready_made_posters.poster_url(root, library_type, name, block, key) if root else None
+    path = await request.app.state.ready_made_posters.poster(url) if url else None
+    if path is None:
+        raise HTTPException(404, "No poster for this collection right now")
+    return FileResponse(path, media_type="image/webp", headers={"Cache-Control": "private, max-age=86400"})
+
+
 @router.get("/libraries/{library}")
 async def library_gallery(library: str, request: Request, db: Db, settings: AppSettings, tasks: AppTasks) -> dict:
     lib, _ = _config_library(settings, library)
@@ -284,6 +317,7 @@ async def category_detail(library: str, name: str, request: Request, db: Db, set
                 "state": _entry_state(row, run_status),
                 "plex_items": int(row["plex_items"]) if row and row["plex_items"] is not None else None,
                 "thumb": row["plex_thumb"] if row else None,
+                "poster": _poster(root, library_type, name, block, key),
                 "last_built_at": row["last_built_at"] if row else None,
                 "last_error": row["last_error"] if row else None,
                 "build_seconds": _build_seconds(db, row["last_run_id"]) if row else None,
@@ -307,6 +341,7 @@ async def category_detail(library: str, name: str, request: Request, db: Db, set
                 "state": _entry_state(row, run_status),
                 "plex_items": int(row["plex_items"]) if row["plex_items"] is not None else None,
                 "thumb": row["plex_thumb"],
+                "poster": _poster(root, library_type, name, row["block"], row["key"]),
                 "last_built_at": row["last_built_at"],
                 "last_error": row["last_error"],
                 "build_seconds": _build_seconds(db, row["last_run_id"]),
